@@ -122,7 +122,7 @@ async fn file_mode_writes_mail_without_storing_plaintext_token() {
     let user_id = Uuid::new_v4();
     enqueue_test_mail(&database, user_id).await;
 
-    let stats = run_batch(&database, &mailer, &resolver, 10)
+    let stats = run_batch(&database, &mailer, &resolver, "http://localhost", 10)
         .await
         .expect("处理邮件");
     assert_eq!(stats.sent, 1);
@@ -166,7 +166,7 @@ async fn smtp_failure_is_retried_with_a_new_token() {
     enqueue_test_mail(&database, user_id).await;
 
     // 第一次：SMTP 连接被立即关闭 → outbox 保留并退避。
-    let stats = run_batch(&database, &mailer, &resolver, 10)
+    let stats = run_batch(&database, &mailer, &resolver, "http://localhost", 10)
         .await
         .expect("第一次发送");
     assert_eq!(stats.failed, 1);
@@ -187,7 +187,7 @@ async fn smtp_failure_is_retried_with_a_new_token() {
         .execute(database.pool())
         .await
         .expect("置为到期");
-    let stats = run_batch(&database, &mailer, &resolver, 10)
+    let stats = run_batch(&database, &mailer, &resolver, "http://localhost", 10)
         .await
         .expect("重试发送");
     assert_eq!(stats.sent, 1, "重试应当成功");
@@ -257,7 +257,7 @@ async fn lease_aware_email_worker_releases_remaining_mail() {
         delay: Duration::from_millis(1_800),
     });
     let lease = LeaseConfig::new(Duration::from_secs(3), Duration::from_millis(1_500));
-    let stats = run_batch_with_lease(&database, &mailer, &resolver, 10, lease)
+    let stats = run_batch_with_lease(&database, &mailer, &resolver, "http://localhost", 10, lease)
         .await
         .expect("处理邮件批次");
     assert_eq!(stats.claimed, 5);

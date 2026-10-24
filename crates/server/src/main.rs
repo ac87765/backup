@@ -111,7 +111,8 @@ async fn serve() -> anyhow::Result<()> {
         database.clone(),
         storage.clone(),
         mailer,
-        Arc::new(jobs::email::UnavailableRecipientResolver),
+        Arc::new(jobs::email::SqlRecipientResolver),
+        config.public_app_url.clone(),
         &shutdown,
         config.jobs_enabled,
     );

@@ -153,15 +153,102 @@ fn build_message_box(from: &Mailbox, mail: &RenderedMail) -> Result<Message, Mai
         .map_err(MailError::Build)
 }
 
-/// 测试模板：本组没有真实业务邮件。令牌放在 URL 片段里（不会进入请求路径/日志）。
-pub fn render_test_mail(to: &str, token: &str) -> (String, String) {
-    (
-        "备份服务测试邮件".to_owned(),
-        format!(
-            "这是一封测试邮件，收件人：{to}\n\n\
-             #token={token}\n"
-        ),
+/// 邮件用途。与 `email_outbox.purpose`、`email_tokens.purpose` 保持一致。
+pub mod purpose {
+    /// 邮箱验证（需要一次性令牌）。
+    pub const VERIFY_EMAIL: &str = "verify_email";
+    /// 注册时邮箱已存在（不需要令牌）。
+    pub const EXISTING_ACCOUNT: &str = "existing_account";
+    /// 密码已修改通知（不需要令牌）。
+    pub const PASSWORD_CHANGED: &str = "password_changed";
+    /// 恢复密钥已轮换通知（不需要令牌）。
+    pub const RECOVERY_KEY_CHANGED: &str = "recovery_key_changed";
+    /// 仅测试使用（需要令牌，覆盖 file/SMTP 发送链路）。
+    pub const TEST: &str = "test";
+}
+
+/// 该用途是否需要一次性令牌。
+pub fn purpose_requires_token(purpose: &str) -> bool {
+    matches!(purpose, purpose::VERIFY_EMAIL | purpose::TEST)
+}
+
+/// 是否为已知模板（未知用途按失败重试，避免静默丢邮件）。
+pub fn is_supported_purpose(purpose: &str) -> bool {
+    matches!(
+        purpose,
+        purpose::VERIFY_EMAIL
+            | purpose::EXISTING_ACCOUNT
+            | purpose::PASSWORD_CHANGED
+            | purpose::RECOVERY_KEY_CHANGED
+            | purpose::TEST
     )
+}
+
+/// 把用例渲染成 (subject, body)。
+///
+/// 只有验证/测试邮件需要 `token`；其余通知模板忽略该参数。
+/// 任何带令牌的链接都必须把令牌放在 URL 片段（`#token=`）中，
+/// 片段不会被浏览器发送到服务端，因此不会进入请求日志。
+pub fn render_mail(
+    purpose: &str,
+    to: &str,
+    token: Option<&str>,
+    app_url: &str,
+) -> Option<(String, String)> {
+    let base = app_url.trim_end_matches('/');
+    match purpose {
+        purpose::VERIFY_EMAIL => {
+            let token = token?;
+            Some((
+                "验证你的备份服务邮箱".to_owned(),
+                format!(
+                    "请打开以下链接验证邮箱：\n\n\
+                     {base}/#token={token}\n\n\
+                     链接 24 小时内有效，且只能使用一次。\n\
+                     如果这不是你本人的操作，请忽略此邮件。\n"
+                ),
+            ))
+        }
+        purpose::EXISTING_ACCOUNT => Some((
+            "你尝试注册的邮箱已有账号".to_owned(),
+            format!(
+                "我们收到了使用 {to} 注册备份服务的请求，但该邮箱已经有账号。\n\n\
+                 如果这是你本人，请直接登录：{base}/#/login\n\
+                 如果忘记密码，可使用恢复密钥重置密码。\n\
+                 如果这不是你本人的操作，请忽略此邮件。\n"
+            ),
+        )),
+        purpose::PASSWORD_CHANGED => Some((
+            "备份服务密码已修改".to_owned(),
+            format!(
+                "你的备份服务密码已修改，其他设备上的会话已失效。\n\n\
+                 查看活跃会话：{base}/#/sessions\n\
+                 如果这不是你本人的操作，请立即使用恢复密钥重置密码。\n"
+            ),
+        )),
+        purpose::RECOVERY_KEY_CHANGED => Some((
+            "备份服务恢复密钥已更新".to_owned(),
+            format!(
+                "你的恢复密钥已更新，旧恢复密钥立即失效。\n\n\
+                 请确认已经把新恢复密钥保存在安全的地方：{base}/#/settings\n\
+                 如果这不是你本人的操作，请立即修改密码。\n"
+            ),
+        )),
+        purpose::TEST => {
+            let token = token?;
+            Some((
+                "备份服务测试邮件".to_owned(),
+                format!("这是一封测试邮件，收件人：{to}\n\n#token={token}\n"),
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// 测试模板的兼容入口（第 5 组测试使用）。
+pub fn render_test_mail(to: &str, token: &str) -> (String, String) {
+    render_mail(purpose::TEST, to, Some(token), "http://localhost")
+        .unwrap_or_else(|| ("测试邮件".to_owned(), String::new()))
 }
 
 #[cfg(test)]
@@ -199,5 +286,58 @@ mod tests {
     fn mail_error_kinds_are_stable() {
         assert_eq!(MailError::Config("x").kind(), "config");
         assert_eq!(MailError::Io(std::io::Error::other("x")).kind(), "io");
+    }
+
+    #[test]
+    fn verification_link_keeps_token_in_fragment_not_path() {
+        let token = "a".repeat(64);
+        let (_subject, body) = render_mail(
+            purpose::VERIFY_EMAIL,
+            "user@example.com",
+            Some(&token),
+            "https://backup.example.com/",
+        )
+        .expect("验证模板");
+        assert!(body.contains(&format!("https://backup.example.com/#token={token}")));
+        assert!(!body.contains(&format!("/token/{token}")));
+        assert!(!body.contains(&format!("?token={token}")));
+    }
+
+    #[test]
+    fn notification_templates_do_not_need_a_token() {
+        for purpose in [
+            purpose::EXISTING_ACCOUNT,
+            purpose::PASSWORD_CHANGED,
+            purpose::RECOVERY_KEY_CHANGED,
+        ] {
+            let rendered = render_mail(
+                purpose,
+                "user@example.com",
+                None,
+                "https://backup.example.com",
+            );
+            assert!(rendered.is_some(), "{purpose} 模板必须存在");
+            let (subject, body) = rendered.expect("模板");
+            assert!(!subject.is_empty());
+            assert!(!body.is_empty());
+        }
+        assert!(render_mail("unknown", "user@example.com", None, "https://x").is_none());
+    }
+
+    #[test]
+    fn token_is_required_for_verification_template() {
+        assert!(
+            render_mail(
+                purpose::VERIFY_EMAIL,
+                "user@example.com",
+                None,
+                "https://backup.example.com"
+            )
+            .is_none()
+        );
+        assert!(purpose_requires_token(purpose::VERIFY_EMAIL));
+        assert!(purpose_requires_token(purpose::TEST));
+        assert!(!purpose_requires_token(purpose::PASSWORD_CHANGED));
+        assert!(is_supported_purpose(purpose::EXISTING_ACCOUNT));
     }
 }

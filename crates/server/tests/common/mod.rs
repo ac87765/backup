@@ -257,6 +257,15 @@ pub fn test_config(static_dir: std::path::PathBuf) -> server::Config {
         mail: server::config::MailConfig::File {
             dir: std::env::temp_dir().join("backup-test-mail"),
         },
+        auth: server::config::AuthConfig {
+            pepper_version: 1,
+            pepper: server::config::Secret::new("test-pepper-value-0123456789abcdef"),
+            old_peppers: Vec::new(),
+            fake_salt_key: server::config::Secret::new("test-fake-salt-key-0123456789abcdef"),
+        },
+        public_app_url: "http://127.0.0.1:8080".to_owned(),
+        trusted_proxies: Vec::new(),
+        auth_rate_limit_per_minute: std::num::NonZeroU32::new(60).expect("60"),
     }
 }
 
@@ -384,6 +393,15 @@ pub fn serve_binary_env(settings: ServeEnvSettings<'_>) -> ServeBinaryEnv {
         (
             "BACKUP_MAIL_DIR".to_owned(),
             mail_dir.path().display().to_string(),
+        ),
+        ("BACKUP_AUTH_PEPPER_VERSION".to_owned(), "1".to_owned()),
+        (
+            "BACKUP_AUTH_PEPPER".to_owned(),
+            "test-pepper-value-0123456789abcdef".to_owned(),
+        ),
+        (
+            "BACKUP_AUTH_FAKE_SALT_KEY".to_owned(),
+            "test-fake-salt-key-0123456789abcdef".to_owned(),
         ),
     ];
     ServeBinaryEnv {

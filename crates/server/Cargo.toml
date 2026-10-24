@@ -31,12 +31,22 @@ path = "src/main.rs"
 # - lettre：design D13 选定的 SMTP 发送器；只用 tokio1 + rustls(ring) 特性。
 # - rand：重试抖动与邮件令牌；使用操作系统 CSPRNG。
 # - sha2：只保存邮件令牌的 SHA-256 哈希（user-accounts spec）。
+# - crypto-core：服务端复用 KdfParams 的 JSON 契约、范围校验与 AEAD 帧长度/版本常量。
+# - hmac：auth_hash / recovery_auth_hash = HMAC-SHA256(pepper, ...)（design D4/D5）。
+# - subtle：认证值与恢复认证值的常量时间比较（AGENTS.md 硬性规则）。
+# - governor：design D14 选定的进程内 IP 令牌桶限流器。
+# - ipnet：解析 `BACKUP_TRUSTED_PROXIES` 中的 CIDR，只信任配置的代理网段。
+# - time：会话时间戳（TIMESTAMPTZ）与 RFC 3339 响应字段。
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }
+crypto-core = { version = "0.1.0", path = "../crypto-core" }
 figment = "0.10"
+governor = { version = "0.8.1", default-features = false, features = ["std"] }
+hmac = "0.12"
+ipnet = "2"
 # lettre 的 tokio1-rustls-tls 使用 ring 后端（其 rustls-tls feature 明确包含 ring），
 # 不会重新引入 aws-lc-rs。
 lettre = { version = "0.11", default-features = false, features = [
@@ -79,7 +89,9 @@ sqlx = { version = "0.8", default-features = false, features = [
     "json",
     "time",
 ] }
+subtle = "2"
 thiserror = "2"
+time = { version = "0.3", features = ["serde", "formatting"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 # 流式消费 OpenDAL 的 Lister（list_with 会一次性物化全部结果，不能用它做 limit）。
@@ -88,7 +100,7 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.7", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
-utoipa = { version = "6", features = ["preserve_order"] }
+utoipa = { version = "6", features = ["preserve_order", "uuid"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # 测试依赖：

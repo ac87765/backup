@@ -5,7 +5,7 @@
 //! 客户端响应中不得出现 SQL、堆栈或内部标识。
 
 use axum::Json;
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -29,46 +29,134 @@ pub struct ApiError {
     status: StatusCode,
     code: &'static str,
     message: &'static str,
+    retry_after: Option<u64>,
 }
 
 impl ApiError {
+    fn new(status: StatusCode, code: &'static str, message: &'static str) -> Self {
+        Self {
+            status,
+            code,
+            message,
+            retry_after: None,
+        }
+    }
+
     /// 未预期的内部错误：记录详细原因，只向客户端返回通用信息。
     pub fn internal(error: impl std::fmt::Display) -> Self {
         tracing::error!(error = %error, "请求处理失败");
-        Self {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            code: "internal_error",
-            message: "服务器内部错误",
-        }
+        Self::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal_error",
+            "服务器内部错误",
+        )
     }
 
     pub fn not_found() -> Self {
-        Self {
-            status: StatusCode::NOT_FOUND,
-            code: "not_found",
-            message: "资源不存在",
-        }
+        Self::new(StatusCode::NOT_FOUND, "not_found", "资源不存在")
     }
 
     pub fn method_not_allowed() -> Self {
-        Self {
-            status: StatusCode::METHOD_NOT_ALLOWED,
-            code: "method_not_allowed",
-            message: "请求方法不被允许",
-        }
+        Self::new(
+            StatusCode::METHOD_NOT_ALLOWED,
+            "method_not_allowed",
+            "请求方法不被允许",
+        )
     }
 
     /// 请求体超过上限。注意：此错误在读取请求体之前产生。
     pub fn payload_too_large() -> Self {
-        Self {
-            status: StatusCode::PAYLOAD_TOO_LARGE,
-            code: "payload_too_large",
-            message: "请求体过大",
-        }
+        Self::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "payload_too_large",
+            "请求体过大",
+        )
+    }
+
+    /// 请求格式或字段校验失败（包括出现禁止字段）。
+    pub fn invalid_request() -> Self {
+        Self::new(StatusCode::BAD_REQUEST, "invalid_request", "请求参数无效")
+    }
+
+    /// KDF 参数缺失、算法未知或超出允许范围。
+    pub fn invalid_kdf_params() -> Self {
+        Self::new(
+            StatusCode::BAD_REQUEST,
+            "invalid_kdf_params",
+            "KDF 参数无效",
+        )
+    }
+
+    /// 密钥/包裹材料的编码、长度或版本字节不合法。
+    pub fn invalid_key_material() -> Self {
+        Self::new(
+            StatusCode::BAD_REQUEST,
+            "invalid_key_material",
+            "密钥材料无效",
+        )
+    }
+
+    /// 登录失败：邮箱不存在与认证密钥错误共用同一个错误。
+    pub fn invalid_credentials() -> Self {
+        Self::new(
+            StatusCode::UNAUTHORIZED,
+            "invalid_credentials",
+            "邮箱或密码错误",
+        )
+    }
+
+    /// 恢复密钥校验失败（与客户端解包失败使用同一错误码）。
+    pub fn invalid_recovery_key() -> Self {
+        Self::new(
+            StatusCode::UNAUTHORIZED,
+            "invalid_recovery_key",
+            "恢复密钥错误",
+        )
+    }
+
+    /// 未认证/会话已失效。
+    pub fn unauthenticated() -> Self {
+        Self::new(StatusCode::UNAUTHORIZED, "unauthenticated", "需要登录")
+    }
+
+    /// 邮箱验证令牌无效、过期或已使用。
+    pub fn invalid_token() -> Self {
+        Self::new(StatusCode::BAD_REQUEST, "invalid_token", "链接无效或已过期")
+    }
+
+    /// 缺少/错误的 CSRF 自定义头。
+    pub fn csrf_rejected() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "csrf_rejected", "缺少必要的请求头")
+    }
+
+    /// 账号因连续登录失败被临时锁定。
+    pub fn account_locked(retry_after: u64) -> Self {
+        let mut error = Self::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "account_temporarily_locked",
+            "账号已被临时锁定，请稍后重试",
+        );
+        error.retry_after = Some(retry_after.max(1));
+        error
+    }
+
+    /// IP 维度限流。
+    pub fn too_many_requests(retry_after: u64) -> Self {
+        let mut error = Self::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "请求过于频繁，请稍后重试",
+        );
+        error.retry_after = Some(retry_after.max(1));
+        error
     }
 
     pub fn status(&self) -> StatusCode {
         self.status
+    }
+
+    pub fn retry_after(&self) -> Option<u64> {
+        self.retry_after
     }
 }
 
@@ -79,7 +167,13 @@ impl IntoResponse for ApiError {
             message: self.message.to_owned(),
             request_id: request_id::current(),
         };
-        (self.status, Json(body)).into_response()
+        let mut response = (self.status, Json(body)).into_response();
+        if let Some(seconds) = self.retry_after
+            && let Ok(value) = HeaderValue::from_str(&seconds.to_string())
+        {
+            response.headers_mut().insert(header::RETRY_AFTER, value);
+        }
+        response
     }
 }
 

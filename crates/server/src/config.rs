@@ -8,12 +8,15 @@
 //!
 //! 本组只声明实际用到的配置项；pepper 等留到使用它们的功能组再加入。
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::net::SocketAddr;
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 
 use figment::Figment;
 use figment::providers::Serialized;
+use ipnet::IpNet;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde::de::Deserializer;
@@ -46,6 +49,48 @@ pub mod keys {
     pub const SMTP_PASSWORD: &str = "BACKUP_SMTP_PASSWORD";
     pub const SMTP_TLS: &str = "BACKUP_SMTP_TLS";
     pub const SMTP_ALLOW_INSECURE: &str = "BACKUP_SMTP_ALLOW_INSECURE";
+    pub const AUTH_PEPPER_VERSION: &str = "BACKUP_AUTH_PEPPER_VERSION";
+    pub const AUTH_PEPPER: &str = "BACKUP_AUTH_PEPPER";
+    pub const AUTH_OLD_PEPPERS: &str = "BACKUP_AUTH_OLD_PEPPERS";
+    pub const AUTH_FAKE_SALT_KEY: &str = "BACKUP_AUTH_FAKE_SALT_KEY";
+    pub const PUBLIC_APP_URL: &str = "BACKUP_PUBLIC_APP_URL";
+    pub const TRUSTED_PROXIES: &str = "BACKUP_TRUSTED_PROXIES";
+    pub const AUTH_RATE_LIMIT_PER_MINUTE: &str = "BACKUP_AUTH_RATE_LIMIT_PER_MINUTE";
+}
+
+/// 单个 pepper 的最小长度（字节）。
+///
+/// pepper 是 HMAC-SHA256 的密钥，本身不需要固定长度；这里只拒绝明显过短、
+/// 可被低成本穷举的配置值，避免生产环境误用 `secret` 之类的字符串。
+const MIN_PEPPER_BYTES: usize = 32;
+
+/// 认证相关配置：pepper 版本链 + prelogin 伪造盐密钥。
+///
+/// `Debug` 派生是安全的：[`Secret`] 的 `Debug` 固定输出 `[REDACTED]`。
+#[derive(Debug, Clone)]
+pub struct AuthConfig {
+    /// 当前 pepper 版本（新账号、以及升级成功后写入的版本）。
+    pub pepper_version: i32,
+    /// 当前 pepper。
+    pub pepper: Secret,
+    /// 旧 pepper 版本 → 值，用于登录/恢复校验后的渐进式升级。
+    pub old_peppers: Vec<(i32, Secret)>,
+    /// prelogin 对不存在邮箱生成确定性伪造盐所用的服务端密钥。
+    /// 必须与 pepper 分开配置。
+    pub fake_salt_key: Secret,
+}
+
+impl AuthConfig {
+    /// 按版本取 pepper；版本不存在时返回 `None`。
+    pub fn pepper_for(&self, version: i32) -> Option<&Secret> {
+        if version == self.pepper_version {
+            return Some(&self.pepper);
+        }
+        self.old_peppers
+            .iter()
+            .find(|(candidate, _)| *candidate == version)
+            .map(|(_, secret)| secret)
+    }
 }
 
 /// 启动配置错误。
@@ -271,6 +316,14 @@ pub struct Config {
     /// 是否在本进程内运行后台任务（design D10；关闭后可拆分为独立 worker）。
     pub jobs_enabled: bool,
     pub mail: MailConfig,
+    /// pepper 版本链与 prelogin 伪造盐密钥。
+    pub auth: AuthConfig,
+    /// 邮件中链接使用的前端外部地址（令牌只放在 `#token=` 片段里）。
+    pub public_app_url: String,
+    /// 只信任这些代理网段传来的 `X-Forwarded-For`（design D14）。
+    pub trusted_proxies: Vec<IpNet>,
+    /// 每个 IP 每分钟允许的认证类请求数（进程内令牌桶）。
+    pub auth_rate_limit_per_minute: NonZeroU32,
 }
 
 impl Config {
@@ -337,6 +390,10 @@ impl Config {
             keys::JOBS_ENABLED,
         )?;
         let mail = parse_mail_config(figment)?;
+        let auth = parse_auth_config(figment)?;
+        let public_app_url = parse_public_app_url(figment)?;
+        let trusted_proxies = parse_trusted_proxies(figment)?;
+        let auth_rate_limit_per_minute = parse_auth_rate_limit(figment)?;
 
         Ok(Self {
             bind_addr,
@@ -355,8 +412,149 @@ impl Config {
             },
             jobs_enabled,
             mail,
+            auth,
+            public_app_url,
+            trusted_proxies,
+            auth_rate_limit_per_minute,
         })
     }
+}
+
+/// 解析 pepper 版本链与 prelogin 伪造盐密钥。
+fn parse_auth_config(figment: &Figment) -> Result<AuthConfig, ConfigError> {
+    let pepper_version = parse_i32(
+        &required_string(figment, keys::AUTH_PEPPER_VERSION)?,
+        keys::AUTH_PEPPER_VERSION,
+        1..=i32::MAX,
+    )?;
+    let pepper = required_secret(figment, keys::AUTH_PEPPER)?;
+    if pepper.expose().len() < MIN_PEPPER_BYTES {
+        return Err(ConfigError::invalid(
+            keys::AUTH_PEPPER,
+            "pepper 至少需要 32 字节",
+        ));
+    }
+
+    let fake_salt_key = required_secret(figment, keys::AUTH_FAKE_SALT_KEY)?;
+    if fake_salt_key.expose().len() < MIN_PEPPER_BYTES {
+        return Err(ConfigError::invalid(
+            keys::AUTH_FAKE_SALT_KEY,
+            "伪造盐密钥至少需要 32 字节",
+        ));
+    }
+    if fake_salt_key.expose() == pepper.expose() {
+        return Err(ConfigError::invalid(
+            keys::AUTH_FAKE_SALT_KEY,
+            "伪造盐密钥必须与 pepper 分开",
+        ));
+    }
+
+    let mut old_peppers = Vec::new();
+    if let Some(raw) = optional_string(figment, keys::AUTH_OLD_PEPPERS)? {
+        let parsed: BTreeMap<String, String> = serde_json::from_str(&raw).map_err(|_| {
+            ConfigError::invalid(
+                keys::AUTH_OLD_PEPPERS,
+                "必须是 {\"版本\":\"pepper\"} 形式的 JSON 对象",
+            )
+        })?;
+        for (version, value) in parsed {
+            let version: i32 = version.parse().map_err(|_| {
+                ConfigError::invalid(keys::AUTH_OLD_PEPPERS, "旧 pepper 版本必须是正整数")
+            })?;
+            if version <= 0 {
+                return Err(ConfigError::invalid(
+                    keys::AUTH_OLD_PEPPERS,
+                    "旧 pepper 版本必须是正整数",
+                ));
+            }
+            if version == pepper_version {
+                return Err(ConfigError::invalid(
+                    keys::AUTH_OLD_PEPPERS,
+                    "旧 pepper 版本不能与当前版本相同",
+                ));
+            }
+            if value.len() < MIN_PEPPER_BYTES {
+                return Err(ConfigError::invalid(
+                    keys::AUTH_OLD_PEPPERS,
+                    "旧 pepper 至少需要 32 字节",
+                ));
+            }
+            old_peppers.push((version, Secret::new(value)));
+        }
+        old_peppers.sort_by_key(|(version, _)| *version);
+    }
+
+    Ok(AuthConfig {
+        pepper_version,
+        pepper,
+        old_peppers,
+        fake_salt_key,
+    })
+}
+
+/// 邮件链接使用的前端外部地址。
+fn parse_public_app_url(figment: &Figment) -> Result<String, ConfigError> {
+    let value = string_with_default(figment, keys::PUBLIC_APP_URL, "http://127.0.0.1:8080")?;
+    let uri: axum::http::Uri = value
+        .parse()
+        .map_err(|_| ConfigError::invalid(keys::PUBLIC_APP_URL, "必须是合法的 http(s) URL"))?;
+    if !matches!(uri.scheme_str(), Some("http") | Some("https")) || uri.authority().is_none() {
+        return Err(ConfigError::invalid(
+            keys::PUBLIC_APP_URL,
+            "必须是合法的 http(s) URL",
+        ));
+    }
+    if value.contains('?') || value.contains('#') {
+        return Err(ConfigError::invalid(
+            keys::PUBLIC_APP_URL,
+            "不能包含查询串或片段",
+        ));
+    }
+    Ok(value.trim_end_matches('/').to_owned())
+}
+
+/// 解析可信代理网段列表（逗号分隔的 CIDR，也接受裸 IP）。
+fn parse_trusted_proxies(figment: &Figment) -> Result<Vec<IpNet>, ConfigError> {
+    let Some(raw) = optional_string(figment, keys::TRUSTED_PROXIES)? else {
+        return Ok(Vec::new());
+    };
+    let mut networks = Vec::new();
+    for part in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
+        let candidate = if part.contains('/') {
+            part.to_owned()
+        } else {
+            // 裸 IP 视为单个地址（IPv4 /32、IPv6 /128）。
+            let ip: std::net::IpAddr = part.parse().map_err(|_| {
+                ConfigError::invalid(keys::TRUSTED_PROXIES, "必须是逗号分隔的 CIDR 或 IP 地址")
+            })?;
+            match ip {
+                std::net::IpAddr::V4(_) => format!("{ip}/32"),
+                std::net::IpAddr::V6(_) => format!("{ip}/128"),
+            }
+        };
+        let network = candidate.parse::<IpNet>().map_err(|_| {
+            ConfigError::invalid(keys::TRUSTED_PROXIES, "必须是逗号分隔的 CIDR 或 IP 地址")
+        })?;
+        networks.push(network);
+    }
+    Ok(networks)
+}
+
+/// 每个 IP 每分钟的认证类请求上限。
+fn parse_auth_rate_limit(figment: &Figment) -> Result<NonZeroU32, ConfigError> {
+    let value = parse_u32(
+        &string_with_default(figment, keys::AUTH_RATE_LIMIT_PER_MINUTE, "60")?,
+        keys::AUTH_RATE_LIMIT_PER_MINUTE,
+        1..=100_000,
+    )?;
+    NonZeroU32::new(value).ok_or(ConfigError::invalid(
+        keys::AUTH_RATE_LIMIT_PER_MINUTE,
+        "必须是正整数",
+    ))
 }
 
 /// 只解析数据库配置（`serve` 与 `migrate` 共用）。
@@ -548,6 +746,20 @@ fn parse_socket_addr(value: &str, env_key: &'static str) -> Result<SocketAddr, C
     })
 }
 
+fn parse_i32(
+    value: &str,
+    env_key: &'static str,
+    range: std::ops::RangeInclusive<i32>,
+) -> Result<i32, ConfigError> {
+    let parsed = value
+        .parse::<i32>()
+        .map_err(|_| ConfigError::invalid(env_key, "必须是正整数"))?;
+    if !range.contains(&parsed) {
+        return Err(ConfigError::invalid(env_key, "超出允许范围"));
+    }
+    Ok(parsed)
+}
+
 fn parse_u32(
     value: &str,
     env_key: &'static str,
@@ -660,6 +872,9 @@ mod tests {
             ("storage_secret_access_key", "minio-secret-key-value"),
             ("storage_allow_http", "true"),
             ("mail_mode", "file"),
+            ("auth_pepper_version", "1"),
+            ("auth_pepper", "test-pepper-value-0123456789abcdef"),
+            ("auth_fake_salt_key", "test-fake-salt-key-0123456789abcdef"),
         ]
     }
 
@@ -1114,5 +1329,171 @@ mod tests {
                 reason: "必须是 true 或 false"
             }
         );
+    }
+
+    #[test]
+    fn auth_pepper_is_required_and_redacted() {
+        let pairs: Vec<_> = complete_pairs()
+            .into_iter()
+            .filter(|(key, _)| *key != "auth_pepper")
+            .collect();
+        let err = load(&pairs).expect_err("缺少 pepper 必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Missing {
+                key: keys::AUTH_PEPPER
+            }
+        );
+
+        let config = load(&complete_pairs()).expect("配置应当合法");
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("test-pepper-value-0123456789abcdef"));
+        assert!(!debug.contains("test-fake-salt-key-0123456789abcdef"));
+        assert!(debug.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn short_pepper_is_rejected() {
+        let mut pairs = complete_pairs();
+        pairs.retain(|(key, _)| *key != "auth_pepper");
+        pairs.push(("auth_pepper", "too-short"));
+        let err = load(&pairs).expect_err("过短 pepper 必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::AUTH_PEPPER,
+                reason: "pepper 至少需要 32 字节"
+            }
+        );
+    }
+
+    #[test]
+    fn fake_salt_key_must_be_configured_separately() {
+        let mut pairs = complete_pairs();
+        pairs.retain(|(key, _)| *key != "auth_fake_salt_key");
+        pairs.push(("auth_fake_salt_key", "test-pepper-value-0123456789abcdef"));
+        let err = load(&pairs).expect_err("伪造盐密钥不得与 pepper 相同");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::AUTH_FAKE_SALT_KEY,
+                reason: "伪造盐密钥必须与 pepper 分开"
+            }
+        );
+    }
+
+    #[test]
+    fn old_peppers_are_parsed_and_looked_up_by_version() {
+        let mut pairs = complete_pairs();
+        pairs.push((
+            "auth_old_peppers",
+            r#"{"1":"old-pepper-value-0123456789abcdef"}"#,
+        ));
+        pairs.push(("auth_pepper_version", "2"));
+        let config = load(&pairs).expect("配置应当合法");
+        assert_eq!(config.auth.pepper_version, 2);
+        assert!(config.auth.pepper_for(1).is_some());
+        assert!(config.auth.pepper_for(2).is_some());
+        assert!(config.auth.pepper_for(3).is_none());
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("old-pepper-value-0123456789abcdef"));
+    }
+
+    #[test]
+    fn old_pepper_version_cannot_equal_current_version() {
+        let mut pairs = complete_pairs();
+        pairs.push((
+            "auth_old_peppers",
+            r#"{"1":"old-pepper-value-0123456789abcdef"}"#,
+        ));
+        let err = load(&pairs).expect_err("旧 pepper 版本不得与当前版本相同");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::AUTH_OLD_PEPPERS,
+                reason: "旧 pepper 版本不能与当前版本相同"
+            }
+        );
+    }
+
+    #[test]
+    fn invalid_old_peppers_json_is_rejected() {
+        let mut pairs = complete_pairs();
+        pairs.push(("auth_old_peppers", "not-json"));
+        let err = load(&pairs).expect_err("非法旧 pepper JSON 必须失败");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: keys::AUTH_OLD_PEPPERS,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn trusted_proxies_accept_cidrs_and_bare_ips() {
+        let mut pairs = complete_pairs();
+        pairs.push(("trusted_proxies", "127.0.0.1/32, 10.0.0.0/8, 2001:db8::1"));
+        let config = load(&pairs).expect("配置应当合法");
+        assert_eq!(config.trusted_proxies.len(), 3);
+        let private: std::net::IpAddr = "10.1.2.3".parse().expect("IP");
+        let v6: std::net::IpAddr = "2001:db8::1".parse().expect("IP");
+        assert!(
+            config
+                .trusted_proxies
+                .iter()
+                .any(|network| network.contains(&private))
+        );
+        assert!(
+            config
+                .trusted_proxies
+                .iter()
+                .any(|network| network.contains(&v6))
+        );
+
+        let mut pairs = complete_pairs();
+        pairs.push(("trusted_proxies", "not-an-ip"));
+        let err = load(&pairs).expect_err("非法代理网段必须失败");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: keys::TRUSTED_PROXIES,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn public_app_url_defaults_and_rejects_invalid_scheme() {
+        let config = load(&complete_pairs()).expect("配置应当合法");
+        assert_eq!(config.public_app_url, "http://127.0.0.1:8080");
+
+        let mut pairs = complete_pairs();
+        pairs.push(("public_app_url", "ftp://example.com"));
+        let err = load(&pairs).expect_err("非 http(s) URL 必须失败");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: keys::PUBLIC_APP_URL,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn auth_rate_limit_defaults_and_rejects_zero() {
+        let config = load(&complete_pairs()).expect("配置应当合法");
+        assert_eq!(config.auth_rate_limit_per_minute.get(), 60);
+
+        let mut pairs = complete_pairs();
+        pairs.push(("auth_rate_limit_per_minute", "0"));
+        let err = load(&pairs).expect_err("限流为 0 必须失败");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: keys::AUTH_RATE_LIMIT_PER_MINUTE,
+                ..
+            }
+        ));
     }
 }

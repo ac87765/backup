@@ -6,6 +6,7 @@
 //! - 通过 [`TaskTracker`] 跟踪后台任务；停机后不再领取新任务（第 5 组接入后生效）。
 
 use std::future::{Future, IntoFuture};
+use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -160,7 +161,9 @@ pub async fn serve_with_shutdown(
     shutdown: &Shutdown,
 ) -> std::io::Result<()> {
     let token = shutdown.token();
-    let server = axum::serve(listener, router)
+    // 注入 ConnectInfo：IP 限流与可信代理判断需要建连对端地址。
+    let make_service = router.into_make_service_with_connect_info::<SocketAddr>();
+    let server = axum::serve(listener, make_service)
         .with_graceful_shutdown(async move { token.cancelled().await })
         .into_future();
     tokio::pin!(server);

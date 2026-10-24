@@ -379,6 +379,7 @@ async fn logs_never_contain_secrets_bodies_or_presigned_urls() {
                 .method("POST")
                 // 查询串里的预签名签名绝不能被记录。
                 .uri("/api/v1/unknown?X-Amz-Signature=presign-signature-marker")
+                .header("x-requested-with", "backup-web")
                 .header(header::COOKIE, "__Host-session=session-token-marker")
                 .header(
                     header::AUTHORIZATION,

@@ -96,6 +96,7 @@ pub fn start(
     storage: Arc<Storage>,
     mailer: Arc<dyn Mailer>,
     recipient_resolver: Arc<dyn email::RecipientResolver>,
+    public_app_url: String,
     shutdown: &Shutdown,
     jobs_enabled: bool,
 ) {
@@ -114,10 +115,12 @@ pub fn start(
         database.clone(),
         mailer,
         recipient_resolver,
+        public_app_url,
         token.clone(),
     )));
-    // 本组没有业务扫描任务；第 6 组起把任务注册到这里。
-    drop(shutdown.spawn(scan::run_loop(database.clone(), Vec::new(), token.clone())));
+    // 扫描型任务：第 6 组起注册过期会话/邮件令牌清理。
+    let scan_jobs: Vec<Arc<dyn scan::ScanJob>> = vec![Arc::new(scan::ExpiredTokenCleanup)];
+    drop(shutdown.spawn(scan::run_loop(database.clone(), scan_jobs, token.clone())));
     drop(shutdown.spawn(metrics::sampler_loop(database, token)));
     tracing::info!("后台任务已启动");
 }

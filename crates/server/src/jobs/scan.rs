@@ -123,6 +123,70 @@ pub async fn run_loop(
     }
 }
 
+/// 扫描型任务：清理过期会话与过期/已用邮件令牌（task 6.4 / 第 5 组遗留）。
+pub struct ExpiredTokenCleanup;
+
+#[async_trait]
+impl ScanJob for ExpiredTokenCleanup {
+    fn job_id(&self) -> i32 {
+        super::job_ids::EXPIRED_TOKEN_CLEANUP
+    }
+
+    fn name(&self) -> &'static str {
+        "expired_token_cleanup"
+    }
+
+    fn interval(&self) -> Duration {
+        Duration::from_secs(60 * 60)
+    }
+
+    async fn run_batch(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        limit: i64,
+    ) -> Result<u64, sqlx::Error> {
+        // 绝对过期、空闲超过 7 天、或已撤销的会话都可以删除。
+        let sessions = sqlx::query!(
+            r#"
+            WITH doomed AS (
+                SELECT id
+                FROM sessions
+                WHERE expires_at <= now()
+                   OR last_seen_at <= now() - make_interval(days => 7)
+                   OR revoked_at IS NOT NULL
+                ORDER BY id
+                LIMIT $1
+            )
+            DELETE FROM sessions WHERE id IN (SELECT id FROM doomed)
+            "#,
+            limit,
+        )
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+
+        // 过期或已使用的令牌不再需要保留。
+        let tokens = sqlx::query!(
+            r#"
+            WITH doomed AS (
+                SELECT id
+                FROM email_tokens
+                WHERE expires_at <= now() OR used_at IS NOT NULL
+                ORDER BY id
+                LIMIT $1
+            )
+            DELETE FROM email_tokens WHERE id IN (SELECT id FROM doomed)
+            "#,
+            limit,
+        )
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+
+        Ok(sessions + tokens)
+    }
+}
+
 fn instant_after(interval: Duration) -> Instant {
     let jitter = if interval.is_zero() {
         Duration::ZERO

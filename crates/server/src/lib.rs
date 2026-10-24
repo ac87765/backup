@@ -4,6 +4,7 @@
 //! 以便集成测试直接构造应用（不启动真实进程也能覆盖中间件与错误映射）。
 
 pub mod api;
+pub mod auth;
 pub mod config;
 pub mod db;
 pub mod error;

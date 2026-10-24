@@ -21,30 +21,41 @@ use super::LeaseConfig;
 use super::metrics;
 use super::retry::backoff_delay;
 use crate::Database;
-use crate::mail::{Mailer, RenderedMail, render_test_mail};
+use crate::mail::{
+    Mailer, RenderedMail, is_supported_purpose, purpose_requires_token, render_mail,
+};
+
+pub use crate::mail::purpose::{
+    EXISTING_ACCOUNT, PASSWORD_CHANGED, RECOVERY_KEY_CHANGED, VERIFY_EMAIL,
+};
 
 /// 一批领取的最大行数。
 ///
 /// 邮件发送是慢操作（含网络往返），批次比删除队列小，避免一批占用租约过久。
 pub const BATCH_SIZE: i64 = 20;
-/// 邮件令牌有效期（第 6 组验证接口使用）。
+/// 邮件令牌有效期（与 [`crate::auth::EMAIL_TOKEN_TTL_HOURS`] 一致）。
 const TOKEN_TTL_HOURS: i32 = 24;
-/// 本组唯一支持的测试模板。
-pub const PURPOSE_TEST: &str = "test";
+/// 测试模板常量（第 5 组测试使用）。
+pub const PURPOSE_TEST: &str = crate::mail::purpose::TEST;
 
-/// 收件人解析抽象（第 6 组接入 users 表查询）。
+/// 收件人解析抽象（测试可注入固定收件人）。
 #[async_trait]
 pub trait RecipientResolver: Send + Sync {
     async fn resolve(&self, pool: &PgPool, user_id: Uuid) -> Result<Option<String>, sqlx::Error>;
 }
 
-/// 第 6 组之前的占位实现：无法解析收件人，邮件会按失败重试（本组没有业务邮件）。
-pub struct UnavailableRecipientResolver;
+/// 生产实现：按 `users.id` 查询规范化后的邮箱。
+pub struct SqlRecipientResolver;
 
 #[async_trait]
-impl RecipientResolver for UnavailableRecipientResolver {
-    async fn resolve(&self, _pool: &PgPool, _user_id: Uuid) -> Result<Option<String>, sqlx::Error> {
-        Ok(None)
+impl RecipientResolver for SqlRecipientResolver {
+    async fn resolve(&self, pool: &PgPool, user_id: Uuid) -> Result<Option<String>, sqlx::Error> {
+        sqlx::query_scalar!(
+            r#"SELECT email::text AS "email!" FROM users WHERE id = $1"#,
+            user_id,
+        )
+        .fetch_optional(pool)
+        .await
     }
 }
 
@@ -193,9 +204,18 @@ pub async fn run_batch(
     database: &Database,
     mailer: &Arc<dyn Mailer>,
     resolver: &Arc<dyn RecipientResolver>,
+    public_app_url: &str,
     limit: i64,
 ) -> Result<EmailStats, sqlx::Error> {
-    run_batch_with_lease(database, mailer, resolver, limit, LeaseConfig::DEFAULT).await
+    run_batch_with_lease(
+        database,
+        mailer,
+        resolver,
+        public_app_url,
+        limit,
+        LeaseConfig::DEFAULT,
+    )
+    .await
 }
 
 /// 使用指定租约处理一批邮件。
@@ -203,6 +223,7 @@ pub async fn run_batch_with_lease(
     database: &Database,
     mailer: &Arc<dyn Mailer>,
     resolver: &Arc<dyn RecipientResolver>,
+    public_app_url: &str,
     limit: i64,
     lease: LeaseConfig,
 ) -> Result<EmailStats, sqlx::Error> {
@@ -231,7 +252,7 @@ pub async fn run_batch_with_lease(
 
         let item = &claimed[index];
         index += 1;
-        if item.purpose != PURPOSE_TEST {
+        if !is_supported_purpose(&item.purpose) {
             // 未知模板属于配置/代码错误，但仍按失败重试，避免静默丢邮件。
             if fail(
                 database.pool(),
@@ -272,32 +293,58 @@ pub async fn run_batch_with_lease(
             Err(error) => return Err(error),
         };
 
-        let token = generate_token();
-        let token_hash = hash_token(&token);
-        let mut tx = database.pool().begin().await?;
-        // 重试时让旧令牌失效：只保留本次生成的未使用令牌。
-        sqlx::query!(
-            "DELETE FROM email_tokens WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL",
-            item.user_id,
-            item.purpose.as_str(),
-        )
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query!(
-            r#"
-            INSERT INTO email_tokens (user_id, purpose, token_hash, expires_at)
-            VALUES ($1, $2, $3, now() + make_interval(hours => $4))
-            "#,
-            item.user_id,
-            item.purpose.as_str(),
-            token_hash,
-            TOKEN_TTL_HOURS,
-        )
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
+        // 只有验证/测试邮件需要令牌；通知邮件不产生无意义的令牌行。
+        let token = if purpose_requires_token(&item.purpose) {
+            Some(generate_token())
+        } else {
+            None
+        };
+        if let Some(token) = token.as_deref() {
+            let token_hash = hash_token(token);
+            let mut tx = database.pool().begin().await?;
+            // 重试时让旧令牌失效：只保留本次生成的未使用令牌。
+            sqlx::query!(
+                "DELETE FROM email_tokens WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL",
+                item.user_id,
+                item.purpose.as_str(),
+            )
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query!(
+                r#"
+                INSERT INTO email_tokens (user_id, purpose, token_hash, expires_at)
+                VALUES ($1, $2, $3, now() + make_interval(hours => $4))
+                "#,
+                item.user_id,
+                item.purpose.as_str(),
+                token_hash,
+                TOKEN_TTL_HOURS,
+            )
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
+        }
 
-        let (subject, body) = render_test_mail(&recipient, &token);
+        let Some((subject, body)) =
+            render_mail(&item.purpose, &recipient, token.as_deref(), public_app_url)
+        else {
+            // 理论上已被 is_supported_purpose 拦截；防御性处理。
+            if fail(
+                database.pool(),
+                item.id,
+                item.claim_token,
+                item.attempts + 1,
+                "unsupported_purpose",
+            )
+            .await?
+            {
+                stats.failed += 1;
+                metrics::record_failure("email_outbox");
+            } else {
+                stats.lease_lost += 1;
+            }
+            continue;
+        };
         let mail = RenderedMail {
             outbox_id: item.id,
             to: recipient,
@@ -352,13 +399,14 @@ pub async fn worker_loop(
     database: Database,
     mailer: Arc<dyn Mailer>,
     resolver: Arc<dyn RecipientResolver>,
+    public_app_url: String,
     shutdown: CancellationToken,
 ) {
     loop {
         if shutdown.is_cancelled() {
             break;
         }
-        match run_batch(&database, &mailer, &resolver, BATCH_SIZE).await {
+        match run_batch(&database, &mailer, &resolver, &public_app_url, BATCH_SIZE).await {
             Ok(stats) if stats.claimed > 0 => {
                 tracing::debug!(
                     claimed = stats.claimed,

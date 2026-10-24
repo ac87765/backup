@@ -7,6 +7,7 @@
 //! - 统一错误体 `{code, message, request_id}`；500 只返回通用信息。
 
 pub mod body_limit;
+pub mod csrf;
 pub mod error;
 pub mod health;
 pub mod logging;
@@ -19,7 +20,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn;
-use axum::routing::get;
+use axum::routing::{delete, get, post};
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::{Config, Database, Storage, metrics};
@@ -33,14 +34,20 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub database: Database,
     pub storage: Arc<Storage>,
+    pub auth: Arc<crate::auth::AuthContext>,
 }
 
 impl AppState {
     pub fn new(config: Config, database: Database, storage: Storage) -> Self {
+        let auth = Arc::new(crate::auth::AuthContext::new(
+            config.auth.clone(),
+            config.auth_rate_limit_per_minute,
+        ));
         Self {
             config: Arc::new(config),
             database,
             storage: Arc::new(storage),
+            auth,
         }
     }
 }
@@ -64,6 +71,34 @@ pub fn build_router_with(state: AppState, extra: Router<AppState>) -> Router {
         .fallback(ServeFile::new(index));
 
     let api = Router::new()
+        .route("/v1/auth/prelogin", post(crate::auth::routes::prelogin))
+        .route("/v1/auth/register", post(crate::auth::routes::register))
+        .route(
+            "/v1/auth/verify-email",
+            post(crate::auth::routes::verify_email),
+        )
+        .route(
+            "/v1/auth/resend-verification",
+            post(crate::auth::routes::resend_verification),
+        )
+        .route("/v1/auth/login", post(crate::auth::routes::login))
+        .route("/v1/auth/logout", post(crate::auth::routes::logout))
+        .route("/v1/auth/me", get(crate::auth::routes::me))
+        .route("/v1/auth/sessions", get(crate::auth::routes::list_sessions))
+        .route(
+            "/v1/auth/sessions/{session_id}",
+            delete(crate::auth::routes::revoke_session),
+        )
+        .route(
+            "/v1/auth/change-password",
+            post(crate::auth::routes::change_password),
+        )
+        .route("/v1/auth/recover", post(crate::auth::routes::recover))
+        .route(
+            "/v1/auth/rotate-recovery-key",
+            post(crate::auth::routes::rotate_recovery_key),
+        )
+        .layer(from_fn(csrf::require_custom_header))
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_method_not_allowed);
 
