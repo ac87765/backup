@@ -35,4 +35,23 @@ export default defineConfig([
       ],
     },
   },
+  {
+    // 密钥与 WASM 只能存在于 Web Worker：主线程代码不得直接 import。
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/worker/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/generated/crypto-wasm/**', '**/crypto-backend'],
+              message:
+                'WASM 与密钥只能存在于 Web Worker；主线程请使用 src/worker/client.ts',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ])

@@ -8,19 +8,27 @@
   },
   "scripts": {
     "dev": "vite",
+    "build:wasm": "wasm-pack build ../crates/crypto-wasm --target web --release --no-opt --out-dir ../../web/src/generated/crypto-wasm --out-name crypto_wasm",
+    "predev": "npm run build:wasm",
     "build": "tsc -b && vite build",
+    "prebuild": "npm run build:wasm",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "test": "vitest run",
+    "pretest": "npm run build:wasm",
     "test:watch": "vitest",
+    "e2e:preview": "npm run build && vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "test:e2e": "playwright test",
     "preview": "vite preview"
   },
   "dependencies": {
+    "comlink": "^4.4.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
@@ -41,3 +49,4 @@
     "vitest": "^5.0.5"
   }
 }
+
