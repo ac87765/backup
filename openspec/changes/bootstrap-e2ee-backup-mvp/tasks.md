@@ -2,11 +2,11 @@
 
 ## 1. 工程脚手架
 
-- [ ] 1.1 建立 Cargo workspace（`crates/crypto-core`、`crates/crypto-wasm`、`crates/server`），edition 2024、统一 lints（`unwrap_used`/`expect_used` deny），验证 `cargo build --workspace` 与 `cargo clippy --workspace -- -D warnings` 通过
-- [ ] 1.2 建立 `web/`（Vite + React + TS strict + ESLint + Vitest + Tailwind），验证 `npm run build`、`npm run lint`、`npm test` 通过
-- [ ] 1.3 编写 `deploy/docker-compose.dev.yml`（PostgreSQL 16 + MinIO + 自动建 bucket 与 CORS），验证 `docker compose up` 后两服务健康
-- [ ] 1.4 配置 CI：fmt、clippy、test、`cargo deny check`、前端 typecheck/lint/test、wasm 构建，验证在空实现上流水线全绿
-- [ ] 1.5 添加 `.gitignore`、`rust-toolchain.toml`、`deny.toml`、`README.md`（本地开发启动步骤），按 README 从零启动验证可行
+- [x] 1.1 建立 Cargo workspace（`crates/crypto-core`、`crates/crypto-wasm`、`crates/server`），edition 2024、统一 lints（`unwrap_used`/`expect_used` deny），验证 `cargo build --workspace` 与 `cargo clippy --workspace -- -D warnings` 通过
+- [x] 1.2 建立 `web/`（Vite + React + TS strict + ESLint + Vitest + Tailwind），验证 `npm run build`、`npm run lint`、`npm test` 通过
+- [x] 1.3 编写 `deploy/docker-compose.dev.yml`（PostgreSQL 16 + MinIO + 自动建 bucket 与 CORS），验证 `docker compose up` 后两服务健康
+- [x] 1.4 配置 CI：fmt、clippy、test、`cargo deny check`、前端 typecheck/lint/test、wasm 构建，验证在空实现上流水线全绿
+- [x] 1.5 添加 `.gitignore`、`rust-toolchain.toml`、`deny.toml`、`README.md`（本地开发启动步骤），按 README 从零启动验证可行
 
 ## 2. 加密核心 crypto-core
 
