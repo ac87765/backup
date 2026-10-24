@@ -25,6 +25,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use opendal::Operator;
+use tokio_stream::StreamExt;
 use uuid::Uuid;
 
 use crate::config::{StorageConfig, StorageKind};
@@ -422,23 +423,31 @@ impl ObjectBackend for OpenDalBackend {
     }
 
     async fn list(&self, prefix: &str, limit: usize) -> Result<Vec<ObjectEntry>, StorageError> {
-        let entries = self
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        // 不能用 `list_with(..).limit(n)`：那只是每页大小的提示，底层仍会翻完所有分页
+        // 并把结果全部物化到内存。`lister_with` 是流式的，读取到 n 条后立即停止。
+        let mut lister = self
             .internal
-            .list_with(prefix)
+            .lister_with(prefix)
             .limit(limit)
             .await
             .map_err(StorageError::Operation)?;
-        Ok(entries
-            .into_iter()
-            .map(|entry| {
-                let metadata = entry.metadata();
-                ObjectEntry {
-                    key: entry.path().to_owned(),
-                    size: metadata.content_length(),
-                    is_dir: metadata.is_dir(),
-                }
-            })
-            .collect())
+        let mut entries = Vec::with_capacity(limit.min(128));
+        while let Some(entry) = lister.next().await {
+            let entry = entry.map_err(StorageError::Operation)?;
+            let metadata = entry.metadata();
+            entries.push(ObjectEntry {
+                key: entry.path().to_owned(),
+                size: metadata.content_length(),
+                is_dir: metadata.is_dir(),
+            });
+            if entries.len() >= limit {
+                break;
+            }
+        }
+        Ok(entries)
     }
 
     async fn delete(&self, object_key: &str) -> Result<(), StorageError> {

@@ -35,6 +35,12 @@ async fn slow_request(ExtractExtension(state): ExtractExtension<SlowState>) -> &
     "slow-request-completed"
 }
 
+async fn short_request(ExtractExtension(state): ExtractExtension<SlowState>) -> &'static str {
+    state.started.notify_one();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    "short-request-completed"
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn in_flight_request_completes_and_new_connections_are_rejected() {
     let (_dir, root) = static_fixture();
@@ -111,6 +117,68 @@ async fn background_tasks_are_tracked_and_awaited() {
         "后台任务应当在宽限期内结束"
     );
     assert!(finished.load(Ordering::SeqCst));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn requests_and_background_tasks_share_one_shutdown_deadline() {
+    let (_dir, root) = static_fixture();
+    let started = Arc::new(Notify::new());
+    let extra = Router::<AppState>::new()
+        .route("/test/short", get(short_request))
+        .layer(Extension(SlowState {
+            started: started.clone(),
+        }));
+    let app = build_router_with(test_state(test_config(root)), extra);
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("绑定测试端口");
+    let address = listener.local_addr().expect("本地地址");
+
+    // 用较短的期限做测试；生产默认 30 秒。
+    let shutdown = Shutdown::with_grace(Duration::from_millis(300));
+    // 一个不响应取消的慢后台任务：它不可能在总期限内结束。
+    shutdown.spawn(async {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    });
+
+    let server_shutdown = shutdown.clone();
+    let server =
+        tokio::spawn(async move { serve_with_shutdown(listener, app, &server_shutdown).await });
+    let client = tokio::spawn(async move {
+        reqwest::get(format!("http://{address}/test/short"))
+            .await
+            .expect("请求应当建立")
+    });
+
+    started.notified().await;
+    let stopped_at = Instant::now();
+    shutdown.cancel();
+
+    // 在途请求正常完成。
+    let response = client.await.expect("客户端任务");
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert_eq!(
+        response.text().await.expect("读取响应体"),
+        "short-request-completed"
+    );
+
+    let server_result = tokio::time::timeout(Duration::from_secs(3), server)
+        .await
+        .expect("服务应当在总期限内退出")
+        .expect("服务任务不应 panic");
+    assert!(server_result.is_ok());
+
+    // 后台任务没机会在总期限内结束：等待它时只能使用剩余预算，而不是再给 30 秒。
+    assert!(
+        !shutdown.wait_background_remaining().await,
+        "慢后台任务不应被报告为已完成"
+    );
+    let elapsed = stopped_at.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "停机总时间必须受单一截止时间限制（测试期限 300ms），实际 {elapsed:?}"
+    );
 }
 
 #[cfg(unix)]

@@ -80,6 +80,46 @@ async fn presigned_put_and_get_roundtrip() {
 }
 
 #[tokio::test]
+async fn list_prefix_stops_after_limit() {
+    let storage = async_storage().await;
+    let user = Uuid::new_v4();
+    let prefix = format!("v1/{user}/");
+    let client = reqwest::Client::new();
+
+    // 同一前缀下放 3 个对象，验证 limit 是真正的截断，而不是“每页大小提示”。
+    for index in 0..3 {
+        let key = ObjectKey::generate(user);
+        let url = storage
+            .presign_write(&key, Duration::from_secs(60))
+            .await
+            .expect("生成预签名 PUT");
+        let response = client
+            .put(url.url())
+            .body(format!("payload-{index}"))
+            .send()
+            .await
+            .expect("上传对象");
+        assert!(response.status().is_success());
+    }
+
+    let limited = storage.list_prefix(&prefix, 1).await.expect("list limit 1");
+    assert_eq!(
+        limited.len(),
+        1,
+        "limit 1 必须立即停止，实际返回 {} 条: {limited:?}",
+        limited.len()
+    );
+
+    let all = storage
+        .list_prefix(&prefix, 10)
+        .await
+        .expect("list limit 10");
+    assert_eq!(all.len(), 3, "应能看到同前缀下的全部 3 个对象");
+
+    storage.probe().await.expect("probe 行为保持不变");
+}
+
+#[tokio::test]
 async fn missing_object_stats_as_none() {
     let storage = async_storage().await;
     let key = ObjectKey::generate(Uuid::new_v4());

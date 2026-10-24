@@ -75,7 +75,7 @@ async fn serve() -> anyhow::Result<()> {
     let storage = Storage::new(&config.storage)?;
 
     let shutdown = shutdown::Shutdown::new();
-    let signal_task = tokio::spawn(shutdown::wait_for_shutdown_signal(shutdown.token()));
+    let signal_task = tokio::spawn(shutdown::wait_for_shutdown_signal(shutdown.clone()));
 
     // Prometheus 指标使用独立端口，默认只绑定回环地址（配置可覆盖）。
     let metrics_handle = metrics::install()?;
@@ -102,12 +102,13 @@ async fn serve() -> anyhow::Result<()> {
     tracing::info!(bind_addr = %bind_addr, metrics_addr = %metrics_addr, "HTTP 服务已启动");
     let result = shutdown::serve_with_shutdown(listener, router, &shutdown).await;
 
-    // 无论服务正常结束还是出错，都通知后台任务退出并等待它们完成。
+    // 无论服务正常结束还是出错，都通知后台任务退出。
+    // 在途请求与后台任务共享同一个总期限（默认 30 秒），不会先后各等 30 秒。
     shutdown.cancel();
-    if !shutdown.wait_background(shutdown::SHUTDOWN_GRACE).await {
+    if !shutdown.wait_background_remaining().await {
         tracing::warn!(
-            grace_secs = shutdown::SHUTDOWN_GRACE.as_secs(),
-            "后台任务未在停机宽限期内结束"
+            grace_secs = shutdown.grace().as_secs(),
+            "后台任务未在停机总期限内结束"
         );
     }
     signal_task.abort();

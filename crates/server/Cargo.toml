@@ -68,6 +68,8 @@ sqlx = { version = "0.8", default-features = false, features = [
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+# 流式消费 OpenDAL 的 Lister（list_with 会一次性物化全部结果，不能用它做 limit）。
+tokio-stream = "0.1"
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.7", features = ["fs"] }
 tracing = "0.1"
