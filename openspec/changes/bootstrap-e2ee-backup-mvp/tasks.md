@@ -10,13 +10,13 @@
 
 ## 2. 加密核心 crypto-core
 
-- [ ] 2.1 实现统一 AEAD 帧（version‖nonce‖ct‖tag，XChaCha20-Poly1305）与错误类型，单元测试覆盖篡改任一字节、未知版本号
-- [ ] 2.2 实现密码派生（NFKC + Argon2id + HKDF 分出 pwd_wrap/auth_key）与 KDF 参数结构，测试两派生值独立且与测试向量一致
-- [ ] 2.3 实现 MK 生成/包裹/解包、恢复密钥生成与 Crockford Base32+校验位编解码、rk_wrap/rk_auth 派生，测试抄错一位能被校验位检出
-- [ ] 2.4 实现节点密钥包裹（AAD 绑定 node_id）、节点/版本元数据加解密、name_token 计算，测试调换 node_id 解包失败、大小写与 NFC 变体令牌相同
-- [ ] 2.5 实现 content_key 派生与分块加解密（AAD 绑定 content_id/idx/count/is_last），测试重排、截断、跨 content 拼接、空文件均按 spec 处理
-- [ ] 2.6 生成并提交 `testdata/crypto-vectors/*.json`，增加 proptest 往返测试，所有密钥类型实现 `Zeroize`，验证 `cargo test -p crypto-core` 通过
-- [ ] 2.7 编写 `docs/crypto-format.md` 描述密钥层级与帧格式（与 design D5 一致），验证文档中每个 AAD 前缀与代码常量一致（测试中断言）
+- [x] 2.1 实现统一 AEAD 帧（version‖nonce‖ct‖tag，XChaCha20-Poly1305）与错误类型，单元测试覆盖篡改任一字节、未知版本号
+- [x] 2.2 实现密码派生（NFKC + Argon2id + HKDF 分出 pwd_wrap/auth_key）与 KDF 参数结构，测试两派生值独立且与测试向量一致
+- [x] 2.3 实现 MK 生成/包裹/解包、恢复密钥生成与 Crockford Base32+校验位编解码、rk_wrap/rk_auth 派生，测试抄错一位能被校验位检出
+- [x] 2.4 实现节点密钥包裹（AAD 绑定 node_id）、节点/版本元数据加解密、name_token 计算，测试调换 node_id 解包失败、大小写与 NFC 变体令牌相同
+- [x] 2.5 实现 content_key 派生与分块加解密（AAD 绑定 content_id/idx/count/is_last），测试重排、截断、跨 content 拼接、空文件均按 spec 处理
+- [x] 2.6 生成并提交 `testdata/crypto-vectors/*.json`，增加 proptest 往返测试，所有密钥类型实现 `Zeroize`，验证 `cargo test -p crypto-core` 通过
+- [x] 2.7 编写 `docs/crypto-format.md` 描述密钥层级与帧格式（与 design D5 一致），验证文档中每个 AAD 前缀与代码常量一致（测试中断言）
 
 ## 3. 加密 WASM 绑定与 Worker 基座
 
