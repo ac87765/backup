@@ -29,7 +29,7 @@
 - [x] 3.2 在 `web/src/worker` 建立 Crypto Worker（Comlink），实现密钥仅驻留 Worker 内存的 KeyStore 与 `lock()` 清零逻辑，Vitest 验证主线程 API 不返回任何密钥字节
 - [x] 3.3 验证生产构建下 WASM 在 CSP `script-src 'self' 'wasm-unsafe-eval'` 下可加载（Playwright 冒烟用例）
 - [x] 3.4 审查遗留收尾：`decrypt_version_metadata`（不校验 content 的版本）降为 `pub(crate)`，对外只保留 `decrypt_version_metadata_for_content`；CI 的 `runs-on` 固定为 `ubuntu-24.04`，并在 rust job 中加入 `wasm-pack test --headless --chrome crates/crypto-wasm`，验证 CI 全绿
-- [ ] 3.5 审查修复：错误码按操作区分——仅 `unlock_with_password` 的认证失败映射为 `invalid_credentials`、仅 `unlock_with_recovery` 映射为 `invalid_recovery_key`，其余操作（节点密钥解包、元数据、块解密等）的认证失败一律映射为 `integrity_error`；wasm 测试与 Worker 契约测试各覆盖篡改块、篡改元数据、调换节点密钥三种情况并断言错误码
+- [x] 3.5 审查修复：错误码按操作区分——仅 `unlock_with_password` 的认证失败映射为 `invalid_credentials`、仅 `unlock_with_recovery` 映射为 `invalid_recovery_key`，其余操作（节点密钥解包、元数据、块解密等）的认证失败一律映射为 `integrity_error`；wasm 测试与 Worker 契约测试各覆盖篡改块、篡改元数据、调换节点密钥三种情况并断言错误码
 
 ## 4. 服务端基础设施
 
@@ -91,3 +91,4 @@
 - [ ] 9.3 建立对真实 OSS 测试 bucket 的夜间冒烟测试（上传→下载→删除→确认对象被清理），验证一次通过
 - [ ] 9.4 编写“安全与隐私”页面（服务端可见信息清单、Web E2EE 局限、丢失密码+恢复密钥的后果），Playwright 验证页面可访问
 - [ ] 9.5 全链路验收：在 docker-compose 环境用 Playwright 跑完整用户旅程，并执行日志敏感信息扫描（无令牌/密钥/预签名签名），全部通过
+
