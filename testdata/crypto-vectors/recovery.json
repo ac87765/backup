@@ -1,0 +1,19 @@
+{
+  "format": "bk-crypto-vectors/recovery@1",
+  "cases": [
+    {
+      "name": "sequential-bytes",
+      "recovery_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "display": "000G4-0R40M-30E20-9185G-R38E1-W8124-GK2GA-HC5RR-34D1P-70X3R-FP638",
+      "rk_wrap_hex": "f0c0b4d90f0accf18395558316847b6a8b8907a75c8425146a4b58495a659f49",
+      "rk_auth_hex": "53381b2a5c6493b8915a5050a2e1721a73730db98f21f8767c5404cc9661ed55"
+    },
+    {
+      "name": "repeated-bytes",
+      "recovery_key_hex": "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+      "display": "FXZQY-ZVZFX-ZQYZV-ZFXZQ-YZVZF-XZQYZ-VZFXZ-QYZVZ-FXZQY-ZVZFX-ZHF9R",
+      "rk_wrap_hex": "9a86549eabc2f2bdda298fbf7bb4a87a0e2c5dd943215f53217e53510ab53117",
+      "rk_auth_hex": "1eb6a1f2995a7d511b7e4a348f87e431bcde1543fc17727d9cd5d3af0338ff03"
+    }
+  ]
+}

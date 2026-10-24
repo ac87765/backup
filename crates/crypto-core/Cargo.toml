@@ -6,7 +6,35 @@ rust-version.workspace = true
 publish.workspace = true
 description = "端对端加密核心：密钥层级、AEAD 帧与元数据格式（无 IO，浏览器与桌面端共用）"
 
+# 依赖说明（AGENTS.md 要求新增依赖需说明理由）：
+# - chacha20poly1305：XChaCha20-Poly1305，design D5 指定的唯一对称算法；
+# - argon2：Argon2id 密码派生，design D4；失败路径统一映射为 CryptoError；
+# - hkdf / hmac / sha2：HKDF-SHA256、HMAC-SHA256、SHA-256，design D4/D5/D6；
+# - subtle：常量时间比较（密钥、恢复密钥校验位）；
+# - getrandom：唯一随机源（操作系统 CSPRNG；wasm 由 crypto-wasm 启用 js 后端）；
+# - zeroize：密钥与明文缓冲区离开作用域时清零；
+# - unicode-normalization：密码 NFKC 与名称 NFC 规范化；
+# - serde / serde_json：加密元数据与 KDF 参数的 JSON 编码；
+# - uuid：节点/内容/版本 ID 的解析与规范小写化（AAD 字节表示）；
+# - thiserror：领域错误类型（不携带任何密钥/明文数据）。
 [dependencies]
+argon2 = { version = "0.5", features = ["std"] }
+chacha20poly1305 = "0.10"
+getrandom = "0.2"
+hkdf = "0.12"
+hmac = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+thiserror = "2"
+unicode-normalization = "0.1"
+uuid = "1"
+zeroize = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+# 性质测试：随机往返与逐字节篡改检测。
+proptest = "1"
 
 [lints]
 workspace = true

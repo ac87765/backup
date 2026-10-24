@@ -14,5 +14,11 @@ crate-type = ["cdylib", "rlib"]
 crypto-core = { path = "../crypto-core", version = "0.1.0" }
 wasm-bindgen = "0.2"
 
+# crypto-core 内部用 getrandom 取 CSPRNG 随机数。wasm32-unknown-unknown 没有操作系统
+# 随机源，必须启用 getrandom 的 `js` 后端（底层是浏览器 crypto.getRandomValues）。
+# 只在 wasm 目标下启用，原生构建仍走操作系统随机源。
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
 [lints]
 workspace = true

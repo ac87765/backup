@@ -14,6 +14,7 @@
 - [design.md](openspec/changes/bootstrap-e2ee-backup-mvp/design.md) —— 架构与 D1–D16 决策（约束，不是建议）
 - [specs/](openspec/changes/bootstrap-e2ee-backup-mvp/specs) —— 可验证的行为场景
 - [tasks.md](openspec/changes/bootstrap-e2ee-backup-mvp/tasks.md) —— 分组任务与验证条件
+- [docs/crypto-format.md](docs/crypto-format.md) —— 密钥层级、密文帧与 AAD 格式（`0x01`，永久不可变）
 - [AGENTS.md](AGENTS.md) —— 工程硬性规则（加密、服务端、日志、提交规范）
 
 ## 前置要求
