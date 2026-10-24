@@ -50,6 +50,7 @@
 - [x] 5.1 实现队列型任务领取（SKIP LOCKED + claimed_until + 指数退避 not_before）与 `object_deletions` 处理器，集成测试验证双 worker 不重复领取、崩溃后超时重领、删除不存在对象视为成功（真实 MinIO）；加源码扫描测试，断言 `deletion_handle` 只在 storage 与 jobs 模块中被引用
 - [x] 5.2 实现扫描型任务调度（advisory lock 互斥、分批、独立事务）与任务指标（执行/失败次数、队列积压与最老年龄），集成测试验证两个实例并发只有一个执行
 - [x] 5.3 实现 `email_outbox` 与 lettre SMTP 发送器（dev 模式写入本地目录，不写日志；令牌在发送时生成，outbox 不存令牌明文，见 design D13），集成测试验证 SMTP 失败后重试成功
+- [ ] 5.4 审查修复（第 5 组）：①对象存储 operator 应用 OpenDAL TimeoutLayer（单次操作上限约 30 秒），SMTP 显式设置约 15 秒超时；②队列 worker 按租约感知处理：从领取起已用时间接近租约（留出安全余量）时不再开始新的项目，并把本批剩余项目立即释放（按 claim_token 清空 claimed_until/claim_token），邮件批次缩小到约 20；③`BACKUP_MAIL_MODE` 不设默认值，缺失即启动失败；④SMTP 支持隐式 TLS（465）与 STARTTLS，明文或无认证只在显式 `BACKUP_SMTP_ALLOW_INSECURE=true` 时允许，TLS 模式下用户名密码必填。各项有测试（租约感知用可配置的短租约 + 慢速故障注入验证剩余项目被释放）
 
 ## 6. 用户账号
 
