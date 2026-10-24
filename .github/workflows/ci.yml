@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 最小权限：CI 只读仓库内容。
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  rust:
+    name: Rust (fmt / clippy / test / deny / wasm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      # rust-toolchain.toml 固定了版本、组件与 wasm32 目标，rustup 会自动安装。
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: cargo deny check
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+      # 固定 wasm-pack 版本，直接下载官方预编译产物，不用 `curl | sh`。
+      - name: 安装 wasm-pack 0.15.0
+        run: |
+          curl -fsSL -o /tmp/wasm-pack.tar.gz \
+            https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz
+          tar -xzf /tmp/wasm-pack.tar.gz -C /tmp
+          sudo install /tmp/wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack /usr/local/bin/wasm-pack
+          wasm-pack --version
+
+      # --no-opt 跳过 binaryen（wasm-opt）下载：CI 只验证 WASM 与 wasm-bindgen 绑定
+      # 能正确产出；带 wasm-opt 的发布构建在镜像构建阶段执行（见 deploy/ 与 9.1）。
+      - name: 构建 WASM
+        run: wasm-pack build crates/crypto-wasm --target web --release --no-opt
+
+  web:
+    name: Web (typecheck / lint / test / build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: lint
+        run: npm run lint
+
+      - name: test
+        run: npm test
+
+      - name: build
+        run: npm run build
+
+  dev-stack:
+    name: Dev stack (PostgreSQL + MinIO)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 启动 PostgreSQL 与 MinIO
+        run: docker compose -f deploy/docker-compose.dev.yml up -d --wait postgres minio
+
+      - name: 创建 bucket 与 CORS
+        run: docker compose -f deploy/docker-compose.dev.yml run --rm --no-deps minio-init
+
+      - name: 输出服务健康状态
+        run: docker compose -f deploy/docker-compose.dev.yml ps
+
+      - name: 失败时输出日志
+        if: failure()
+        run: docker compose -f deploy/docker-compose.dev.yml logs --no-color
+
+      - name: 清理
+        if: always()
+        run: docker compose -f deploy/docker-compose.dev.yml down -v
