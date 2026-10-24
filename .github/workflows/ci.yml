@@ -88,24 +88,42 @@ jobs:
 
       # --no-opt 跳过 binaryen（wasm-opt）下载：CI 只验证 WASM 与 wasm-bindgen 绑定
       # 能正确产出；带 wasm-opt 的发布构建在镜像构建阶段执行（见 deploy/ 与 9.1）。
+      # 直接输出到 web 的生成目录，作为 artifact 传给 web / e2e job，避免重复构建。
       - name: 构建 WASM
-        run: wasm-pack build crates/crypto-wasm --target web --release --no-opt
+        run: >-
+          wasm-pack build crates/crypto-wasm --target web --release --no-opt
+          --out-dir ../../web/src/generated/crypto-wasm --out-name crypto_wasm
+
+      # 5.0：OpenAPI 规范只在这里生成一次；web job 直接读取 artifact。
+      - name: 生成 OpenAPI 规范
+        run: cargo run -p server -- openapi > openapi.json
+
+      - name: 上传 WASM 绑定 artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: web-wasm
+          path: web/src/generated/crypto-wasm
+          if-no-files-found: error
+
+      - name: 上传 OpenAPI 规范 artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: openapi-spec
+          path: openapi.json
+          if-no-files-found: error
 
   web:
     name: Web (typecheck / lint / test / build / openapi)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 10
     env:
-      # 生成 OpenAPI 类型需要编译 server；CI 无数据库，使用提交的 .sqlx。
-      SQLX_OFFLINE: "true"
+      # WASM 与 OpenAPI 规范均由 rust job 通过 artifact 提供，这里不再构建。
+      SKIP_WASM_BUILD: "1"
     defaults:
       run:
         working-directory: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      # 前端构建需要先生成 WASM 绑定（typecheck 依赖生成的 .d.ts）。
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
@@ -114,19 +132,20 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: 安装 wasm-pack 0.15.0
-        run: |
-          curl -fsSL -o /tmp/wasm-pack.tar.gz \
-            https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz
-          tar -xzf /tmp/wasm-pack.tar.gz -C /tmp
-          sudo install /tmp/wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack /usr/local/bin/wasm-pack
-          wasm-pack --version
+      - name: 下载 WASM 绑定 artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: web-wasm
+          path: web/src/generated/crypto-wasm
+
+      - name: 下载 OpenAPI 规范 artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: openapi-spec
+          path: .
 
       - name: 安装依赖
         run: npm ci
-
-      - name: 生成 WASM 绑定
-        run: npm run build:wasm
 
       - name: typecheck
         run: npm run typecheck
@@ -142,6 +161,8 @@ jobs:
 
       # 4.7：OpenAPI 生成物必须与后端一致；有差异即失败。
       - name: OpenAPI 生成物无漂移
+        env:
+          OPENAPI_SPEC: ${{ github.workspace }}/openapi.json
         run: |
           npm run generate:api
           git -C .. diff --exit-code -- web/src/api/schema.d.ts
@@ -150,13 +171,13 @@ jobs:
     name: E2E (Playwright, strict CSP)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      SKIP_WASM_BUILD: "1"
     defaults:
       run:
         working-directory: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
@@ -164,13 +185,11 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: 安装 wasm-pack 0.15.0
-        run: |
-          curl -fsSL -o /tmp/wasm-pack.tar.gz \
-            https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz
-          tar -xzf /tmp/wasm-pack.tar.gz -C /tmp
-          sudo install /tmp/wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack /usr/local/bin/wasm-pack
-          wasm-pack --version
+      - name: 下载 WASM 绑定 artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: web-wasm
+          path: web/src/generated/crypto-wasm
 
       - name: 安装依赖
         run: npm ci

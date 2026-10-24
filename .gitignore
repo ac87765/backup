@@ -15,6 +15,9 @@
 # WASM 构建产物
 /crates/crypto-wasm/pkg/
 
+# CI / 本地生成的 OpenAPI 规范（由 rust job 生成并作为 artifact 传递）
+/openapi.json
+
 # 环境与密钥
 .env
 .env.*

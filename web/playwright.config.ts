@@ -21,7 +21,13 @@ export default defineConfig({
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
     timeout: 240_000,
-    env: { VITE_SELFTEST: '1' },
+    env: {
+      VITE_SELFTEST: '1',
+      // CI 使用 rust job 上传的 WASM artifact；确保 webServer 子进程也能看到该开关。
+      ...(process.env.SKIP_WASM_BUILD
+        ? { SKIP_WASM_BUILD: process.env.SKIP_WASM_BUILD }
+        : {}),
+    },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 })
