@@ -115,6 +115,8 @@ jobs:
   web:
     name: Web (typecheck / lint / test / build / openapi)
     runs-on: ubuntu-24.04
+    # 依赖 rust job 上传的 WASM 与 OpenAPI artifact。
+    needs: rust
     timeout-minutes: 10
     env:
       # WASM 与 OpenAPI 规范均由 rust job 通过 artifact 提供，这里不再构建。
@@ -170,6 +172,8 @@ jobs:
   e2e:
     name: E2E (Playwright, strict CSP)
     runs-on: ubuntu-24.04
+    # 依赖 rust job 上传的 WASM artifact。
+    needs: rust
     timeout-minutes: 20
     env:
       SKIP_WASM_BUILD: "1"
