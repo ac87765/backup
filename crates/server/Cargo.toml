@@ -1,0 +1,16 @@
+[package]
+name = "server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "备份服务后端：Axum API、元数据协调、配额与后台任务"
+
+[[bin]]
+name = "server"
+path = "src/main.rs"
+
+[dependencies]
+
+[lints]
+workspace = true

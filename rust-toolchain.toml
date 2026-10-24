@@ -1,0 +1,7 @@
+# 固定工具链版本，保证本地与 CI 的 rustfmt/clippy 输出一致。
+# 升级时同时更新本文件与 CI，并确保 `cargo fmt --all -- --check` 通过。
+[toolchain]
+channel = "1.98.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

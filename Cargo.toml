@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/crypto-core",
+    "crates/crypto-wasm",
+    "crates/server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+# 统一 lints：任何 crate 只要写 `[lints] workspace = true` 就继承这里。
+# 规则来自 AGENTS.md「硬性规则」：非测试代码禁止 unwrap/expect/panic/todo/unimplemented。
+# 测试代码若确实需要，在对应测试模块顶部显式 `#[allow(...)]`（不允许在库代码里全局放宽）。
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# 以下为 clippy 的 restriction 组，默认不启用，必须显式开启。
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+# 全局开启常用质量 lint；-D warnings 会把这些提升为错误。
+all = { level = "warn", priority = -1 }

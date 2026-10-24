@@ -1,0 +1,12 @@
+[package]
+name = "crypto-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "端对端加密核心：密钥层级、AEAD 帧与元数据格式（无 IO，浏览器与桌面端共用）"
+
+[dependencies]
+
+[lints]
+workspace = true

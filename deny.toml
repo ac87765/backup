@@ -1,0 +1,46 @@
+# cargo-deny 配置：许可证与安全公告门禁（AGENTS.md 要求每组都通过 `cargo deny check`）。
+#
+# 维护原则：
+# - allow 列表只增不改语义；新增许可证必须写明理由。
+# - 有安全公告时优先升级依赖；确无法升级才用 [advisories].ignore 并注明到期时间。
+
+[graph]
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "x86_64-pc-windows-msvc" },
+    { triple = "wasm32-unknown-unknown" },
+]
+all-features = true
+
+[advisories]
+version = 2
+# 被 yank 的版本不再允许出现在依赖图里。
+yanked = "deny"
+ignore = []
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+# 本项目的依赖必须落在下列宽松/商业友好许可证内。
+# 列表只保留已出现的许可证，避免 `license-not-encountered` 噪声；
+# 新增依赖若引入其他宽松许可证（BSD-2/3-Clause、ISC、Zlib、MPL-2.0 等），
+# 需在 PR 中说明理由后加入本列表。
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0",
+]
+
+# workspace 内部 crate 为私有（publish = false），无需声明对外许可证。
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
