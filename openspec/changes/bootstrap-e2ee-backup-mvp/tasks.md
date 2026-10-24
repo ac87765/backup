@@ -7,7 +7,7 @@
 - [x] 1.3 编写 `deploy/docker-compose.dev.yml`（PostgreSQL 16 + MinIO + 自动建 bucket 与 CORS），验证 `docker compose up` 后两服务健康
 - [x] 1.4 配置 CI：fmt、clippy、test、`cargo deny check`、前端 typecheck/lint/test、wasm 构建，验证在空实现上流水线全绿
 - [x] 1.5 添加 `.gitignore`、`rust-toolchain.toml`、`deny.toml`、`README.md`（本地开发启动步骤），按 README 从零启动验证可行
-- [ ] 1.6 审查修复：CI 增加 `openspec validate --strict` 步骤；dev compose 的 MinIO 与 mc 镜像按 digest 固定；推送到私有 GitHub 远端并让 CI 三个 job 实际跑绿（补齐 1.4 的验证条件），在汇报中附 CI 运行链接
+- [x] 1.6 审查修复：CI 增加 `openspec validate --strict` 步骤；dev compose 的 MinIO 与 mc 镜像按 digest 固定；推送到私有 GitHub 远端并让 CI 三个 job 实际跑绿（补齐 1.4 的验证条件），在汇报中附 CI 运行链接
 
 ## 2. 加密核心 crypto-core
 
@@ -18,10 +18,10 @@
 - [x] 2.5 实现 content_key 派生与分块加解密（AAD 绑定 content_id/idx/count/is_last），测试重排、截断、跨 content 拼接、空文件均按 spec 处理
 - [x] 2.6 生成并提交 `testdata/crypto-vectors/*.json`，增加 proptest 往返测试，所有密钥类型实现 `Zeroize`，验证 `cargo test -p crypto-core` 通过
 - [x] 2.7 编写 `docs/crypto-format.md` 描述密钥层级与帧格式（与 design D5 一致），验证文档中每个 AAD 前缀与代码常量一致（测试中断言）
-- [ ] 2.8 KdfParams 增加 `algorithm` 枚举字段（仅 `argon2id`，未知/缺失拒绝），范围收紧为 m 64–256 MiB、t 3–8、p=1，测试用弱参数只走仅测试可见入口；更新 kdf 向量与 docs，测试覆盖降级/过大/未知算法三个 spec 场景
-- [ ] 2.9 VersionMetadata 增加 `content_id` 字段（JSON 契约见 design D5），提供“解密版本元数据并校验 content_id 与明文大小”的 API，更新 node 向量与 docs，测试覆盖“版本被指向旧内容”“明文大小不符”场景
-- [ ] 2.10 `aead::seal_with_nonce` 移到 `test-vectors` feature 后（仅 dev-dependencies 开启），验证不开 feature 时该符号不可见、`cargo test --workspace` 仍通过
-- [ ] 2.11 格式冻结前的收尾：名称规范化改为 `NFC(lower(NFC(name)))`（更新 name_token 向量）；ID 解析拒绝 nil 与非 v4 UUID；`decrypt_chunk` 返回 `Zeroizing<Vec<u8>>` 不再额外复制，各项有对应测试
+- [x] 2.8 KdfParams 增加 `algorithm` 枚举字段（仅 `argon2id`，未知/缺失拒绝），范围收紧为 m 64–256 MiB、t 3–8、p=1，测试用弱参数只走仅测试可见入口；更新 kdf 向量与 docs，测试覆盖降级/过大/未知算法三个 spec 场景
+- [x] 2.9 VersionMetadata 增加 `content_id` 字段（JSON 契约见 design D5），提供“解密版本元数据并校验 content_id 与明文大小”的 API，更新 node 向量与 docs，测试覆盖“版本被指向旧内容”“明文大小不符”场景
+- [x] 2.10 `aead::seal_with_nonce` 移到 `test-vectors` feature 后（仅 dev-dependencies 开启），验证不开 feature 时该符号不可见、`cargo test --workspace` 仍通过
+- [x] 2.11 格式冻结前的收尾：名称规范化改为 `NFC(lower(NFC(name)))`（更新 name_token 向量）；ID 解析拒绝 nil 与非 v4 UUID；`decrypt_chunk` 返回 `Zeroizing<Vec<u8>>` 不再额外复制，各项有对应测试
 
 ## 3. 加密 WASM 绑定与 Worker 基座
 
