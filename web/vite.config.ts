@@ -1,26 +1,23 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
 
+import { buildContentSecurityPolicy } from './src/security/csp.ts'
+
 /**
  * 生产预览（`vite preview`）的严格 CSP。
  *
- * 与 design D12 / service-operations spec 一致：只允许同源脚本与 WASM 执行、
- * 禁止内联脚本；Worker 与 WASM 都是同源静态资源。
+ * 基础策略与 Rust 服务端共享同一个文件 `csp/base-policy.txt`
+ * （服务端用 `include_str!` 读取，并在启动时追加对象存储公网 origin）。
+ * 这里只用于 vite preview 的开发预览；生产由 Axum 下发带 origin 的策略。
  */
-const CONTENT_SECURITY_POLICY = [
-  "default-src 'self'",
-  "script-src 'self' 'wasm-unsafe-eval'",
-  "worker-src 'self'",
-  "style-src 'self'",
-  "img-src 'self' data:",
-  "font-src 'self'",
-  "connect-src 'self'",
-  "base-uri 'none'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-].join('; ')
+const CONTENT_SECURITY_POLICY = buildContentSecurityPolicy(
+  readFileSync(path.resolve(process.cwd(), '../csp/base-policy.txt'), 'utf8'),
+)
 
 function contentSecurityPolicyPlugin(): Plugin {
   return {

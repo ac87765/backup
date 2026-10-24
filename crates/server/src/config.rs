@@ -1,0 +1,592 @@
+//! 服务端配置：从环境变量（统一 `BACKUP_` 前缀）加载并校验。
+//!
+//! 硬性要求（AGENTS.md / service-operations spec）：
+//! - 所有配置项使用 `BACKUP_` 前缀；密钥类配置用 [`Secret`]（内部 `secrecy::SecretString`），
+//!   `Debug` 输出永远脱敏。
+//! - 缺项或非法值时返回 [`ConfigError`]，错误信息只包含**配置项名称**与原因，
+//!   绝不包含配置值本身。二进制入口据此以非零退出码退出。
+//!
+//! 本组只声明实际用到的配置项；pepper、SMTP 等留到使用它们的功能组再加入。
+
+use std::fmt;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+
+use figment::Figment;
+use figment::providers::Serialized;
+use secrecy::{ExposeSecret, SecretString};
+use serde::Deserialize;
+use serde::de::Deserializer;
+
+/// 所有配置环境变量的统一前缀。
+pub const ENV_PREFIX: &str = "BACKUP_";
+
+/// 配置项名称。错误信息与日志只使用这里的名字，不使用内部键名或配置值。
+pub mod keys {
+    pub const BIND_ADDR: &str = "BACKUP_BIND_ADDR";
+    pub const METRICS_ADDR: &str = "BACKUP_METRICS_ADDR";
+    pub const STATIC_DIR: &str = "BACKUP_STATIC_DIR";
+    pub const DATABASE_URL: &str = "BACKUP_DATABASE_URL";
+    pub const DATABASE_MAX_CONNECTIONS: &str = "BACKUP_DATABASE_MAX_CONNECTIONS";
+    pub const STORAGE_KIND: &str = "BACKUP_STORAGE_KIND";
+    pub const STORAGE_BUCKET: &str = "BACKUP_STORAGE_BUCKET";
+    pub const STORAGE_REGION: &str = "BACKUP_STORAGE_REGION";
+    pub const STORAGE_INTERNAL_ENDPOINT: &str = "BACKUP_STORAGE_INTERNAL_ENDPOINT";
+    pub const STORAGE_PUBLIC_ENDPOINT: &str = "BACKUP_STORAGE_PUBLIC_ENDPOINT";
+    pub const STORAGE_ACCESS_KEY_ID: &str = "BACKUP_STORAGE_ACCESS_KEY_ID";
+    pub const STORAGE_SECRET_ACCESS_KEY: &str = "BACKUP_STORAGE_SECRET_ACCESS_KEY";
+    pub const STORAGE_ALLOW_HTTP: &str = "BACKUP_STORAGE_ALLOW_HTTP";
+}
+
+/// 启动配置错误。
+///
+/// 只携带配置项名称与静态原因字符串，因此可以安全地写日志。
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ConfigError {
+    #[error("配置项 {key} 缺失")]
+    Missing { key: &'static str },
+    #[error("配置项 {key} 非法：{reason}")]
+    Invalid {
+        key: &'static str,
+        reason: &'static str,
+    },
+}
+
+impl ConfigError {
+    fn invalid(key: &'static str, reason: &'static str) -> Self {
+        Self::Invalid { key, reason }
+    }
+}
+
+/// 密钥类配置。
+///
+/// 内部使用 `secrecy::SecretString`（Drop 时清零），不实现 `Serialize`/`Display`，
+/// `Debug` 输出固定为 `[REDACTED]`，避免配置被意外写进日志或错误信息。
+#[derive(Clone)]
+pub struct Secret(SecretString);
+
+impl Secret {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(SecretString::from(value.into()))
+    }
+
+    /// 显式取出明文，只允许在真正需要建立连接的地方调用。
+    pub fn expose(&self) -> &str {
+        self.0.expose_secret()
+    }
+}
+
+impl fmt::Debug for Secret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[REDACTED]")
+    }
+}
+
+impl<'de> Deserialize<'de> for Secret {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(Self::new(value))
+    }
+}
+
+/// 对象存储后端类型：本地/测试用 S3 兼容 API（MinIO），生产用阿里云 OSS。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageKind {
+    S3,
+    Oss,
+}
+
+impl StorageKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::S3 => "s3",
+            Self::Oss => "oss",
+        }
+    }
+}
+
+impl fmt::Display for StorageKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// 数据库配置。
+#[derive(Debug, Clone)]
+pub struct DatabaseConfig {
+    pub url: Secret,
+    pub max_connections: u32,
+}
+
+/// 对象存储配置。
+///
+/// 内网 endpoint 供服务端自身 stat/list/delete 使用；公网 endpoint 只用于生成预签名 URL
+/// （design D3）。两者可以是同一个地址（本地 MinIO），但语义必须分开配置。
+#[derive(Debug, Clone)]
+pub struct StorageConfig {
+    pub kind: StorageKind,
+    pub bucket: String,
+    pub region: String,
+    pub internal_endpoint: String,
+    pub public_endpoint: String,
+    pub access_key_id: Secret,
+    pub secret_access_key: Secret,
+    pub allow_http: bool,
+}
+
+impl StorageConfig {
+    /// 追加到 CSP `connect-src` 的对象存储公网 origin（`scheme://authority`）。
+    pub fn public_origin(&self) -> String {
+        origin_of(&self.public_endpoint)
+    }
+}
+
+/// 服务端完整配置。
+#[derive(Debug, Clone)]
+pub struct Config {
+    /// HTTP API 与前端静态文件的监听地址。
+    pub bind_addr: SocketAddr,
+    /// Prometheus 指标监听地址（默认只绑定回环地址）。
+    pub metrics_addr: SocketAddr,
+    /// 前端构建产物目录（SPA 回退到其中的 index.html）。
+    pub static_dir: PathBuf,
+    pub database: DatabaseConfig,
+    pub storage: StorageConfig,
+}
+
+impl Config {
+    /// 从进程环境变量加载配置。
+    ///
+    /// 这里不用 figment 的 `Env` provider：它会把 `true`、`123456` 之类的值
+    /// 自动解析成 bool/数字，既可能把数字型密钥的前导零吃掉，也会让布尔配置
+    /// 的读取路径变得不可预测。我们先把环境变量原样收集成字符串，再交给
+    /// figment 的 `Serialized` provider 合并——配置解析仍然是 figment。
+    pub fn load() -> Result<Self, ConfigError> {
+        let values: std::collections::HashMap<String, String> = std::env::vars()
+            .filter_map(|(key, value)| {
+                key.strip_prefix(ENV_PREFIX)
+                    .map(|name| (name.to_ascii_lowercase(), value))
+            })
+            .collect();
+        Self::from_figment(&Figment::new().merge(Serialized::defaults(values)))
+    }
+
+    /// 从任意 figment 数据源加载（测试用 `Serialized` 注入，避免依赖进程环境）。
+    pub fn from_figment(figment: &Figment) -> Result<Self, ConfigError> {
+        let bind_addr = parse_socket_addr(
+            &string_with_default(figment, keys::BIND_ADDR, "127.0.0.1:8080")?,
+            keys::BIND_ADDR,
+        )?;
+        let metrics_addr = parse_socket_addr(
+            &string_with_default(figment, keys::METRICS_ADDR, "127.0.0.1:9091")?,
+            keys::METRICS_ADDR,
+        )?;
+        let static_dir = PathBuf::from(string_with_default(figment, keys::STATIC_DIR, "web/dist")?);
+
+        let database_url = required_secret(figment, keys::DATABASE_URL)?;
+        if !(database_url.expose().starts_with("postgres://")
+            || database_url.expose().starts_with("postgresql://"))
+        {
+            return Err(ConfigError::invalid(
+                keys::DATABASE_URL,
+                "必须是 postgres:// 或 postgresql:// 连接串",
+            ));
+        }
+        let max_connections = parse_u32(
+            &string_with_default(figment, keys::DATABASE_MAX_CONNECTIONS, "10")?,
+            keys::DATABASE_MAX_CONNECTIONS,
+            1..=1024,
+        )?;
+
+        let kind = parse_storage_kind(&required_string(figment, keys::STORAGE_KIND)?)?;
+        let bucket = required_string(figment, keys::STORAGE_BUCKET)?;
+        let region = match optional_string(figment, keys::STORAGE_REGION)? {
+            Some(region) => region,
+            None if kind == StorageKind::Oss => {
+                return Err(ConfigError::Missing {
+                    key: keys::STORAGE_REGION,
+                });
+            }
+            None => "us-east-1".to_owned(),
+        };
+        let (internal_endpoint, internal_scheme) =
+            parse_endpoint(figment, keys::STORAGE_INTERNAL_ENDPOINT)?;
+        let (public_endpoint, public_scheme) =
+            parse_endpoint(figment, keys::STORAGE_PUBLIC_ENDPOINT)?;
+        let access_key_id = required_secret(figment, keys::STORAGE_ACCESS_KEY_ID)?;
+        let secret_access_key = required_secret(figment, keys::STORAGE_SECRET_ACCESS_KEY)?;
+        let allow_http = parse_bool(
+            &string_with_default(figment, keys::STORAGE_ALLOW_HTTP, "false")?,
+            keys::STORAGE_ALLOW_HTTP,
+        )?;
+        if !allow_http && internal_scheme == "http" {
+            return Err(ConfigError::invalid(
+                keys::STORAGE_INTERNAL_ENDPOINT,
+                "http 端点必须显式设置 BACKUP_STORAGE_ALLOW_HTTP=true",
+            ));
+        }
+        if !allow_http && public_scheme == "http" {
+            return Err(ConfigError::invalid(
+                keys::STORAGE_PUBLIC_ENDPOINT,
+                "http 端点必须显式设置 BACKUP_STORAGE_ALLOW_HTTP=true",
+            ));
+        }
+
+        Ok(Self {
+            bind_addr,
+            metrics_addr,
+            static_dir,
+            database: DatabaseConfig {
+                url: database_url,
+                max_connections,
+            },
+            storage: StorageConfig {
+                kind,
+                bucket,
+                region,
+                internal_endpoint,
+                public_endpoint,
+                access_key_id,
+                secret_access_key,
+                allow_http,
+            },
+        })
+    }
+}
+
+/// 环境变量名 → figment 内部键：去掉 `BACKUP_` 前缀并小写。
+///
+/// 集中在这里换算，保证环境变量名与读取逻辑不会漂移。
+fn figment_key(env_key: &'static str) -> String {
+    env_key
+        .strip_prefix(ENV_PREFIX)
+        .unwrap_or(env_key)
+        .to_ascii_lowercase()
+}
+
+fn optional_string(
+    figment: &Figment,
+    env_key: &'static str,
+) -> Result<Option<String>, ConfigError> {
+    match figment.find_value(&figment_key(env_key)) {
+        Ok(value) => value
+            .deserialize::<String>()
+            .map(Some)
+            .map_err(|_| ConfigError::invalid(env_key, "不是合法的字符串")),
+        // 配置不存在（或其他 provider 层面的缺失）都按缺项处理，
+        // 不要向上传递 figment 的原始错误文本，避免把值带进日志。
+        Err(_) => Ok(None),
+    }
+}
+
+fn required_string(figment: &Figment, env_key: &'static str) -> Result<String, ConfigError> {
+    let value = optional_string(figment, env_key)?.ok_or(ConfigError::Missing { key: env_key })?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(ConfigError::invalid(env_key, "不能为空"));
+    }
+    Ok(trimmed.to_owned())
+}
+
+fn required_secret(figment: &Figment, env_key: &'static str) -> Result<Secret, ConfigError> {
+    let value = optional_string(figment, env_key)?.ok_or(ConfigError::Missing { key: env_key })?;
+    if value.trim().is_empty() {
+        return Err(ConfigError::invalid(env_key, "不能为空"));
+    }
+    Ok(Secret::new(value))
+}
+
+fn string_with_default(
+    figment: &Figment,
+    env_key: &'static str,
+    default: &str,
+) -> Result<String, ConfigError> {
+    match optional_string(figment, env_key)? {
+        Some(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                Err(ConfigError::invalid(env_key, "不能为空"))
+            } else {
+                Ok(trimmed.to_owned())
+            }
+        }
+        None => Ok(default.to_owned()),
+    }
+}
+
+fn parse_socket_addr(value: &str, env_key: &'static str) -> Result<SocketAddr, ConfigError> {
+    value.parse().map_err(|_| {
+        ConfigError::invalid(
+            env_key,
+            "必须是 host:port 形式的监听地址（例如 127.0.0.1:8080）",
+        )
+    })
+}
+
+fn parse_u32(
+    value: &str,
+    env_key: &'static str,
+    range: std::ops::RangeInclusive<u32>,
+) -> Result<u32, ConfigError> {
+    let parsed = value
+        .parse::<u32>()
+        .map_err(|_| ConfigError::invalid(env_key, "必须是正整数"))?;
+    if !range.contains(&parsed) {
+        return Err(ConfigError::invalid(env_key, "超出允许范围"));
+    }
+    Ok(parsed)
+}
+
+fn parse_bool(value: &str, env_key: &'static str) -> Result<bool, ConfigError> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" => Ok(true),
+        "false" | "0" | "no" => Ok(false),
+        _ => Err(ConfigError::invalid(env_key, "必须是 true 或 false")),
+    }
+}
+
+fn parse_storage_kind(value: &str) -> Result<StorageKind, ConfigError> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "s3" => Ok(StorageKind::S3),
+        "oss" => Ok(StorageKind::Oss),
+        _ => Err(ConfigError::invalid(keys::STORAGE_KIND, "必须是 s3 或 oss")),
+    }
+}
+
+/// 校验并规范化 endpoint，返回 `(去掉末尾斜杠的 URL, scheme)`。
+fn parse_endpoint(
+    figment: &Figment,
+    env_key: &'static str,
+) -> Result<(String, String), ConfigError> {
+    let value = required_string(figment, env_key)?;
+    let uri: axum::http::Uri = value
+        .parse()
+        .map_err(|_| ConfigError::invalid(env_key, "必须是合法的 http(s) URL"))?;
+    let scheme = match uri.scheme_str() {
+        Some("http") => "http",
+        Some("https") => "https",
+        _ => {
+            return Err(ConfigError::invalid(
+                env_key,
+                "只支持 http:// 或 https:// 的 endpoint",
+            ));
+        }
+    };
+    let authority = uri
+        .authority()
+        .ok_or(ConfigError::invalid(env_key, "缺少主机名"))?;
+    if !uri.path().is_empty() && uri.path() != "/" {
+        return Err(ConfigError::invalid(env_key, "endpoint 不能包含路径部分"));
+    }
+    Ok((format!("{scheme}://{authority}"), scheme.to_owned()))
+}
+
+/// 从已校验的 endpoint 中取出 origin（`scheme://authority`）。
+fn origin_of(endpoint: &str) -> String {
+    match endpoint.split_once("://") {
+        Some((scheme, rest)) => {
+            let authority = rest.split('/').next().unwrap_or(rest);
+            format!("{scheme}://{authority}")
+        }
+        // endpoint 一定经过 parse_endpoint 校验；这里保底返回原值。
+        None => endpoint.to_owned(),
+    }
+}
+
+/// 测试专用的配置输入：键为不带前缀的环境变量名（与 figment 内部键相同）。
+#[cfg(test)]
+fn figment_from(pairs: &[(&str, &str)]) -> Figment {
+    use figment::providers::Serialized;
+    use std::collections::HashMap;
+
+    let map: HashMap<String, String> = pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect();
+    Figment::new().merge(Serialized::defaults(map))
+}
+
+#[cfg(test)]
+mod tests {
+    // 测试代码允许使用 expect/unwrap：断言失败时 panic 是预期行为。
+    #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
+    use super::*;
+
+    fn complete_pairs() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("database_url", "postgres://backup:pw@127.0.0.1:5432/backup"),
+            ("storage_kind", "s3"),
+            ("storage_bucket", "backup"),
+            ("storage_region", "us-east-1"),
+            ("storage_internal_endpoint", "http://127.0.0.1:9000/"),
+            ("storage_public_endpoint", "http://127.0.0.1:9000"),
+            ("storage_access_key_id", "minio-access-key-value"),
+            ("storage_secret_access_key", "minio-secret-key-value"),
+            ("storage_allow_http", "true"),
+        ]
+    }
+
+    fn load(pairs: &[(&'static str, &'static str)]) -> Result<Config, ConfigError> {
+        Config::from_figment(&figment_from(pairs))
+    }
+
+    #[test]
+    fn loads_complete_config_with_defaults() {
+        let config = load(&complete_pairs()).expect("配置应当合法");
+        assert_eq!(config.bind_addr.to_string(), "127.0.0.1:8080");
+        assert_eq!(config.metrics_addr.to_string(), "127.0.0.1:9091");
+        assert_eq!(config.database.max_connections, 10);
+        assert_eq!(config.storage.kind, StorageKind::S3);
+        assert_eq!(config.storage.public_origin(), "http://127.0.0.1:9000");
+        assert_eq!(config.storage.internal_endpoint, "http://127.0.0.1:9000");
+    }
+
+    #[test]
+    fn missing_database_url_reports_item_name() {
+        let pairs: Vec<_> = complete_pairs()
+            .into_iter()
+            .filter(|(key, _)| *key != "database_url")
+            .collect();
+        let err = load(&pairs).expect_err("缺少数据库连接串必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Missing {
+                key: keys::DATABASE_URL
+            }
+        );
+        assert!(err.to_string().contains("BACKUP_DATABASE_URL"));
+    }
+
+    #[test]
+    fn missing_storage_credentials_report_item_name() {
+        let pairs: Vec<_> = complete_pairs()
+            .into_iter()
+            .filter(|(key, _)| *key != "storage_access_key_id")
+            .collect();
+        let err = load(&pairs).expect_err("缺少对象存储凭据必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Missing {
+                key: keys::STORAGE_ACCESS_KEY_ID
+            }
+        );
+        assert!(err.to_string().contains("BACKUP_STORAGE_ACCESS_KEY_ID"));
+    }
+
+    #[test]
+    fn invalid_values_are_rejected_without_echoing_them() {
+        let mut pairs = complete_pairs();
+        pairs.push(("database_max_connections", "0"));
+        let err = load(&pairs).expect_err("连接数 0 必须被拒绝");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::DATABASE_MAX_CONNECTIONS,
+                reason: "超出允许范围"
+            }
+        );
+        // 错误只包含配置项名与原因，不包含非法值。
+        assert_eq!(
+            err.to_string(),
+            "配置项 BACKUP_DATABASE_MAX_CONNECTIONS 非法：超出允许范围"
+        );
+
+        let mut pairs = complete_pairs();
+        pairs.push(("storage_kind", "ftp"));
+        let err = load(&pairs).expect_err("未知存储类型必须被拒绝");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: keys::STORAGE_KIND,
+                ..
+            }
+        ));
+
+        let mut pairs = complete_pairs();
+        pairs.push(("bind_addr", "not-a-socket-addr"));
+        let err = load(&pairs).expect_err("非法监听地址必须被拒绝");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: keys::BIND_ADDR,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn http_endpoint_requires_explicit_opt_in() {
+        let mut pairs = complete_pairs();
+        pairs.push(("storage_allow_http", "false"));
+        let err = load(&pairs).expect_err("http endpoint 必须显式允许");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::STORAGE_INTERNAL_ENDPOINT,
+                reason: "http 端点必须显式设置 BACKUP_STORAGE_ALLOW_HTTP=true"
+            }
+        );
+    }
+
+    #[test]
+    fn oss_requires_region() {
+        let pairs: Vec<_> = complete_pairs()
+            .into_iter()
+            .filter(|(key, _)| *key != "storage_region")
+            .chain([("storage_kind", "oss")])
+            .collect();
+        let err = load(&pairs).expect_err("OSS 必须显式配置 region");
+        assert_eq!(
+            err,
+            ConfigError::Missing {
+                key: keys::STORAGE_REGION
+            }
+        );
+    }
+
+    #[test]
+    fn debug_output_redacts_secrets() {
+        let config = load(&complete_pairs()).expect("配置应当合法");
+        let debug = format!("{config:?}");
+        assert!(debug.contains("[REDACTED]"));
+        assert!(!debug.contains("minio-access-key-value"));
+        assert!(!debug.contains("minio-secret-key-value"));
+        assert!(!debug.contains("backup:pw@"));
+        // 非密钥字段仍然可见，便于排查配置问题。
+        assert!(debug.contains("127.0.0.1:9000"));
+    }
+
+    #[test]
+    fn config_error_display_never_contains_values() {
+        let mut pairs = complete_pairs();
+        pairs.retain(|(key, _)| *key != "storage_secret_access_key");
+        pairs.push(("storage_secret_access_key", ""));
+        let err = load(&pairs).expect_err("空密钥必须失败");
+        let text = err.to_string();
+        assert!(text.contains("BACKUP_STORAGE_SECRET_ACCESS_KEY"));
+        assert!(!text.contains("minio-secret-key-value"));
+    }
+
+    #[test]
+    fn env_prefix_maps_to_internal_keys() {
+        assert_eq!(figment_key(keys::DATABASE_URL), "database_url");
+        assert_eq!(
+            figment_key(keys::STORAGE_SECRET_ACCESS_KEY),
+            "storage_secret_access_key"
+        );
+    }
+
+    #[test]
+    fn numeric_looking_secrets_are_preserved_verbatim() {
+        let mut pairs = complete_pairs();
+        pairs.push(("storage_access_key_id", "000123456"));
+        pairs.push(("storage_secret_access_key", "1234567890"));
+        let config = load(&pairs).expect("配置应当合法");
+        assert_eq!(config.storage.access_key_id.expose(), "000123456");
+        assert_eq!(config.storage.secret_access_key.expose(), "1234567890");
+    }
+}

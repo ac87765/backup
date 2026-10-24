@@ -10,7 +10,68 @@ description = "备份服务后端：Axum API、元数据协调、配额与后台
 name = "server"
 path = "src/main.rs"
 
+# 依赖理由（AGENTS.md 要求逐个说明；只列本组真正用到的库）：
+# - axum：design D2 选定的 HTTP 框架（路由、提取器、中间件）。
+# - tokio：异步运行时；signal 用于优雅停机，rt-multi-thread 为生产配置。
+# - tower / tower-http：中间件与静态文件服务（ServeDir/ServeFile），axum 生态标准搭配。
+# - sqlx：design D2 选定的数据库访问层，使用编译期校验查询、migrate 与连接池。
+# - opendal：design D3 选定的对象存储抽象（services-s3 用于 MinIO/测试，services-oss 用于生产）。
+# - figment：design D15 选定的配置加载（环境变量）。
+# - secrecy：design D15 要求密钥类配置用 SecretString 包装并自动脱敏。
+# - clap：serve/migrate/openapi 三个子命令的解析。
+# - serde / serde_json：配置反序列化、JSON 日志与 API 错误体。
+# - thiserror：领域错误类型；anyhow 仅用于二进制入口的错误上下文。
+# - tracing / tracing-subscriber：JSON 结构化日志（spec：结构化日志与请求追踪）。
+# - metrics / metrics-exporter-prometheus：独立端口的 Prometheus 指标（spec：指标）。
+# - utoipa：OpenAPI 生成（design D12/D16，`server openapi` 子命令）。
+# - uuid：服务端生成请求 ID 与对象键中的 UUID。
+# - tokio-util：CancellationToken / TaskTracker 实现优雅停机（design 4.6）。
+# - async-trait：存储抽象与故障注入装饰器需要 dyn 兼容的异步方法。
+# - time：SQL 查询中的时间类型（迁移校验与后续健康检查使用）。
 [dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = "0.8"
+clap = { version = "4", features = ["derive"] }
+figment = "0.10"
+metrics = "0.24"
+# 只用 `install_recorder` + 进程内 scrape 端点，不需要 exporter 自带的
+# HTTP listener / push gateway（会额外引入 hyper-rustls 与 TLS 依赖）。
+metrics-exporter-prometheus = { version = "0.18", default-features = false }
+opendal = { version = "0.59", features = ["services-s3", "services-oss"] }
+secrecy = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "macros",
+    "migrate",
+    "uuid",
+    "json",
+    "time",
+] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.7", features = ["fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+utoipa = { version = "6", features = ["preserve_order"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# 测试依赖：
+# - testcontainers：design D16 要求集成测试使用真实 PostgreSQL 与 MinIO（容器）。
+# - reqwest：验证预签名 PUT/GET 往返（只用 rustls，避免本地 OpenSSL 依赖）。
+# - http-body-util：读取 axum 响应体以便断言错误 JSON。
+# - tempfile：静态文件与测试用临时目录。
+# - tower（已在依赖中）：`ServiceExt::oneshot` 直接调用 Router。
+[dev-dependencies]
+http-body-util = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+tempfile = "3"
+testcontainers = "0.28"
 
 [lints]
 workspace = true
