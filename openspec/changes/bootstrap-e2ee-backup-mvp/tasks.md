@@ -28,6 +28,7 @@
 - [ ] 3.1 实现 `crypto-wasm`（wasm-bindgen + tsify 生成 TS 类型），getrandom 使用浏览器 CSPRNG，验证 `wasm-pack test --headless --chrome` 跑通全部测试向量
 - [ ] 3.2 在 `web/src/worker` 建立 Crypto Worker（Comlink），实现密钥仅驻留 Worker 内存的 KeyStore 与 `lock()` 清零逻辑，Vitest 验证主线程 API 不返回任何密钥字节
 - [ ] 3.3 验证生产构建下 WASM 在 CSP `script-src 'self' 'wasm-unsafe-eval'` 下可加载（Playwright 冒烟用例）
+- [ ] 3.4 审查遗留收尾：`decrypt_version_metadata`（不校验 content 的版本）降为 `pub(crate)`，对外只保留 `decrypt_version_metadata_for_content`；CI 的 `runs-on` 固定为 `ubuntu-24.04`，并在 rust job 中加入 `wasm-pack test --headless --chrome crates/crypto-wasm`，验证 CI 全绿
 
 ## 4. 服务端基础设施
 
