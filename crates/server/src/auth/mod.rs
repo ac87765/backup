@@ -271,7 +271,9 @@ pub fn decode_wrapped_material(value: &str) -> Result<Vec<u8>, ApiError> {
 pub fn session_cookie(headers: &HeaderMap) -> Option<String> {
     let cookies = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
     for pair in cookies.split(';') {
-        let (name, value) = pair.split_once('=')?;
+        let Some((name, value)) = pair.split_once('=') else {
+            continue;
+        };
         if name.trim() == SESSION_COOKIE_NAME {
             let value = value.trim();
             if !value.is_empty() {
@@ -475,6 +477,18 @@ mod tests {
         assert!(constant_time_eq(b"abc", b"abc"));
         assert!(!constant_time_eq(b"abc", b"abd"));
         assert!(!constant_time_eq(b"abc", b"ab"));
+    }
+
+    #[test]
+    fn session_cookie_skips_malformed_pairs() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            "malformed; theme=dark; __Host-session=abc123"
+                .parse()
+                .expect("Cookie 头"),
+        );
+        assert_eq!(session_cookie(&headers).as_deref(), Some("abc123"));
     }
 
     #[test]
