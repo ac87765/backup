@@ -189,6 +189,26 @@ testdata/crypto-vectors/   # 跨实现测试向量 (JSON)
 - 上传队列状态持久化到 IndexedDB（只存会话 ID、文件指纹、已确认块数，不存任何密钥或明文）。
 - 密码强度用 `@zxcvbn-ts`；UI 组件库选择无运行时 CSS-in-JS 的方案（满足严格 CSP），如 Tailwind + Radix。
 
+#### D12a. 认证类请求由 Worker 发出（第 3 组审查后补充）
+- **决策**：prelogin、注册、登录、刷新后解锁（取 KDF 参数与 `wrapped_mk`）、修改密码、恢复密钥重置、轮换恢复密钥这些请求，全部由 Worker 内的认证客户端（AuthClient）用同源 `fetch`（`credentials: 'same-origin'`，带 `X-Requested-With` 头）发出。主线程通过 Comlink 调用高层方法（如 `register(email, password)`、`login(email, password)`、`unlock(password)`、`changePassword(old, new)`、`resetWithRecovery(email, recoveryKey, newPassword)`、`rotateRecoveryKey()`），只拿到成功/失败与错误码。
+- **边界**：`auth_key`、`rk_auth` 及其新旧值只存在于 WASM 与 Worker 内；导出为 `Uint8Array`（不使用 JS 普通数组）以便请求体构造后 `fill(0)`。唯一允许传到主线程的密钥类数据是**恢复密钥展示串**：仅用于显示与回填确认，主线程不得持久化或记录日志，确认后立即从组件状态中清除。用户输入的恢复密钥由主线程传入 Worker（入方向）是允许的。
+- **理由**：`auth_key` 相当于长期有效的登录凭据，留在 Worker 内可避免主线程 XSS 直接窃取后绕开 HttpOnly 会话长期登录；Worker 同源请求会自动携带并接收会话 Cookie，没有技术障碍。
+- **备选**：允许 `auth_key` 经 Comlink 回到主线程由主线程发请求（实现简单，但扩大了凭据暴露面）。
+- **风险**：JSON 请求体字符串无法清零 → 接受，生命周期限定在单次请求内。
+
+#### D12b. 改变认证材料的操作采用“准备 → 提交 → 确认/丢弃”
+- **决策**：任何会改变服务端认证材料或 Worker 密钥状态的操作，分三步：
+  1. **prepare**：在 WASM 内生成待提交材料，保存为 Worker 内唯一的“待提交对象”，**不修改** KeyStore 的现有状态（MK、`pwd_wrap`）；
+  2. **submit**：Worker 发请求；
+  3. **commit / discard**：服务端返回成功后才把新状态写入 KeyStore（如替换 `pwd_wrap`）；失败、取消或 `lock()` 时丢弃并清零待提交对象。
+- **各操作的待提交材料**：
+  - 注册：新 MK、按推荐参数派生的 `auth_key` 与 `wrapped_mk`、恢复材料（展示串、`recovery_wrapped_mk`、`rk_auth`）。展示串先交给主线程，用户回填确认后才提交注册。
+  - 修改密码：用当前参数与盐派生的旧 `auth_key`（证明知道旧密码），用新随机盐与推荐参数派生的新 `auth_key`，以及用新 `pwd_wrap` 重新包裹的**当前** MK。成功后才替换 `pwd_wrap`。
+  - 恢复密钥重置：用输入的恢复密钥解包出 MK（只放在待提交对象中，不进入 KeyStore）、`rk_auth`、新密码派生的 `auth_key` 与 `wrapped_mk`。成功后丢弃待提交对象，由用户用新密码重新登录（服务端已撤销全部会话）。
+  - 轮换恢复密钥：新恢复材料；展示串交给主线程，用户确认后提交，成功后旧恢复密钥失效。
+- **理由**：避免“客户端已换成新密钥、服务端却拒绝了请求”导致的状态不一致；中途失败不留下半更新的状态。
+- **约束**：新密码一律使用新随机盐与当前推荐 KDF 参数（同时完成参数升级）。待提交对象同一时刻每类最多一个，新的 prepare 会丢弃旧的。
+
 ### D13. 邮件
 - **决策**：`lettre` 通过 SMTP 发送（生产建议阿里云邮件推送 DirectMail 的 SMTP 接口）；开发环境配置为把邮件写入日志。发送失败不影响注册事务：注册事务写入 `email_outbox`，由队列型后台任务发送并重试。
 - **理由**：与对象删除同一可靠性模式；SMTP 是最通用的接口，切换供应商只改配置。

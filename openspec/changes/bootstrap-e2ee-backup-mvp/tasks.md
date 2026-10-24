@@ -29,6 +29,7 @@
 - [x] 3.2 在 `web/src/worker` 建立 Crypto Worker（Comlink），实现密钥仅驻留 Worker 内存的 KeyStore 与 `lock()` 清零逻辑，Vitest 验证主线程 API 不返回任何密钥字节
 - [x] 3.3 验证生产构建下 WASM 在 CSP `script-src 'self' 'wasm-unsafe-eval'` 下可加载（Playwright 冒烟用例）
 - [x] 3.4 审查遗留收尾：`decrypt_version_metadata`（不校验 content 的版本）降为 `pub(crate)`，对外只保留 `decrypt_version_metadata_for_content`；CI 的 `runs-on` 固定为 `ubuntu-24.04`，并在 rust job 中加入 `wasm-pack test --headless --chrome crates/crypto-wasm`，验证 CI 全绿
+- [ ] 3.5 审查修复：错误码按操作区分——仅 `unlock_with_password` 的认证失败映射为 `invalid_credentials`、仅 `unlock_with_recovery` 映射为 `invalid_recovery_key`，其余操作（节点密钥解包、元数据、块解密等）的认证失败一律映射为 `integrity_error`；wasm 测试与 Worker 契约测试各覆盖篡改块、篡改元数据、调换节点密钥三种情况并断言错误码
 
 ## 4. 服务端基础设施
 
@@ -57,7 +58,8 @@
 - [ ] 6.6 实现会话中间件（空闲/绝对过期、last_seen 节流、CSRF 头校验）、登出、会话列表与撤销，集成测试覆盖撤销后 401、缺头 403
 - [ ] 6.7 实现修改密码、恢复密钥重置、重新生成恢复密钥（原子替换 + 撤销其他会话 + 通知邮件），集成测试覆盖旧凭据错误时数据不变
 - [ ] 6.8 实现 IP 维度限流（governor + 可信代理网段解析），集成测试验证 429 与 Retry-After
-- [ ] 6.9 前端：注册（强度校验、恢复密钥展示与回填确认）、验证邮件落地页、登录、解锁、登出、会话管理、修改密码、恢复重置页面，Playwright 覆盖注册→验证→登录→刷新解锁→改密→恢复密钥重置全流程
+- [ ] 6.9 Worker 认证客户端与事务式密钥接口（design D12a/D12b）：KeyStore 增加注册、修改密码、恢复重置、轮换恢复密钥的 prepare/commit/discard 接口（prepare 不改现有状态，`lock()` 丢弃并清零待提交对象），`auth_key`/`rk_auth` 以 `Uint8Array` 导出并在请求后清零；Worker 内 AuthClient 发出全部认证请求，Comlink 只暴露高层方法。测试覆盖：服务端拒绝改密时 KeyStore 仍可用旧密钥工作、恢复重置失败时不进入解锁状态、Comlink 边界无 32 字节值（沿用第 3 组的边界探针思路）
+- [ ] 6.10 前端：注册（强度校验、恢复密钥展示与回填确认）、验证邮件落地页、登录、解锁、登出、会话管理、修改密码、恢复重置页面，Playwright 覆盖注册→验证→登录→刷新解锁→改密→恢复密钥重置全流程；真实流程覆盖后删除 `self-test` 自检页及 `VITE_SELFTEST` 分支，CSP 冒烟改用真实页面
 
 ## 7. 文件管理
 
