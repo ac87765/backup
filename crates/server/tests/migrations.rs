@@ -7,9 +7,9 @@
 
 mod common;
 
-use std::process::Command;
-
-use common::{TestDb, config_env, environment, static_fixture};
+use common::{
+    TestDb, apply_migrate_env, environment, integration_serve_env, server_command, static_fixture,
+};
 use server::db::{Database, MigrationState};
 
 #[tokio::test]
@@ -116,12 +116,11 @@ async fn serve_binary_refuses_to_start_before_migration() {
     let test_db = TestDb::create(env).await;
     let (_dir, static_dir) = static_fixture();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_server"))
-        .arg("serve")
-        .env_clear()
-        .envs(config_env(env, &test_db.url, &static_dir))
-        .output()
-        .expect("启动 server 二进制");
+    let serve_env = integration_serve_env(env, &test_db.url, &static_dir);
+    let mut command = server_command();
+    command.arg("serve");
+    serve_env.apply(&mut command);
+    let output = command.output().expect("启动 server 二进制");
 
     assert!(
         !output.status.success(),
@@ -138,14 +137,11 @@ async fn serve_binary_refuses_to_start_before_migration() {
 async fn migrate_binary_applies_migrations() {
     let env = environment().await;
     let test_db = TestDb::create(env).await;
-    let (_dir, static_dir) = static_fixture();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_server"))
-        .arg("migrate")
-        .env_clear()
-        .envs(config_env(env, &test_db.url, &static_dir))
-        .output()
-        .expect("启动 server 二进制");
+    let mut command = server_command();
+    command.arg("migrate");
+    apply_migrate_env(&mut command, &test_db.url);
+    let output = command.output().expect("启动 server 二进制");
 
     assert!(
         output.status.success(),

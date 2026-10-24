@@ -2,14 +2,15 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
-use std::process::Command;
+mod common;
+
+use common::server_command;
 
 #[test]
 fn openapi_command_prints_spec_without_configuration() {
-    let output = Command::new(env!("CARGO_BIN_EXE_server"))
+    // 清空环境：openapi 子命令不应依赖任何 BACKUP_* 配置。
+    let output = server_command()
         .arg("openapi")
-        // 清空环境：openapi 子命令不应依赖任何 BACKUP_* 配置。
-        .env_clear()
         .output()
         .expect("启动 server 二进制");
 

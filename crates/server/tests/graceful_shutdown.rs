@@ -24,7 +24,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Notify;
 
 #[cfg(unix)]
-use common::{config_env, environment, migrated_database};
+use common::{environment, integration_serve_env, migrated_database, server_command};
 use common::{static_fixture, test_config, test_state};
 
 #[derive(Clone)]
@@ -198,10 +198,11 @@ async fn sigterm_terminates_the_real_binary_gracefully() {
     let address = probe.local_addr().expect("本地地址");
     drop(probe);
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_server"))
-        .arg("serve")
-        .env_clear()
-        .envs(config_env(env, &test_db.url, &root))
+    let serve_env = integration_serve_env(env, &test_db.url, &root);
+    let mut command = server_command();
+    command.arg("serve");
+    serve_env.apply(&mut command);
+    let mut child = command
         .env("BACKUP_BIND_ADDR", address.to_string())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

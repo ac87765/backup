@@ -12,6 +12,8 @@
 #![allow(dead_code)]
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
+use std::path::Path;
+use std::process::Command;
 use std::time::Duration;
 
 use sqlx::PgPool;
@@ -294,44 +296,123 @@ pub fn integration_storage_config(env: &TestEnvironment) -> server::config::Stor
     integration_config(env, std::env::temp_dir()).storage
 }
 
-/// 构造一组完整、合法的 `BACKUP_*` 环境变量，供启动二进制的测试使用。
-pub fn config_env(
-    env: &TestEnvironment,
-    database_url: &str,
-    static_dir: &std::path::Path,
-) -> Vec<(String, String)> {
-    vec![
+/// 启动真实 server 二进制；默认清空环境，避免开发机上的 `BACKUP_*` 干扰结果。
+pub fn server_command() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
+    command.env_clear();
+    command
+}
+
+/// 完整 `serve` 环境变量的输入。
+///
+/// 不依赖 [`TestEnvironment`]，因此不需要 Docker 的进程级配置测试也能复用。
+pub struct ServeEnvSettings<'a> {
+    pub database_url: &'a str,
+    pub static_dir: &'a Path,
+    pub storage_bucket: &'a str,
+    pub storage_internal_endpoint: &'a str,
+    pub storage_public_endpoint: &'a str,
+    pub storage_access_key: &'a str,
+    pub storage_secret_key: &'a str,
+}
+
+/// 一组完整、合法的 `serve` 环境变量，并持有临时邮件目录直到测试结束。
+pub struct ServeBinaryEnv {
+    vars: Vec<(String, String)>,
+    _mail_dir: tempfile::TempDir,
+}
+
+impl ServeBinaryEnv {
+    /// 把完整环境写入命令（先 `env_clear`）。
+    pub fn apply(&self, command: &mut Command) {
+        self.apply_with(command, &[], &[]);
+    }
+
+    /// 写入完整环境，但可排除某些项或覆盖某些项（供配置失败测试使用）。
+    pub fn apply_with(&self, command: &mut Command, overrides: &[(&str, &str)], excluded: &[&str]) {
+        command.env_clear();
+        for (key, value) in &self.vars {
+            if excluded.contains(&key.as_str()) {
+                continue;
+            }
+            command.env(key, value);
+        }
+        for (key, value) in overrides {
+            command.env(key, value);
+        }
+    }
+}
+
+/// 构造完整、合法的 `serve` 环境变量。
+pub fn serve_binary_env(settings: ServeEnvSettings<'_>) -> ServeBinaryEnv {
+    let mail_dir = tempfile::tempdir().expect("创建临时邮件目录");
+    let vars = vec![
         ("BACKUP_BIND_ADDR".to_owned(), "127.0.0.1:0".to_owned()),
         ("BACKUP_METRICS_ADDR".to_owned(), "127.0.0.1:0".to_owned()),
         (
             "BACKUP_STATIC_DIR".to_owned(),
-            static_dir.display().to_string(),
+            settings.static_dir.display().to_string(),
         ),
-        ("BACKUP_DATABASE_URL".to_owned(), database_url.to_owned()),
+        (
+            "BACKUP_DATABASE_URL".to_owned(),
+            settings.database_url.to_owned(),
+        ),
         ("BACKUP_STORAGE_KIND".to_owned(), "s3".to_owned()),
         (
             "BACKUP_STORAGE_BUCKET".to_owned(),
-            env.storage_bucket.to_owned(),
+            settings.storage_bucket.to_owned(),
         ),
         ("BACKUP_STORAGE_REGION".to_owned(), "us-east-1".to_owned()),
         (
             "BACKUP_STORAGE_INTERNAL_ENDPOINT".to_owned(),
-            env.storage_endpoint.clone(),
+            settings.storage_internal_endpoint.to_owned(),
         ),
         (
             "BACKUP_STORAGE_PUBLIC_ENDPOINT".to_owned(),
-            env.storage_endpoint.clone(),
+            settings.storage_public_endpoint.to_owned(),
         ),
         (
             "BACKUP_STORAGE_ACCESS_KEY_ID".to_owned(),
-            env.storage_access_key.to_owned(),
+            settings.storage_access_key.to_owned(),
         ),
         (
             "BACKUP_STORAGE_SECRET_ACCESS_KEY".to_owned(),
-            env.storage_secret_key.to_owned(),
+            settings.storage_secret_key.to_owned(),
         ),
         ("BACKUP_STORAGE_ALLOW_HTTP".to_owned(), "true".to_owned()),
-    ]
+        ("BACKUP_MAIL_MODE".to_owned(), "file".to_owned()),
+        (
+            "BACKUP_MAIL_DIR".to_owned(),
+            mail_dir.path().display().to_string(),
+        ),
+    ];
+    ServeBinaryEnv {
+        vars,
+        _mail_dir: mail_dir,
+    }
+}
+
+/// 连接真实测试环境的完整 `serve` 环境变量。
+pub fn integration_serve_env(
+    env: &TestEnvironment,
+    database_url: &str,
+    static_dir: &Path,
+) -> ServeBinaryEnv {
+    serve_binary_env(ServeEnvSettings {
+        database_url,
+        static_dir,
+        storage_bucket: env.storage_bucket,
+        storage_internal_endpoint: &env.storage_endpoint,
+        storage_public_endpoint: &env.storage_endpoint,
+        storage_access_key: env.storage_access_key,
+        storage_secret_key: env.storage_secret_key,
+    })
+}
+
+/// `migrate` 只需要数据库配置；刻意只设置 `BACKUP_DATABASE_URL`，
+/// 用来验证迁移入口不会再要求存储、邮件或监听地址。
+pub fn apply_migrate_env(command: &mut Command, database_url: &str) {
+    command.env_clear().env("BACKUP_DATABASE_URL", database_url);
 }
 
 /// 构造一个不连接任何真实依赖的 [`server::AppState`]（只用于应用骨架/中间件测试）。
