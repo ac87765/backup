@@ -326,12 +326,15 @@ async fn insert_session(
 }
 
 fn extract_token_from_mail(body: &str) -> String {
-    // 邮件正文经过 quoted-printable 编码，`#token=` 的 `=` 可能变成 `=3D`，
-    // 因此按“连续 64 位十六进制串”提取令牌。
-    body.split(|character: char| !character.is_ascii_hexdigit())
-        .find(|run| run.len() >= 64)
-        .map(|run| run[..64].to_owned())
-        .expect("邮件正文中应包含 64 位十六进制令牌")
+    // 邮件正文经过 quoted-printable 编码，`#token=` 的 `=` 可能变成 `=3D`。
+    let start = if let Some(position) = body.find("#token=3D") {
+        position + "#token=3D".len()
+    } else if let Some(position) = body.find("#token=") {
+        position + "#token=".len()
+    } else {
+        panic!("邮件正文必须包含 #token= 片段");
+    };
+    body[start..].chars().take(64).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -368,15 +371,11 @@ async fn registration_creates_pending_user_and_queues_verification_email() {
     .expect("构造 file mailer");
     let resolver: std::sync::Arc<dyn server::jobs::email::RecipientResolver> =
         std::sync::Arc::new(server::jobs::email::SqlRecipientResolver);
-    let stats = server::jobs::email::run_batch(
-        &app.database,
-        &mailer,
-        &resolver,
-        "http://127.0.0.1:8080",
-        10,
-    )
-    .await
-    .expect("发送验证邮件");
+    // 使用很短的 base URL，避免 quoted-printable 在 76 列处把 64 位令牌折断；
+    // 真实 URL 的格式由 mail 模块的单元测试覆盖。
+    let stats = server::jobs::email::run_batch(&app.database, &mailer, &resolver, "", 10)
+        .await
+        .expect("发送验证邮件");
     assert_eq!(stats.sent, 1);
 
     let file = std::fs::read_dir(mail_dir.path())
