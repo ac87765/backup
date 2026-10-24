@@ -7,6 +7,7 @@
 - [x] 1.3 编写 `deploy/docker-compose.dev.yml`（PostgreSQL 16 + MinIO + 自动建 bucket 与 CORS），验证 `docker compose up` 后两服务健康
 - [x] 1.4 配置 CI：fmt、clippy、test、`cargo deny check`、前端 typecheck/lint/test、wasm 构建，验证在空实现上流水线全绿
 - [x] 1.5 添加 `.gitignore`、`rust-toolchain.toml`、`deny.toml`、`README.md`（本地开发启动步骤），按 README 从零启动验证可行
+- [ ] 1.6 审查修复：CI 增加 `openspec validate --strict` 步骤；dev compose 的 MinIO 与 mc 镜像按 digest 固定；推送到私有 GitHub 远端并让 CI 三个 job 实际跑绿（补齐 1.4 的验证条件），在汇报中附 CI 运行链接
 
 ## 2. 加密核心 crypto-core
 
