@@ -558,27 +558,124 @@ fn lock_releases_keys_and_rejects_operations() {
 }
 
 #[wasm_bindgen_test]
-fn invalid_password_returns_invalid_credentials() {
-    let mut unlocked = unlocked_store();
-    let node_id = "550e8400-e29b-41d4-a716-446655440000";
-    let wrapped = unlocked.generate_node_key(node_id).unwrap();
-    let _ = wrapped;
+fn wrong_password_returns_invalid_credentials() {
+    // 正确密码创建 MK，拿到真实结构的 wrapped_mk。
+    let mut owner = KeyStore::new();
+    let salt = [0x42u8; 16];
+    owner
+        .derive_password_keys("correct horse battery staple", DEFAULT_KDF_PARAMS, &salt)
+        .unwrap();
+    let wrapped_mk = owner.create_master_key().unwrap();
 
-    // 用错误密码派生的 pwd_wrap 无法解包已有 MK。
-    let mut other = KeyStore::new();
-    let salt = [0x99u8; 16];
-    other
+    // 错误密码派生出的 pwd_wrap 无法解包：只有这里应返回 invalid_credentials。
+    let mut attacker = KeyStore::new();
+    attacker
         .derive_password_keys("wrong password", DEFAULT_KDF_PARAMS, &salt)
         .unwrap();
-    // 结构完整但密钥错误的帧：认证失败应映射为 invalid_credentials。
-    let wrong_frame = vec![0x01u8; 32 + 41];
-    let error = other.unlock_with_password(&wrong_frame).unwrap_err();
+    let error = attacker.unlock_with_password(&wrapped_mk).unwrap_err();
     assert_eq!(error_code(&error), "invalid_credentials");
+}
+
+#[wasm_bindgen_test]
+fn tampered_chunk_returns_integrity_error() {
+    let mut store = unlocked_store();
+    store.generate_node_key(NODE_ID).unwrap();
+
+    let mut ciphertext = store
+        .encrypt_chunk(NODE_ID, CONTENT_ID, 0, 1, true, b"chunk data")
+        .unwrap();
+    flip_last_byte(&mut ciphertext);
+
+    let error = store
+        .decrypt_chunk(NODE_ID, CONTENT_ID, 0, 1, true, &ciphertext)
+        .unwrap_err();
+    assert_eq!(error_code(&error), "integrity_error");
+}
+
+#[wasm_bindgen_test]
+fn tampered_metadata_returns_integrity_error() {
+    let mut store = unlocked_store();
+    store.generate_node_key(NODE_ID).unwrap();
+
+    // 节点元数据。
+    let mut node_metadata = store.encrypt_node_metadata(NODE_ID, "报告.pdf").unwrap();
+    flip_last_byte(&mut node_metadata);
+    let error = store
+        .decrypt_node_metadata(NODE_ID, &node_metadata)
+        .unwrap_err();
+    assert_eq!(error_code(&error), "integrity_error");
+
+    // 版本元数据。
+    let mut version_metadata = store
+        .encrypt_version_metadata(
+            NODE_ID,
+            VERSION_ID,
+            CONTENT_ID,
+            10.0,
+            1_700_000_000.0,
+            "text/plain",
+        )
+        .unwrap();
+    flip_last_byte(&mut version_metadata);
+    let error = store
+        .decrypt_version_metadata_for_content(NODE_ID, VERSION_ID, CONTENT_ID, &version_metadata)
+        .err()
+        .unwrap();
+    assert_eq!(error_code(&error), "integrity_error");
+}
+
+#[wasm_bindgen_test]
+fn swapped_node_key_returns_integrity_error() {
+    let mut store = unlocked_store();
+
+    // A 的包裹密钥带着 node_id 的 AAD；把它当成 B 的密钥解包必须失败。
+    let wrapped_a = store.generate_node_key(NODE_ID).unwrap();
+    let error = store.load_node_key(OTHER_NODE_ID, &wrapped_a).unwrap_err();
+    assert_eq!(error_code(&error), "integrity_error");
+}
+
+#[wasm_bindgen_test]
+fn wrong_recovery_key_returns_invalid_recovery_key() {
+    let mut owner = unlocked_store();
+    let material = owner.create_recovery_key().unwrap().to_rust().unwrap();
+
+    // 正确的恢复密钥可以解锁。
+    let mut unlocked = KeyStore::new();
+    unlocked
+        .unlock_with_recovery(&material.display, &material.wrapped_mk_recovery)
+        .unwrap();
+    assert!(!unlocked.is_locked());
+
+    // 另一把格式合法的恢复密钥无法解包 → invalid_recovery_key。
+    let mut other = unlocked_store();
+    let other_material = other.create_recovery_key().unwrap().to_rust().unwrap();
+    let mut store = KeyStore::new();
+    let error = store
+        .unlock_with_recovery(&other_material.display, &material.wrapped_mk_recovery)
+        .unwrap_err();
+    assert_eq!(error_code(&error), "invalid_recovery_key");
+
+    // 抄写错误（编码非法）同样映射为 invalid_recovery_key。
+    let mut store = KeyStore::new();
+    let error = store
+        .unlock_with_recovery("not-a-recovery-key", &material.wrapped_mk_recovery)
+        .unwrap_err();
+    assert_eq!(error_code(&error), "invalid_recovery_key");
 }
 
 // ---------------------------------------------------------------------------
 // 测试辅助
 // ---------------------------------------------------------------------------
+
+const NODE_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
+const OTHER_NODE_ID: &str = "550e8400-e29b-41d4-a716-446655440001";
+const VERSION_ID: &str = "6ba7b810-9dad-41d1-80b4-00c04fd430c8";
+const CONTENT_ID: &str = "6ba7b811-9dad-41d1-80b4-00c04fd430c8";
+
+fn flip_last_byte(bytes: &mut [u8]) {
+    let last = bytes.len() - 1;
+    bytes[last] ^= 0x01;
+}
 
 fn unlocked_store() -> KeyStore {
     let mut store = KeyStore::new();

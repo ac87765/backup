@@ -17,6 +17,7 @@ const PASSWORD = 'correct horse battery staple'
 const SALT = new Uint8Array(16).fill(0x42)
 
 const NODE_ID = '550e8400-e29b-41d4-a716-446655440000'
+const OTHER_NODE_ID = '550e8400-e29b-41d4-a716-446655440001'
 const PARENT_ID = '550e8400-e29b-41d4-a716-44665544000a'
 const VERSION_ID = '6ba7b810-9dad-41d1-80b4-00c04fd430c8'
 const CONTENT_ID = '6ba7b811-9dad-41d1-80b4-00c04fd430c8'
@@ -208,6 +209,48 @@ describe('Crypto Worker API 契约', () => {
     await expect(api.verifyPlaintextSize(3, 2)).rejects.toMatchObject({
       code: 'plaintext_size_mismatch',
     })
+  })
+
+  it('认证失败按操作区分错误码', async () => {
+    const api = makeApi()
+    const { wrappedMk } = await api.createMasterKey(PASSWORD, KDF_PARAMS, SALT)
+    await api.createNodeKey(NODE_ID)
+
+    // 篡改块 → integrity_error（不能伪装成凭据错误）。
+    const plaintext = new TextEncoder().encode('chunk data')
+    const ciphertext = await api.encryptChunk(
+      NODE_ID,
+      CONTENT_ID,
+      0,
+      1,
+      true,
+      plaintext,
+    )
+    const tamperedChunk = ciphertext.slice()
+    tamperedChunk[tamperedChunk.length - 1] ^= 0x01
+    await expect(
+      api.decryptChunk(NODE_ID, CONTENT_ID, 0, 1, true, tamperedChunk),
+    ).rejects.toMatchObject({ code: 'integrity_error' })
+
+    // 篡改元数据 → integrity_error。
+    const metadata = await api.encryptNodeMetadata(NODE_ID, 'a.txt')
+    const tamperedMetadata = metadata.slice()
+    tamperedMetadata[tamperedMetadata.length - 1] ^= 0x01
+    await expect(
+      api.decryptNodeMetadata(NODE_ID, tamperedMetadata),
+    ).rejects.toMatchObject({ code: 'integrity_error' })
+
+    // 把一个节点的包裹密钥当成另一个节点的 → integrity_error。
+    const wrappedNodeKey = await api.createNodeKey(NODE_ID)
+    await expect(
+      api.loadNodeKey(OTHER_NODE_ID, wrappedNodeKey),
+    ).rejects.toMatchObject({ code: 'integrity_error' })
+
+    // 密码错误仍然只返回 invalid_credentials。
+    await api.lock()
+    await expect(
+      api.unlock('wrong password', KDF_PARAMS, SALT, wrappedMk),
+    ).rejects.toMatchObject({ code: 'invalid_credentials' })
   })
 
   it('lock 之后需要密钥的调用返回 locked', async () => {

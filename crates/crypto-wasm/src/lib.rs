@@ -85,6 +85,15 @@ pub enum KeyStoreError {
     InvalidNumber,
     /// 返回值序列化为 JS 对象失败。
     Serialization,
+    /// 仅用于 `unlock_with_password`：密码认证失败。
+    InvalidCredentials,
+    /// 仅用于 `unlock_with_recovery`：恢复密钥无效或认证失败。
+    InvalidRecoveryKey,
+    /// 其余解包/解密操作（节点密钥、元数据、块）的认证失败。
+    ///
+    /// 覆盖篡改、重排、调换节点密钥等完整性错误；这些情况下数据本身不可信，
+    /// 不应伪装成“凭据错误”。
+    Integrity,
     /// crypto-core 抛出的领域错误。
     Crypto(CryptoError),
 }
@@ -96,6 +105,32 @@ impl From<CryptoError> for KeyStoreError {
 }
 
 impl KeyStoreError {
+    /// 解包/解密路径：认证失败 → `integrity_error`，其余错误保持原样。
+    fn from_integrity(error: CryptoError) -> Self {
+        match error {
+            CryptoError::AuthenticationFailed => Self::Integrity,
+            other => Self::Crypto(other),
+        }
+    }
+
+    /// 密码解锁路径：认证失败 → `invalid_credentials`。
+    fn from_credentials(error: CryptoError) -> Self {
+        match error {
+            CryptoError::AuthenticationFailed => Self::InvalidCredentials,
+            other => Self::Crypto(other),
+        }
+    }
+
+    /// 恢复密钥路径：解析失败或认证失败都视为恢复密钥无效。
+    fn from_recovery(error: CryptoError) -> Self {
+        match error {
+            CryptoError::AuthenticationFailed
+            | CryptoError::RecoveryChecksumMismatch
+            | CryptoError::InvalidRecoveryEncoding => Self::InvalidRecoveryKey,
+            other => Self::Crypto(other),
+        }
+    }
+
     fn code(&self) -> &'static str {
         match self {
             Self::Locked => "locked",
@@ -104,16 +139,16 @@ impl KeyStoreError {
             Self::InvalidSalt => "invalid_salt",
             Self::InvalidNumber => "invalid_number",
             Self::Serialization => "serialization_error",
+            Self::InvalidCredentials => "invalid_credentials",
+            Self::InvalidRecoveryKey => "invalid_recovery_key",
+            Self::Integrity => "integrity_error",
+            // 认证失败不在全局表里映射：它必须由调用场景决定是凭据错误还是完整性错误。
             Self::Crypto(error) => match error {
-                CryptoError::AuthenticationFailed => "invalid_credentials",
                 CryptoError::ContentBindingMismatch => "content_binding_mismatch",
                 CryptoError::PlaintextSizeMismatch => "plaintext_size_mismatch",
                 CryptoError::UnsupportedKdfAlgorithm => "unsupported_kdf_algorithm",
                 CryptoError::InvalidKdfParams => "invalid_kdf_params",
                 CryptoError::InvalidId { .. } => "invalid_id",
-                CryptoError::RecoveryChecksumMismatch | CryptoError::InvalidRecoveryEncoding => {
-                    "invalid_recovery_key"
-                }
                 CryptoError::InvalidChunkLayout => "invalid_chunk_layout",
                 CryptoError::UnsupportedFormatVersion(_) => "unsupported_format_version",
                 _ => "crypto_error",
@@ -129,6 +164,9 @@ impl KeyStoreError {
             Self::InvalidSalt => "KDF 盐长度必须为 16 字节".to_owned(),
             Self::InvalidNumber => "数值超出可安全传输的范围".to_owned(),
             Self::Serialization => "返回值序列化失败".to_owned(),
+            Self::InvalidCredentials => "密码错误或凭据无效".to_owned(),
+            Self::InvalidRecoveryKey => "恢复密钥无效".to_owned(),
+            Self::Integrity => "数据完整性校验失败".to_owned(),
             Self::Crypto(error) => error.to_string(),
         }
     }
@@ -243,25 +281,32 @@ impl KeyStore {
     }
 
     /// 用密码包裹的 MK 解锁。
+    ///
+    /// 认证失败映射为 `invalid_credentials`（只有这里使用该错误码）。
     pub fn unlock_with_password(&mut self, wrapped_mk: &[u8]) -> Result<(), KeyStoreError> {
         let pwd_wrap = self
             .pwd_wrap
             .as_ref()
             .ok_or(KeyStoreError::NotInitialized)?;
-        let master_key = unwrap_mk_with_password(pwd_wrap, wrapped_mk)?;
+        let master_key = unwrap_mk_with_password(pwd_wrap, wrapped_mk)
+            .map_err(KeyStoreError::from_credentials)?;
         self.master_key = Some(master_key);
         Ok(())
     }
 
     /// 用恢复密钥解锁（忘记密码场景）。
+    ///
+    /// 恢复密钥解析失败或认证失败映射为 `invalid_recovery_key`（只有这里使用该错误码）。
     pub fn unlock_with_recovery(
         &mut self,
         recovery_key_display: &str,
         recovery_wrapped_mk: &[u8],
     ) -> Result<(), KeyStoreError> {
-        let recovery_key = parse_recovery_key(recovery_key_display)?;
+        let recovery_key =
+            parse_recovery_key(recovery_key_display).map_err(KeyStoreError::from_recovery)?;
         let keys = derive_recovery_keys(&recovery_key)?;
-        let master_key = unwrap_mk_with_recovery(&keys.rk_wrap, recovery_wrapped_mk)?;
+        let master_key = unwrap_mk_with_recovery(&keys.rk_wrap, recovery_wrapped_mk)
+            .map_err(KeyStoreError::from_recovery)?;
         self.master_key = Some(master_key);
         Ok(())
     }
@@ -293,10 +338,13 @@ impl KeyStore {
     }
 
     /// 解包服务端返回的节点密钥并留在 WASM 内（刷新后按需加载）。
+    ///
+    /// 认证失败（node_id 与包裹密钥不匹配）映射为 `integrity_error`。
     pub fn load_node_key(&mut self, node_id: &str, wrapped: &[u8]) -> Result<(), KeyStoreError> {
         let master_key = self.require_master_key()?;
         let node_id = NodeId::parse(node_id)?;
-        let node_key = unwrap_node_key(master_key, &node_id, wrapped)?;
+        let node_key = unwrap_node_key(master_key, &node_id, wrapped)
+            .map_err(KeyStoreError::from_integrity)?;
         self.node_keys.insert(node_id.as_str().to_owned(), node_key);
         Ok(())
     }
@@ -315,13 +363,16 @@ impl KeyStore {
     }
 
     /// 解密节点元数据并返回文件名（明文只返回给 Worker/UI）。
+    ///
+    /// 认证失败（篡改或节点不匹配）映射为 `integrity_error`。
     pub fn decrypt_node_metadata(
         &mut self,
         node_id: &str,
         ciphertext: &[u8],
     ) -> Result<String, KeyStoreError> {
         let (node_id, node_key) = self.lookup_node_key(node_id)?;
-        let metadata = core_decrypt_node_metadata(node_key, &node_id, ciphertext)?;
+        let metadata = core_decrypt_node_metadata(node_key, &node_id, ciphertext)
+            .map_err(KeyStoreError::from_integrity)?;
         Ok(metadata.name)
     }
 
@@ -361,6 +412,9 @@ impl KeyStore {
     }
 
     /// 解密版本元数据并校验它确实指向给定的 content（回滚防护）。
+    ///
+    /// 认证失败（篡改或版本/节点不匹配）映射为 `integrity_error`；
+    /// content 绑定不符仍返回 `content_binding_mismatch`。
     pub fn decrypt_version_metadata_for_content(
         &mut self,
         node_id: &str,
@@ -377,7 +431,8 @@ impl KeyStore {
             &version_id,
             &expected_content_id,
             ciphertext,
-        )?;
+        )
+        .map_err(KeyStoreError::from_integrity)?;
 
         to_ts(&VersionMetadataView {
             content_id: metadata.content_id.as_str().to_owned(),
@@ -417,6 +472,8 @@ impl KeyStore {
     }
 
     /// 解密一块文件内容，返回明文。
+    ///
+    /// 认证失败（篡改、重排、跨内容）映射为 `integrity_error`。
     #[allow(clippy::too_many_arguments)]
     pub fn decrypt_chunk(
         &mut self,
@@ -431,7 +488,8 @@ impl KeyStore {
         let content_id = ContentId::parse(content_id)?;
         let content_key = derive_content_key(node_key, &content_id)?;
         let plaintext =
-            core_decrypt_chunk(&content_key, &content_id, index, count, is_last, ciphertext)?;
+            core_decrypt_chunk(&content_key, &content_id, index, count, is_last, ciphertext)
+                .map_err(KeyStoreError::from_integrity)?;
         Ok(plaintext.to_vec())
     }
 
