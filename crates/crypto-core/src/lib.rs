@@ -72,9 +72,9 @@ pub use mk::{
 };
 pub use node::{
     NAME_TOKEN_LEN, NameToken, NodeMetadata, VersionMetadata, compute_name_token,
-    decrypt_node_metadata, decrypt_version_metadata, decrypt_version_metadata_for_content,
-    derive_name_key, encrypt_node_metadata, encrypt_version_metadata, unwrap_node_key,
-    verify_plaintext_size, wrap_node_key,
+    decrypt_node_metadata, decrypt_version_metadata_for_content, derive_name_key,
+    encrypt_node_metadata, encrypt_version_metadata, unwrap_node_key, verify_plaintext_size,
+    wrap_node_key,
 };
 pub use recovery::{
     RECOVERY_CHECKSUM_LEN, RECOVERY_DISPLAY_GROUP_SIZE, RECOVERY_KEY_LEN, RECOVERY_SYMBOL_COUNT,

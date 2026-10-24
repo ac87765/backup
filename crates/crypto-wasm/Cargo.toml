@@ -12,13 +12,29 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 crypto-core = { path = "../crypto-core", version = "0.1.0" }
+# 构造带 code 属性的 JS Error，便于 Worker 把错误码透传给主线程。
+js-sys = "0.3"
+# tsify 通过 serde 把 Rust 结构体转换成 JS 对象并生成 TS 类型。
+serde = { version = "1", features = ["derive"] }
+# 从 Rust 结构体生成 TS 类型（design D1 的风险缓解）。
+tsify = "0.5"
 wasm-bindgen = "0.2"
+# 显式清零不再使用的临时密钥（KeyStore::lock 依赖 Drop 清零）。
+zeroize = "1"
 
 # crypto-core 内部用 getrandom 取 CSPRNG 随机数。wasm32-unknown-unknown 没有操作系统
 # 随机源，必须启用 getrandom 的 `js` 后端（底层是浏览器 crypto.getRandomValues）。
 # 只在 wasm 目标下启用，原生构建仍走操作系统随机源。
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+# 测试向量需要 crypto-core 的 test-vectors 入口（固定 nonce 封帧）。
+# 这正是“只在 dev-dependencies 中开启”的用法：生产构建不受影响。
+crypto-core = { path = "../crypto-core", version = "0.1.0", features = ["test-vectors"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen-test = "0.3"
 
 [lints]
 workspace = true

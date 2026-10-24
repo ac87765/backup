@@ -37,6 +37,16 @@ macro_rules! define_key {
             pub(crate) fn as_bytes(&self) -> &[u8; KEY_LEN] {
                 &self.0
             }
+
+            /// 读取密钥字节用于**跨实现测试向量比对**。
+            ///
+            /// 只在 `test-vectors` feature（仅 dev-dependencies 开启）下存在；
+            /// 生产构建与发布产物不包含该方法。
+            #[cfg(feature = "test-vectors")]
+            #[doc(hidden)]
+            pub fn expose_for_test_vectors(&self) -> &[u8; KEY_LEN] {
+                &self.0
+            }
         }
 
         impl From<[u8; KEY_LEN]> for $name {

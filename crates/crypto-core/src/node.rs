@@ -211,8 +211,11 @@ pub fn encrypt_version_metadata(
     )
 }
 
-/// 解密版本元数据。
-pub fn decrypt_version_metadata(
+/// 解密版本元数据（不校验 content 绑定）。
+///
+/// 只在本 crate 内部与测试使用；对外只暴露
+/// [`decrypt_version_metadata_for_content`]，避免调用方跳过回滚校验。
+pub(crate) fn decrypt_version_metadata(
     node_key: &NodeKey,
     version_id: &VersionId,
     ciphertext: &[u8],
