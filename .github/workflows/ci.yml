@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # 功能分支以 impl/ 开头；推送即跑，便于在合并前拿到完整结果。
+    branches: [main, "impl/**"]
   pull_request:
   workflow_dispatch:
 
@@ -18,16 +19,18 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
+# 所有第三方 action 都按 commit SHA 固定（供应链安全），注释保留对应的可读 tag。
+# 升级时同时更新 SHA 与注释。
 jobs:
   rust:
     name: Rust (fmt / clippy / test / deny / wasm)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # rust-toolchain.toml 固定了版本、组件与 wasm32 目标，rustup 会自动安装。
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
@@ -39,7 +42,7 @@ jobs:
         run: cargo test --workspace
 
       - name: cargo deny check
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
         with:
           command: check
 
@@ -65,11 +68,12 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24
+          # 与本地开发使用同一 Node 版本（版本号只在 .nvmrc 维护一份）。
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -88,12 +92,30 @@ jobs:
       - name: build
         run: npm run build
 
+  spec:
+    name: OpenSpec (validate --strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+
+      # 固定 CLI 版本，避免上游行为变化让规范校验结果漂移。
+      - name: 安装 OpenSpec CLI 1.15.0
+        run: npm install --global @fission-ai/openspec@1.15.0
+
+      - name: openspec validate --strict
+        run: openspec validate bootstrap-e2ee-backup-mvp --strict
+
   dev-stack:
     name: Dev stack (PostgreSQL + MinIO)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: 启动 PostgreSQL 与 MinIO
         run: docker compose -f deploy/docker-compose.dev.yml up -d --wait postgres minio

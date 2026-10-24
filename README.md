@@ -22,7 +22,7 @@
 | 工具 | 版本 | 说明 |
 |---|---|---|
 | Rust | 1.98.1 | 由 `rust-toolchain.toml` 固定，rustup 首次构建时自动安装（含 rustfmt、clippy、wasm32 目标） |
-| Node.js | 24+ | 前端构建与测试 |
+| Node.js | 见 `.nvmrc`（当前 26.11.1） | 前端构建与测试；CI 用同一个文件确定版本 |
 | Docker + Compose v2 | 任意较新版本 | 本地 PostgreSQL 与 MinIO |
 | wasm-pack | 0.15+ | 构建浏览器加密模块，CI 中固定为 0.15.0 |
 
@@ -64,6 +64,11 @@ docker compose -f deploy/docker-compose.dev.yml ps
 | PostgreSQL 16 | `127.0.0.1:5432`，库 `backup` | `backup` / `backup-dev-password` |
 | MinIO S3 API | `http://127.0.0.1:9000`，bucket `backup` | `backup` / `backup-dev-secret` |
 | MinIO 控制台 | http://127.0.0.1:9001 | 同上 |
+
+> **端口冲突**：如果本机 5432 已被其他 PostgreSQL 占用，compose 会因
+> `address already in use` 启动失败。此时用 `POSTGRES_PORT` 换一个宿主机端口即可，
+> 例如 `POSTGRES_PORT=5433 docker compose -f deploy/docker-compose.dev.yml up -d --wait`；
+> 后端连接串相应改用该端口。
 
 停止并删除数据卷：
 

@@ -34,7 +34,9 @@ services:
       start_period: 10s
 
   minio:
-    image: ${MINIO_IMAGE:-bitnamilegacy/minio:latest}
+    # 官方镜像已下架，使用 Bitnami 归档镜像；镜像按 digest 固定，避免 `latest` 漂移。
+    # 需要升级或改用内部镜像仓库时，用 MINIO_IMAGE 覆盖（可写 tag 或 digest）。
+    image: ${MINIO_IMAGE:-bitnamilegacy/minio@sha256:451fe6858cb770cc9d0e77ba811ce287420f781c7c1b806a386f6896471a349c}
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-backup}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-backup-dev-secret}
@@ -59,7 +61,8 @@ services:
 
   # 一次性任务：创建私有 bucket 并设置 CORS，保证浏览器可以直传预签名 URL。
   minio-init:
-    image: ${MINIO_CLIENT_IMAGE:-bitnamilegacy/minio-client:latest}
+    # 同样按 digest 固定；可用 MINIO_CLIENT_IMAGE 覆盖。
+    image: ${MINIO_CLIENT_IMAGE:-bitnamilegacy/minio-client@sha256:00dcc4e58ada0df45bb7d9ee435af98295f96c27c3c68292ce78ec700a87b511}
     depends_on:
       minio:
         condition: service_healthy
