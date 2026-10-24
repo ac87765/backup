@@ -272,9 +272,7 @@ impl Storage {
         self.backend.presign_read(object_key, ttl).await
     }
 
-    /// 删除能力入口：只有后台删除队列（第 5 组 `jobs`）可以调用。
-    // 第 5 组的 jobs 模块是唯一调用方；在此之前没有生产调用点。
-    #[allow(dead_code)]
+    /// 删除能力入口：只有后台删除队列（`jobs` 模块）可以调用。
     pub(crate) fn deletion_handle(&self) -> DeletionHandle {
         DeletionHandle {
             backend: self.backend.clone(),
@@ -306,14 +304,12 @@ fn ensure_http_stack() {
 }
 
 /// 删除能力句柄，仅在 crate 内部可见（`jobs` 模块使用）。
-#[allow(dead_code)]
 pub(crate) struct DeletionHandle {
     backend: Arc<dyn ObjectBackend>,
 }
 
 impl DeletionHandle {
     /// 删除对象。对象不存在视为成功（幂等），与后续删除队列语义一致。
-    #[allow(dead_code)]
     pub(crate) async fn delete(&self, object_key: &str) -> Result<(), StorageError> {
         self.backend.delete(object_key).await
     }

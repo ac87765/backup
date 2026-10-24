@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE email_outbox\n        SET claimed_until = now() + make_interval(secs => $1),\n            claim_token = $2\n        WHERE id IN (\n            SELECT id\n            FROM email_outbox\n            WHERE not_before <= now()\n              AND (claimed_until IS NULL OR claimed_until < now())\n            ORDER BY id\n            FOR UPDATE SKIP LOCKED\n            LIMIT $3\n        )\n        RETURNING id, user_id, purpose, params, attempts, claim_token AS \"claim_token!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "purpose",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "params",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "claim_token!",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "2d570b85243c0c8509b9bb5a01ff314946dc0c6efcf06682891ada170c4ecd1c"
+}

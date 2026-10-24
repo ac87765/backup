@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            (SELECT count(*) FROM object_deletions) AS \"deletions_count!\",\n            (SELECT COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)), 0)::float8\n               FROM object_deletions) AS \"deletions_oldest!\",\n            (SELECT count(*) FROM email_outbox) AS \"mail_count!\",\n            (SELECT COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)), 0)::float8\n               FROM email_outbox) AS \"mail_oldest!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "deletions_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deletions_oldest!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "mail_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "mail_oldest!",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "300fad8e7e537d4659a36c7f96f7c2438cceae5831c203f98492ecda7213e291"
+}

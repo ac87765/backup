@@ -118,9 +118,19 @@ cargo run -p server -- openapi   # 输出 OpenAPI 规范到 stdout（不需要�
 | `BACKUP_STORAGE_ACCESS_KEY_ID` | 必填 | 访问密钥 ID（密钥） |
 | `BACKUP_STORAGE_SECRET_ACCESS_KEY` | 必填 | 访问密钥（密钥） |
 | `BACKUP_STORAGE_ALLOW_HTTP` | `false` | 允许 http endpoint（本地 MinIO 需要设为 `true`） |
+| `BACKUP_JOBS_ENABLED` | `true` | 是否在本实例运行后台任务（关闭便于拆分独立 worker） |
+| `BACKUP_MAIL_MODE` | `file` | `file`（写本地目录，不真正发送）或 `smtp` |
+| `BACKUP_MAIL_DIR` | `var/mail` | `file` 模式的邮件目录 |
+| `BACKUP_SMTP_HOST` | `smtp` 模式必填 | SMTP 主机 |
+| `BACKUP_SMTP_PORT` | `587` | SMTP 端口 |
+| `BACKUP_SMTP_FROM` | `smtp` 模式必填 | 发件人地址 |
+| `BACKUP_SMTP_USERNAME` | 可选 | SMTP 用户名（与密码必须同时配置） |
+| `BACKUP_SMTP_PASSWORD` | 可选 | SMTP 密码（密钥） |
+| `BACKUP_SMTP_TLS` | `starttls` | `starttls` 或 `none`（本地假 SMTP 测试用） |
 
 密钥类配置在日志与 `Debug` 输出中固定显示为 `[REDACTED]`。缺项或非法值时进程以非零退出码
-退出，日志只指出配置项名称，不输出配置值。
+退出，日志只指出配置项名称，不输出配置值。`BACKUP_MAIL_MODE=file` 启动时会输出一条
+WARN，提示邮件未真正发送。
 
 服务端集成测试使用 testcontainers 启动真实 PostgreSQL 与 MinIO，因此运行
 `cargo test --workspace` 需要可用的 Docker（Windows 本机没有原生 Docker，请在有 Docker 的
@@ -216,10 +226,11 @@ openspec validate bootstrap-e2ee-backup-mvp --strict
 
 - `Rust`：fmt、clippy（`-D warnings`）、`cargo sqlx prepare --check`（离线查询缓存）、
   test（testcontainers 启动真实 PostgreSQL/MinIO）、符号泄漏检查、cargo deny、
-  `wasm-pack test --headless --chrome`、WASM 构建
-- `Web`：先生成 WASM 绑定，再 typecheck、lint、test、build，并重新生成 OpenAPI
-  类型后检查无漂移
-- `E2E`：Playwright 在生产构建 + 严格 CSP 下跑 WASM 冒烟用例
+  `wasm-pack test --headless --chrome`；并在此 job 只构建一次 WASM 绑定和
+  `openapi.json`，用 artifact 传给后续 job
+- `Web`：下载 WASM 与 OpenAPI artifact（不安装 Rust/wasm-pack），typecheck、lint、
+  test、build，并用 artifact 规范重新生成 OpenAPI 类型后检查无漂移
+- `E2E`：下载 WASM artifact，Playwright 在生产构建 + 严格 CSP 下跑 WASM 冒烟用例
 - `OpenSpec`：固定 CLI 版本执行 `validate --strict`
 - `Dev stack`：实际启动 `deploy/docker-compose.dev.yml`，等待 PostgreSQL/MinIO 健康，
   并执行 `minio-init` 验证 bucket 与 CORS 配置

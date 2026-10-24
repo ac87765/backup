@@ -251,6 +251,10 @@ pub fn test_config(static_dir: std::path::PathBuf) -> server::Config {
             secret_access_key: server::config::Secret::new(MINIO_SECRET_KEY),
             allow_http: true,
         },
+        jobs_enabled: false,
+        mail: server::config::MailConfig::File {
+            dir: std::env::temp_dir().join("backup-test-mail"),
+        },
     }
 }
 

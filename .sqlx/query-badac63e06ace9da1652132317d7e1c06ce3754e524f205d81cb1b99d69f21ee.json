@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO object_deletions (object_key) SELECT unnest($1::text[])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "badac63e06ace9da1652132317d7e1c06ce3754e524f205d81cb1b99d69f21ee"
+}

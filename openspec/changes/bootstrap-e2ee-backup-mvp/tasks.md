@@ -46,10 +46,10 @@
 
 ## 5. 后台任务框架
 
-- [ ] 5.0 CI 提速：OpenAPI 规范与 WASM 包只在已有 Rust 缓存的 job 中构建一次，以 artifact 交给 web/e2e job；生成脚本支持读取现成的规范文件；一个 job 内不重复构建 WASM。验证：web job 不超过 8 分钟，且生成物漂移检查仍然有效（故意改动规范时 CI 失败）
-- [ ] 5.1 实现队列型任务领取（SKIP LOCKED + claimed_until + 指数退避 not_before）与 `object_deletions` 处理器，集成测试验证双 worker 不重复领取、崩溃后超时重领、删除不存在对象视为成功（真实 MinIO）；加源码扫描测试，断言 `deletion_handle` 只在 storage 与 jobs 模块中被引用
-- [ ] 5.2 实现扫描型任务调度（advisory lock 互斥、分批、独立事务）与任务指标（执行/失败次数、队列积压与最老年龄），集成测试验证两个实例并发只有一个执行
-- [ ] 5.3 实现 `email_outbox` 与 lettre SMTP 发送器（dev 模式写入本地目录，不写日志；令牌在发送时生成，outbox 不存令牌明文，见 design D13），集成测试验证 SMTP 失败后重试成功
+- [x] 5.0 CI 提速：OpenAPI 规范与 WASM 包只在已有 Rust 缓存的 job 中构建一次，以 artifact 交给 web/e2e job；生成脚本支持读取现成的规范文件；一个 job 内不重复构建 WASM。验证：web job 不超过 8 分钟，且生成物漂移检查仍然有效（故意改动规范时 CI 失败）
+- [x] 5.1 实现队列型任务领取（SKIP LOCKED + claimed_until + 指数退避 not_before）与 `object_deletions` 处理器，集成测试验证双 worker 不重复领取、崩溃后超时重领、删除不存在对象视为成功（真实 MinIO）；加源码扫描测试，断言 `deletion_handle` 只在 storage 与 jobs 模块中被引用
+- [x] 5.2 实现扫描型任务调度（advisory lock 互斥、分批、独立事务）与任务指标（执行/失败次数、队列积压与最老年龄），集成测试验证两个实例并发只有一个执行
+- [x] 5.3 实现 `email_outbox` 与 lettre SMTP 发送器（dev 模式写入本地目录，不写日志；令牌在发送时生成，outbox 不存令牌明文，见 design D13），集成测试验证 SMTP 失败后重试成功
 
 ## 6. 用户账号
 

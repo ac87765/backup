@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE object_deletions\n        SET claimed_until = now() + make_interval(secs => $1),\n            claim_token = $2\n        WHERE id IN (\n            SELECT id\n            FROM object_deletions\n            WHERE not_before <= now()\n              AND (claimed_until IS NULL OR claimed_until < now())\n            ORDER BY id\n            FOR UPDATE SKIP LOCKED\n            LIMIT $3\n        )\n        RETURNING id, object_key, attempts, claim_token AS \"claim_token!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "object_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "claim_token!",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "536bacfa12d86ac85c9a7c6545e781bb54370b4bf44bad351f9d75a7591c2b22"
+}

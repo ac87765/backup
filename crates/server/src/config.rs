@@ -6,7 +6,7 @@
 //! - 缺项或非法值时返回 [`ConfigError`]，错误信息只包含**配置项名称**与原因，
 //!   绝不包含配置值本身。二进制入口据此以非零退出码退出。
 //!
-//! 本组只声明实际用到的配置项；pepper、SMTP 等留到使用它们的功能组再加入。
+//! 本组只声明实际用到的配置项；pepper 等留到使用它们的功能组再加入。
 
 use std::fmt;
 use std::net::SocketAddr;
@@ -36,6 +36,15 @@ pub mod keys {
     pub const STORAGE_ACCESS_KEY_ID: &str = "BACKUP_STORAGE_ACCESS_KEY_ID";
     pub const STORAGE_SECRET_ACCESS_KEY: &str = "BACKUP_STORAGE_SECRET_ACCESS_KEY";
     pub const STORAGE_ALLOW_HTTP: &str = "BACKUP_STORAGE_ALLOW_HTTP";
+    pub const JOBS_ENABLED: &str = "BACKUP_JOBS_ENABLED";
+    pub const MAIL_MODE: &str = "BACKUP_MAIL_MODE";
+    pub const MAIL_DIR: &str = "BACKUP_MAIL_DIR";
+    pub const SMTP_HOST: &str = "BACKUP_SMTP_HOST";
+    pub const SMTP_PORT: &str = "BACKUP_SMTP_PORT";
+    pub const SMTP_FROM: &str = "BACKUP_SMTP_FROM";
+    pub const SMTP_USERNAME: &str = "BACKUP_SMTP_USERNAME";
+    pub const SMTP_PASSWORD: &str = "BACKUP_SMTP_PASSWORD";
+    pub const SMTP_TLS: &str = "BACKUP_SMTP_TLS";
 }
 
 /// 启动配置错误。
@@ -144,6 +153,67 @@ impl StorageConfig {
     }
 }
 
+/// 邮件发送模式（design D13）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MailMode {
+    /// 写入本地目录，不真正发送（开发/测试）。
+    File,
+    /// 通过 SMTP 发送。
+    Smtp,
+}
+
+impl MailMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::Smtp => "smtp",
+        }
+    }
+}
+
+/// SMTP 连接加密方式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SmtpTls {
+    Starttls,
+    None,
+}
+
+impl SmtpTls {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Starttls => "starttls",
+            Self::None => "none",
+        }
+    }
+}
+
+/// SMTP 配置。用户名/密码要么都配置，要么都不配置（本地无认证 SMTP）。
+#[derive(Debug, Clone)]
+pub struct SmtpConfig {
+    pub host: String,
+    pub port: u16,
+    pub from: String,
+    pub username: Option<Secret>,
+    pub password: Option<Secret>,
+    pub tls: SmtpTls,
+}
+
+/// 邮件配置。
+#[derive(Debug, Clone)]
+pub enum MailConfig {
+    File { dir: PathBuf },
+    Smtp(SmtpConfig),
+}
+
+impl MailConfig {
+    pub fn mode(&self) -> MailMode {
+        match self {
+            Self::File { .. } => MailMode::File,
+            Self::Smtp(_) => MailMode::Smtp,
+        }
+    }
+}
+
 /// 服务端完整配置。
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -155,6 +225,9 @@ pub struct Config {
     pub static_dir: PathBuf,
     pub database: DatabaseConfig,
     pub storage: StorageConfig,
+    /// 是否在本进程内运行后台任务（design D10；关闭后可拆分为独立 worker）。
+    pub jobs_enabled: bool,
+    pub mail: MailConfig,
 }
 
 impl Config {
@@ -235,6 +308,12 @@ impl Config {
             ));
         }
 
+        let jobs_enabled = parse_bool(
+            &string_with_default(figment, keys::JOBS_ENABLED, "true")?,
+            keys::JOBS_ENABLED,
+        )?;
+        let mail = parse_mail_config(figment)?;
+
         Ok(Self {
             bind_addr,
             metrics_addr,
@@ -253,7 +332,61 @@ impl Config {
                 secret_access_key,
                 allow_http,
             },
+            jobs_enabled,
+            mail,
         })
+    }
+}
+
+/// 解析邮件配置。模式缺省为 `file`（开发友好）；`smtp` 模式缺配置时启动失败。
+fn parse_mail_config(figment: &Figment) -> Result<MailConfig, ConfigError> {
+    let mode = string_with_default(figment, keys::MAIL_MODE, "file")?;
+    match mode.trim().to_ascii_lowercase().as_str() {
+        "file" => Ok(MailConfig::File {
+            dir: PathBuf::from(string_with_default(figment, keys::MAIL_DIR, "var/mail")?),
+        }),
+        "smtp" => {
+            let host = required_string(figment, keys::SMTP_HOST)?;
+            let port = parse_u16(
+                &string_with_default(figment, keys::SMTP_PORT, "587")?,
+                keys::SMTP_PORT,
+            )?;
+            let from = required_string(figment, keys::SMTP_FROM)?;
+            if !from.contains('@') {
+                return Err(ConfigError::invalid(keys::SMTP_FROM, "必须是邮件地址"));
+            }
+            let username = optional_secret(figment, keys::SMTP_USERNAME)?;
+            let password = optional_secret(figment, keys::SMTP_PASSWORD)?;
+            if username.is_some() != password.is_some() {
+                return Err(ConfigError::invalid(
+                    keys::SMTP_PASSWORD,
+                    "SMTP 用户名与密码必须同时配置或同时省略",
+                ));
+            }
+            let tls = match string_with_default(figment, keys::SMTP_TLS, "starttls")?
+                .trim()
+                .to_ascii_lowercase()
+                .as_str()
+            {
+                "starttls" => SmtpTls::Starttls,
+                "none" => SmtpTls::None,
+                _ => {
+                    return Err(ConfigError::invalid(
+                        keys::SMTP_TLS,
+                        "必须是 starttls 或 none",
+                    ));
+                }
+            };
+            Ok(MailConfig::Smtp(SmtpConfig {
+                host,
+                port,
+                from,
+                username,
+                password,
+                tls,
+            }))
+        }
+        _ => Err(ConfigError::invalid(keys::MAIL_MODE, "必须是 file 或 smtp")),
     }
 }
 
@@ -299,6 +432,17 @@ fn required_secret(figment: &Figment, env_key: &'static str) -> Result<Secret, C
     Ok(Secret::new(value))
 }
 
+fn optional_secret(
+    figment: &Figment,
+    env_key: &'static str,
+) -> Result<Option<Secret>, ConfigError> {
+    match optional_string(figment, env_key)? {
+        Some(value) if value.trim().is_empty() => Ok(None),
+        Some(value) => Ok(Some(Secret::new(value))),
+        None => Ok(None),
+    }
+}
+
 fn string_with_default(
     figment: &Figment,
     env_key: &'static str,
@@ -336,6 +480,16 @@ fn parse_u32(
         .map_err(|_| ConfigError::invalid(env_key, "必须是正整数"))?;
     if !range.contains(&parsed) {
         return Err(ConfigError::invalid(env_key, "超出允许范围"));
+    }
+    Ok(parsed)
+}
+
+fn parse_u16(value: &str, env_key: &'static str) -> Result<u16, ConfigError> {
+    let parsed = value
+        .parse::<u16>()
+        .map_err(|_| ConfigError::invalid(env_key, "必须是 1-65535 的端口号"))?;
+    if parsed == 0 {
+        return Err(ConfigError::invalid(env_key, "必须是 1-65535 的端口号"));
     }
     Ok(parsed)
 }
@@ -588,5 +742,91 @@ mod tests {
         let config = load(&pairs).expect("配置应当合法");
         assert_eq!(config.storage.access_key_id.expose(), "000123456");
         assert_eq!(config.storage.secret_access_key.expose(), "1234567890");
+    }
+
+    #[test]
+    fn jobs_are_enabled_by_default_and_can_be_disabled() {
+        let config = load(&complete_pairs()).expect("配置应当合法");
+        assert!(config.jobs_enabled);
+
+        let mut pairs = complete_pairs();
+        pairs.push(("jobs_enabled", "false"));
+        let config = load(&pairs).expect("配置应当合法");
+        assert!(!config.jobs_enabled);
+    }
+
+    #[test]
+    fn mail_defaults_to_file_mode() {
+        let config = load(&complete_pairs()).expect("配置应当合法");
+        match config.mail {
+            MailConfig::File { dir } => assert_eq!(dir, PathBuf::from("var/mail")),
+            MailConfig::Smtp(_) => panic!("默认应为 file 模式"),
+        }
+    }
+
+    #[test]
+    fn smtp_mode_requires_host_and_from() {
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "smtp"));
+        let err = load(&pairs).expect_err("缺少 SMTP_HOST 必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Missing {
+                key: keys::SMTP_HOST
+            }
+        );
+
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "smtp"));
+        pairs.push(("smtp_host", "smtp.example.com"));
+        let err = load(&pairs).expect_err("缺少 SMTP_FROM 必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Missing {
+                key: keys::SMTP_FROM
+            }
+        );
+    }
+
+    #[test]
+    fn smtp_credentials_must_be_paired() {
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "smtp"));
+        pairs.push(("smtp_host", "smtp.example.com"));
+        pairs.push(("smtp_from", "backup@example.com"));
+        pairs.push(("smtp_username", "user"));
+        let err = load(&pairs).expect_err("只有用户名必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::SMTP_PASSWORD,
+                reason: "SMTP 用户名与密码必须同时配置或同时省略"
+            }
+        );
+    }
+
+    #[test]
+    fn smtp_mode_accepts_full_configuration() {
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "smtp"));
+        pairs.push(("smtp_host", "smtp.example.com"));
+        pairs.push(("smtp_port", "2525"));
+        pairs.push(("smtp_from", "backup@example.com"));
+        pairs.push(("smtp_username", "user"));
+        pairs.push(("smtp_password", "smtp-secret-value"));
+        pairs.push(("smtp_tls", "none"));
+        let config = load(&pairs).expect("配置应当合法");
+        match &config.mail {
+            MailConfig::Smtp(smtp) => {
+                assert_eq!(smtp.host, "smtp.example.com");
+                assert_eq!(smtp.port, 2525);
+                assert_eq!(smtp.tls, SmtpTls::None);
+                assert!(smtp.password.is_some());
+            }
+            MailConfig::File { .. } => panic!("应为 smtp 模式"),
+        }
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("smtp-secret-value"));
+        assert!(debug.contains("[REDACTED]"));
     }
 }

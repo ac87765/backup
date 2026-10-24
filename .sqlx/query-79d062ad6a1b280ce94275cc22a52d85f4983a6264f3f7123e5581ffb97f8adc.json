@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM object_deletions WHERE id = $1 AND claim_token = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "79d062ad6a1b280ce94275cc22a52d85f4983a6264f3f7123e5581ffb97f8adc"
+}

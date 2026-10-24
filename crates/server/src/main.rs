@@ -6,9 +6,13 @@
 //! - `openapi`：把 OpenAPI 规范输出到 stdout（不需要配置，也不连接任何依赖）。
 
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use server::{AppState, Config, Database, StartupError, Storage, build_router, metrics, shutdown};
+use server::{
+    AppState, Config, Database, StartupError, Storage, build_router, config, jobs, mail, metrics,
+    shutdown,
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "server", version, about = "端对端加密备份服务")]
@@ -72,7 +76,14 @@ async fn serve() -> anyhow::Result<()> {
             "数据库迁移版本领先于当前代码（允许启动，保持向前兼容）"
         );
     }
-    let storage = Storage::new(&config.storage)?;
+    let storage = Arc::new(Storage::new(&config.storage)?);
+    let mailer = mail::build_mailer(&config.mail)?;
+    if let config::MailConfig::File { dir } = &config.mail {
+        tracing::warn!(
+            dir = %dir.display(),
+            "BACKUP_MAIL_MODE=file：邮件不会真正发送，将写入本地目录"
+        );
+    }
 
     let shutdown = shutdown::Shutdown::new();
     let signal_task = tokio::spawn(shutdown::wait_for_shutdown_signal(shutdown.clone()));
@@ -96,8 +107,17 @@ async fn serve() -> anyhow::Result<()> {
         shutdown.token(),
     ));
 
+    jobs::start(
+        database.clone(),
+        storage.clone(),
+        mailer,
+        Arc::new(jobs::email::UnavailableRecipientResolver),
+        &shutdown,
+        config.jobs_enabled,
+    );
+
     let bind_addr = config.bind_addr;
-    let router = build_router(AppState::new(config, database, storage));
+    let router = build_router(AppState::new(config, database, Storage::clone(&storage)));
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     tracing::info!(bind_addr = %bind_addr, metrics_addr = %metrics_addr, "HTTP 服务已启动");
     let result = shutdown::serve_with_shutdown(listener, router, &shutdown).await;

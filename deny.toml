@@ -37,10 +37,13 @@ allow = [
     #   是 rustls 的 CA 信任库，属于数据许可证而非代码许可证。
     # - Zlib：foldhash（sqlx 的 hashlink、metrics-util 的 hashbrown 间接依赖）。
     # - CC0-1.0：tiny-keccak（OpenDAL 的 reqsign 通过 const-random 引入）。
+    # 第 5 组新增：
+    # - 0BSD：quoted_printable（lettre 的 MIME/quoted-printable 编码依赖），BSD 零条款。
     "ISC",
     "Zlib",
     "CC0-1.0",
     "CDLA-Permissive-2.0",
+    "0BSD",
 ]
 
 # workspace 内部 crate 为私有（publish = false），无需声明对外许可证。

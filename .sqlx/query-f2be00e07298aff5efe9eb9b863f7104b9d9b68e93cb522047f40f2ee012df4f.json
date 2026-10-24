@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE email_outbox\n        SET attempts = attempts + 1,\n            not_before = now() + make_interval(secs => $3),\n            claimed_until = NULL,\n            claim_token = NULL,\n            last_error = $4\n        WHERE id = $1 AND claim_token = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Uuid",
+        "Float8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f2be00e07298aff5efe9eb9b863f7104b9d9b68e93cb522047f40f2ee012df4f"
+}

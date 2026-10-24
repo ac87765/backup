@@ -20,7 +20,13 @@ async fn fresh_database_is_behind_and_refuses_to_serve() {
     let database = Database::from_pool(pool);
 
     let state = database.migration_state().await.expect("读取迁移状态");
-    assert_eq!(state, MigrationState::Behind { missing: vec![1] });
+    let mut expected: Vec<i64> = server::db::MIGRATOR
+        .migrations
+        .iter()
+        .map(|migration| migration.version)
+        .collect();
+    expected.sort_unstable();
+    assert_eq!(state, MigrationState::Behind { missing: expected });
     assert!(!state.is_ready());
 }
 

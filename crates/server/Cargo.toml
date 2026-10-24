@@ -28,12 +28,24 @@ path = "src/main.rs"
 # - tokio-util：CancellationToken / TaskTracker 实现优雅停机（design 4.6）。
 # - async-trait：存储抽象与故障注入装饰器需要 dyn 兼容的异步方法。
 # - time：SQL 查询中的时间类型（迁移校验与后续健康检查使用）。
+# - lettre：design D13 选定的 SMTP 发送器；只用 tokio1 + rustls(ring) 特性。
+# - rand：重试抖动与邮件令牌；使用操作系统 CSPRNG。
+# - sha2：只保存邮件令牌的 SHA-256 哈希（user-accounts spec）。
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }
 figment = "0.10"
+# lettre 的 tokio1-rustls-tls 使用 ring 后端（其 rustls-tls feature 明确包含 ring），
+# 不会重新引入 aws-lc-rs。
+lettre = { version = "0.11", default-features = false, features = [
+    "builder",
+    "hostname",
+    "pool",
+    "smtp-transport",
+    "tokio1-rustls-tls",
+] }
 metrics = "0.24"
 # 只用 `install_recorder` + 进程内 scrape 端点，不需要 exporter 自带的
 # HTTP listener / push gateway（会额外引入 hyper-rustls 与 TLS 依赖）。
@@ -51,9 +63,11 @@ opendal = { version = "0.59", default-features = false, features = [
 ] }
 # OpenDAL 的 reqwest transport（no-provider），由本 crate 在启动时安装为默认 transport。
 opendal-http-transport-reqwest = { version = "0.59", default-features = false, features = ["rustls-no-provider"] }
+rand = "0.9"
 secrecy = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 # rustls 的进程级 CryptoProvider 统一为 ring（sqlx 的 TLS 后端也使用 ring）。
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 sqlx = { version = "0.8", default-features = false, features = [
