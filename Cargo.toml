@@ -9,7 +9,9 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+# 与 rust-toolchain.toml 固定的工具链保持一致：这是实际测试过的版本，
+# 不要在未验证的情况下把 rust-version 报高或报低。
+rust-version = "1.98"
 publish = false
 
 # 统一 lints：任何 crate 只要写 `[lints] workspace = true` 就继承这里。
