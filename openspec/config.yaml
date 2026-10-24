@@ -1,0 +1,40 @@
+schema: spec-driven
+
+context: |
+  Language: zh-CN
+  All artifacts must be written in zh-CN.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+
+  ## 项目
+  端对端加密 (E2EE) 的个人文件备份服务，当前只做 Web 版本，按生产级标准开发。
+  功能可以删减，但已交付的功能必须 robust：失败可重试、状态可恢复、不丢数据、不泄露明文。
+
+  ## 技术栈（已决策，变更需走 OpenSpec change）
+  - 后端：Rust (edition 2024, stable) + Axum + Tokio，sqlx + PostgreSQL，迁移用 sqlx migrate。
+  - 对象存储：阿里云 OSS，通过 Apache OpenDAL (services-oss) 访问；本地开发与集成测试用 MinIO (services-s3，需预签名)，纯单元测试用 memory 后端。
+  - 加密核心：Rust crate `crypto-core`（RustCrypto 生态），通过 `crypto-wasm` (wasm-bindgen) 编译成 WASM 给浏览器使用，将来桌面端/CLI 直接复用。
+  - 前端：React + TypeScript + Vite；加解密在 Web Worker 中运行 WASM；API 类型由后端 OpenAPI (utoipa) 生成。
+  - 部署：单个 Docker 镜像（Axum 同时托管 API 与前端静态文件），反向代理终止 TLS。
+
+  ## 架构原则
+  - 服务端永远看不到明文文件内容、文件名、主密钥或用户密码；服务端只是“不可信的密文仓库 + 元数据协调者”。
+  - 浏览器直传 OSS（预签名 URL），服务端负责配额、会话状态、完整性校验和对象生命周期。
+  - 数据库是唯一事实来源；OSS 对象的删除通过数据库 outbox 表异步、可重试地执行，绝不在请求事务里直接删对象。
+  - 所有写接口幂等或可安全重试；所有长流程（上传）有显式状态机并可从中断处恢复。
+
+  ## 工程约定
+  - Cargo workspace：crates/crypto-core、crates/crypto-wasm、crates/server；前端在 web/。
+  - 错误：thiserror 定义领域错误，API 统一返回 JSON 错误体 {code, message, request_id}。
+  - 禁止 unwrap/expect 出现在非测试代码中（启动阶段配置校验除外）；clippy -D warnings。
+  - 日志用 tracing（JSON 输出），严禁记录密钥、令牌、密码派生值或加密元数据内容。
+  - 测试：crypto-core 必须有固定测试向量；server 集成测试使用真实 PostgreSQL 与 MinIO (testcontainers)；另有针对真实 OSS 测试 bucket 的冒烟测试。
+
+rules:
+  proposal:
+    - 必须明确写出 Non-goals / 不在范围内的内容
+  design:
+    - 每个关键决策写成 “决策 / 理由 / 备选方案 / 风险” 结构
+    - 涉及加密的决策必须说明威胁模型影响
+  tasks:
+    - 每个任务应可在半天内完成并可独立验证
+    - 每个功能组以测试任务结尾
