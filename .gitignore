@@ -2,23 +2,30 @@
 /target/
 **/*.rs.bk
 
-# WASM / frontend
+# 前端
 /web/node_modules/
 /web/dist/
-/web/src/generated/wasm/
+/web/dist-ssr/
+/web/coverage/
+/web/src/generated/
+/web/test-results/
+/web/playwright-report/
+/web/blob-report/
+
+# WASM 构建产物
 /crates/crypto-wasm/pkg/
 
-# Env & secrets
+# 环境与密钥
 .env
 .env.*
 !.env.example
 
-# Editors / OS
+# 编辑器 / 操作系统
 .idea/
 .vscode/
 *.swp
 .DS_Store
 Thumbs.db
 
-# Claude Code local settings
+# Claude Code 本地设置
 .claude/settings.local.json
