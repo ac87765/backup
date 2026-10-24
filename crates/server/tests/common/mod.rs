@@ -285,6 +285,11 @@ pub fn integration_state(
     server::AppState::new(config, database, storage)
 }
 
+/// 构造指向测试 MinIO 的对象存储配置。
+pub fn integration_storage_config(env: &TestEnvironment) -> server::config::StorageConfig {
+    integration_config(env, std::env::temp_dir()).storage
+}
+
 /// 构造一组完整、合法的 `BACKUP_*` 环境变量，供启动二进制的测试使用。
 pub fn config_env(
     env: &TestEnvironment,

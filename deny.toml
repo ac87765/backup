@@ -31,14 +31,13 @@ allow = [
     "BSD-3-Clause",
     "Unicode-3.0",
     # 第 4 组新增：rustls 加密后端与根证书数据。
-    # - ISC / MIT-0：ring 与 aws-lc-rs（sqlx 的 rustls-ring、OpenDAL 的 reqwest 0.13
-    #   默认 rustls provider、testcontainers/bollard）及其公共依赖。
+    # - ISC：ring / untrusted（rustls 的 ring 后端：sqlx、OpenDAL 的 reqwest transport、
+    #   testcontainers/bollard；第 4 组已通过 no-provider + 显式安装 ring 统一到单一后端）。
     # - CDLA-Permissive-2.0：webpki-roots / webpki-root-certs 提供的 Mozilla 根证书数据，
     #   是 rustls 的 CA 信任库，属于数据许可证而非代码许可证。
     # - Zlib：foldhash（sqlx 的 hashlink、metrics-util 的 hashbrown 间接依赖）。
     # - CC0-1.0：tiny-keccak（OpenDAL 的 reqsign 通过 const-random 引入）。
     "ISC",
-    "MIT-0",
     "Zlib",
     "CC0-1.0",
     "CDLA-Permissive-2.0",

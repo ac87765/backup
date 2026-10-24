@@ -38,10 +38,24 @@ metrics = "0.24"
 # 只用 `install_recorder` + 进程内 scrape 端点，不需要 exporter 自带的
 # HTTP listener / push gateway（会额外引入 hyper-rustls 与 TLS 依赖）。
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
-opendal = { version = "0.59", features = ["services-s3", "services-oss"] }
+opendal = { version = "0.59", default-features = false, features = [
+    "services-s3",
+    "services-oss",
+    "executors-tokio",
+    # 显式使用 no-provider 的 reqwest transport：加密后端统一由下面的 ring 提供，
+    # 避免 OpenDAL 默认的 reqwest/rustls 引入 aws-lc-rs（体积与 cmake 构建依赖）。
+    "http-transport-reqwest-rustls-no-provider",
+    "layers-concurrent-limit",
+    "layers-retry",
+    "layers-timeout",
+] }
+# OpenDAL 的 reqwest transport（no-provider），由本 crate 在启动时安装为默认 transport。
+opendal-http-transport-reqwest = { version = "0.59", default-features = false, features = ["rustls-no-provider"] }
 secrecy = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# rustls 的进程级 CryptoProvider 统一为 ring（sqlx 的 TLS 后端也使用 ring）。
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio-rustls",
     "postgres",

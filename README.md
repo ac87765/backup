@@ -93,6 +93,7 @@ export BACKUP_STORAGE_ALLOW_HTTP=true
 
 cargo run -p server -- migrate   # 发布流程中先执行迁移
 cargo run -p server -- serve     # 启动 HTTP API + 前端静态文件
+cargo run -p server -- openapi   # 输出 OpenAPI 规范到 stdout（不需要配置/数据库）
 ```
 
 `serve` 启动时会校验迁移版本：数据库落后于代码、或已应用迁移的校验和不一致时拒绝启动；
@@ -136,6 +137,16 @@ npm run dev        # http://localhost:5173
 `npm run dev` / `npm run build` / `npm test` 会先执行 `npm run build:wasm`，把
 `crypto-wasm` 打包到 `web/src/generated/crypto-wasm/`（已被 `.gitignore` 忽略），
 所以本地需要先装好 wasm-pack。
+
+API 类型由服务端 OpenAPI 生成（生成物 `src/api/schema.d.ts` 已提交，不要手改）：
+
+```bash
+npm run generate:api   # 需要 Rust；等价于 cargo run -p server -- openapi + openapi-typescript
+```
+
+`web/.npmrc` 设置 `legacy-peer-deps=true`：`openapi-typescript` 的 peerDependency
+仍声明 TypeScript 5，而本仓库使用 TypeScript 6；该工具只做规范到类型的转换，
+不调用 tsc API。
 
 > **WASM 只在 Web Worker 中加载**：主线程通过 `src/worker/client.ts` 的 Comlink 代理
 > 调用加密操作，永远不接触密钥。ESLint（`no-restricted-imports`）与
@@ -186,6 +197,7 @@ npm run typecheck
 npm run lint
 npm test
 npm run build
+npm run generate:api && git diff --exit-code -- src/api/schema.d.ts  # OpenAPI 生成物无漂移
 ```
 
 涉及 WASM 与端到端时，还要追加：
@@ -193,7 +205,6 @@ npm run build
 ```bash
 wasm-pack test --headless --chrome --release crates/crypto-wasm
 cd web && npm run test:e2e
-cargo sqlx prepare --workspace --check   # 有数据库查询后
 openspec validate bootstrap-e2ee-backup-mvp --strict
 ```
 
@@ -206,7 +217,8 @@ openspec validate bootstrap-e2ee-backup-mvp --strict
 - `Rust`：fmt、clippy（`-D warnings`）、`cargo sqlx prepare --check`（离线查询缓存）、
   test（testcontainers 启动真实 PostgreSQL/MinIO）、符号泄漏检查、cargo deny、
   `wasm-pack test --headless --chrome`、WASM 构建
-- `Web`：先生成 WASM 绑定，再 typecheck、lint、test、build
+- `Web`：先生成 WASM 绑定，再 typecheck、lint、test、build，并重新生成 OpenAPI
+  类型后检查无漂移
 - `E2E`：Playwright 在生产构建 + 严格 CSP 下跑 WASM 冒烟用例
 - `OpenSpec`：固定 CLI 版本执行 `validate --strict`
 - `Dev stack`：实际启动 `deploy/docker-compose.dev.yml`，等待 PostgreSQL/MinIO 健康，

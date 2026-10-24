@@ -119,17 +119,12 @@ pub fn record_pool_metrics(pool: &PgPool) {
 }
 
 /// 周期性采样连接池指标，直到收到停机信号。
-pub fn spawn_pool_sampler(
-    pool: PgPool,
-    shutdown: CancellationToken,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(POOL_SAMPLE_INTERVAL);
-        loop {
-            tokio::select! {
-                _ = shutdown.cancelled() => break,
-                _ = ticker.tick() => record_pool_metrics(&pool),
-            }
+pub async fn pool_sampler(pool: PgPool, shutdown: CancellationToken) {
+    let mut ticker = tokio::time::interval(POOL_SAMPLE_INTERVAL);
+    loop {
+        tokio::select! {
+            _ = shutdown.cancelled() => break,
+            _ = ticker.tick() => record_pool_metrics(&pool),
         }
-    })
+    }
 }

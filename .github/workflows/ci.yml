@@ -92,9 +92,12 @@ jobs:
         run: wasm-pack build crates/crypto-wasm --target web --release --no-opt
 
   web:
-    name: Web (typecheck / lint / test / build)
+    name: Web (typecheck / lint / test / build / openapi)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      # 生成 OpenAPI 类型需要编译 server；CI 无数据库，使用提交的 .sqlx。
+      SQLX_OFFLINE: "true"
     defaults:
       run:
         working-directory: web
@@ -136,6 +139,12 @@ jobs:
 
       - name: build
         run: npm run build
+
+      # 4.7：OpenAPI 生成物必须与后端一致；有差异即失败。
+      - name: OpenAPI 生成物无漂移
+        run: |
+          npm run generate:api
+          git -C .. diff --exit-code -- web/src/api/schema.d.ts
 
   e2e:
     name: E2E (Playwright, strict CSP)

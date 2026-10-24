@@ -3,13 +3,12 @@
 //! 子命令：
 //! - `serve`：校验配置与迁移版本后启动 HTTP 服务；迁移落后/校验和不一致时拒绝启动。
 //! - `migrate`：显式执行数据库迁移（发布流程中先跑这一步）。
-//!
-//! OpenAPI 子命令在 4.7 加入。
+//! - `openapi`：把 OpenAPI 规范输出到 stdout（不需要配置，也不连接任何依赖）。
 
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use server::{AppState, Config, Database, StartupError, Storage, build_router, metrics};
+use server::{AppState, Config, Database, StartupError, Storage, build_router, metrics, shutdown};
 
 #[derive(Debug, Parser)]
 #[command(name = "server", version, about = "端对端加密备份服务")]
@@ -24,10 +23,13 @@ enum Command {
     Serve,
     /// 执行数据库迁移。
     Migrate,
+    /// 输出 OpenAPI 规范到 stdout。
+    Openapi,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    // 日志固定写 stderr：`openapi` 的 stdout 必须只有规范 JSON。
     server::telemetry::init_bootstrap();
     match run(cli.command) {
         Ok(()) => ExitCode::SUCCESS,
@@ -40,13 +42,21 @@ fn main() -> ExitCode {
 }
 
 fn run(command: Command) -> anyhow::Result<()> {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
     match command {
-        Command::Serve => runtime.block_on(serve()),
-        Command::Migrate => runtime.block_on(migrate()),
+        Command::Openapi => {
+            let json = server::openapi::spec_json_pretty()?;
+            println!("{json}");
+            Ok(())
+        }
+        Command::Serve => runtime()?.block_on(serve()),
+        Command::Migrate => runtime()?.block_on(migrate()),
     }
+}
+
+fn runtime() -> anyhow::Result<tokio::runtime::Runtime> {
+    Ok(tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?)
 }
 
 async fn serve() -> anyhow::Result<()> {
@@ -64,30 +74,44 @@ async fn serve() -> anyhow::Result<()> {
     }
     let storage = Storage::new(&config.storage)?;
 
-    let shutdown = tokio_util::sync::CancellationToken::new();
+    let shutdown = shutdown::Shutdown::new();
+    let signal_task = tokio::spawn(shutdown::wait_for_shutdown_signal(shutdown.token()));
 
     // Prometheus 指标使用独立端口，默认只绑定回环地址（配置可覆盖）。
     let metrics_handle = metrics::install()?;
     let metrics_addr = config.metrics_addr;
     let metrics_listener = tokio::net::TcpListener::bind(metrics_addr).await?;
     let metrics_router = metrics::router(metrics_handle);
-    let metrics_task = tokio::spawn(async move {
-        if let Err(error) = axum::serve(metrics_listener, metrics_router).await {
+    let metrics_shutdown = shutdown.clone();
+    let _metrics_task = shutdown.spawn(async move {
+        let token = metrics_shutdown.token();
+        let server = axum::serve(metrics_listener, metrics_router)
+            .with_graceful_shutdown(async move { token.cancelled().await });
+        if let Err(error) = server.await {
             tracing::error!(error = %error, "指标服务异常退出");
         }
     });
-    let sampler = metrics::spawn_pool_sampler(database.pool().clone(), shutdown.clone());
+    let _sampler = shutdown.spawn(metrics::pool_sampler(
+        database.pool().clone(),
+        shutdown.token(),
+    ));
 
     let bind_addr = config.bind_addr;
     let router = build_router(AppState::new(config, database, storage));
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     tracing::info!(bind_addr = %bind_addr, metrics_addr = %metrics_addr, "HTTP 服务已启动");
-    axum::serve(listener, router).await?;
+    let result = shutdown::serve_with_shutdown(listener, router, &shutdown).await;
 
-    // 优雅停机在 4.6 接入；这里保证后台采样任务能正常退出。
+    // 无论服务正常结束还是出错，都通知后台任务退出并等待它们完成。
     shutdown.cancel();
-    let _ = sampler.await;
-    metrics_task.abort();
+    if !shutdown.wait_background(shutdown::SHUTDOWN_GRACE).await {
+        tracing::warn!(
+            grace_secs = shutdown::SHUTDOWN_GRACE.as_secs(),
+            "后台任务未在停机宽限期内结束"
+        );
+    }
+    signal_task.abort();
+    result?;
     Ok(())
 }
 

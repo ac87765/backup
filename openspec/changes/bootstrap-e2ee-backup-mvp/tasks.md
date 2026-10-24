@@ -37,11 +37,11 @@
 - [x] 4.2 实现 Axum 应用骨架：请求 ID、JSON tracing 日志（含脱敏字段过滤）、统一错误类型 `{code,message,request_id}`、请求体上限、安全响应头/CSP、静态文件托管，集成测试验证 413、500 不泄露细节、响应头齐全
 - [x] 4.3 接入 sqlx 连接池与 `server migrate` / `server serve` 子命令，serve 时迁移版本落后即退出，集成测试验证
 - [x] 4.4 实现 `/healthz`、`/readyz`（DB + 迁移版本 + 存储 stat）与独立端口 Prometheus 指标，集成测试验证 DB 停止时 readyz=503
-- [ ] 4.5 实现存储层：OpenDAL operator（OSS 内网 + 公网 presign 双 operator；dev/test 用 S3/MinIO），封装 presign_write/presign_read/stat/delete/list 与故障注入 layer，集成测试（MinIO）验证预签名 PUT/GET 往返
-- [ ] 4.6 实现优雅停机（CancellationToken + TaskTracker，30s 上限），集成测试验证 SIGTERM 时进行中请求完成
-- [ ] 4.7 建立 utoipa OpenAPI 生成与 `web/` 端 `openapi-typescript` 生成脚本，CI 检查生成物无漂移
+- [x] 4.5 实现存储层：OpenDAL operator（OSS 内网 + 公网 presign 双 operator；dev/test 用 S3/MinIO），封装 presign_write/presign_read/stat/delete/list 与故障注入 layer，集成测试（MinIO）验证预签名 PUT/GET 往返
+- [x] 4.6 实现优雅停机（CancellationToken + TaskTracker，30s 上限），集成测试验证 SIGTERM 时进行中请求完成
+- [x] 4.7 建立 utoipa OpenAPI 生成与 `web/` 端 `openapi-typescript` 生成脚本，CI 检查生成物无漂移
 - [x] 4.8 建立集成测试框架（testcontainers PostgreSQL + MinIO、每测试独立 schema/bucket 前缀），验证可并行运行
-- [ ] 4.9 审查修复（4a）：`/readyz` 的存储探针必须能识别 bucket 不存在（不能把 HEAD 的 404 一律当成可达，改用对 `v1/` 前缀 limit 1 的 list 或等价方式），集成测试覆盖“bucket 不存在 → 503”与“凭据错误 → 503”；`/assets/` 下不存在的文件返回 404（不回退到 index.html），集成测试覆盖
+- [x] 4.9 审查修复（4a）：`/readyz` 的存储探针必须能识别 bucket 不存在（不能把 HEAD 的 404 一律当成可达，改用对 `v1/` 前缀 limit 1 的 list 或等价方式），集成测试覆盖“bucket 不存在 → 503”与“凭据错误 → 503”；`/assets/` 下不存在的文件返回 404（不回退到 index.html），集成测试覆盖
 
 ## 5. 后台任务框架
 

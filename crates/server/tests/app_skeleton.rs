@@ -166,6 +166,42 @@ async fn non_api_paths_fall_back_to_index_html() {
 }
 
 #[tokio::test]
+async fn missing_asset_returns_404_instead_of_spa_index() {
+    let (app, _dir) = app_with_extra(Router::new());
+
+    for uri in [
+        "/assets/missing-DiwrgTda.js",
+        "/assets/nested/missing-file.wasm",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("构造请求"),
+            )
+            .await
+            .expect("请求应当完成");
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "/assets 下缺失文件必须 404: {uri}"
+        );
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .expect("读取响应体")
+            .to_bytes();
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains("backup-spa"),
+            "/assets 缺失文件不得回退到 index.html: {uri}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn oversized_body_is_rejected_without_being_parsed() {
     let (app, _dir) = app_with_extra(Router::new());
     let ten_mib = 10 * 1024 * 1024;

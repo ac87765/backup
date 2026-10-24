@@ -56,7 +56,10 @@ pub fn build_router(state: AppState) -> Router {
 pub fn build_router_with(state: AppState, extra: Router<AppState>) -> Router {
     let static_dir = state.config.static_dir.clone();
     let index = static_dir.join("index.html");
-    let static_service = ServeDir::new(&static_dir)
+    // `/assets/` 只存放构建产物；缺失文件必须 404，不能回退到 index.html。
+    let assets_service = ServeDir::new(static_dir.join("assets"));
+    // 其余非 API 路径回退到 index.html（React Router 的单页应用语义）。
+    let spa_service = ServeDir::new(&static_dir)
         .append_index_html_on_directories(true)
         .fallback(ServeFile::new(index));
 
@@ -71,8 +74,9 @@ pub fn build_router_with(state: AppState, extra: Router<AppState>) -> Router {
         .route("/readyz", get(health::readyz))
         .nest("/api", api)
         .merge(extra)
+        .nest_service("/assets", assets_service)
         // 未知的非 API 路径回退到前端 index.html（React Router 的单页应用语义）。
-        .fallback_service(static_service)
+        .fallback_service(spa_service)
         .with_state(state)
         .layer(from_fn(static_files::add_static_headers))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))

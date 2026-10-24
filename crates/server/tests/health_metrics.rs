@@ -135,6 +135,60 @@ async fn readyz_returns_503_when_migrations_are_behind() {
 }
 
 #[tokio::test]
+async fn readyz_returns_503_when_storage_bucket_does_not_exist() {
+    let env = environment().await;
+    let (_db, database) = migrated_database(env).await;
+    let (_dir, root) = static_fixture();
+    let mut config = integration_config(env, root);
+    // 指向一个不存在的 bucket：HEAD 固定键会返回 404 无法区分，list 必须报错。
+    config.storage.bucket = format!("missing-{}", uuid::Uuid::new_v4().simple());
+    let storage = Storage::new(&config.storage).expect("构造 storage");
+    let app = build_router(AppState::new(config, database, storage));
+
+    let ready = app
+        .oneshot(
+            Request::builder()
+                .uri("/readyz")
+                .body(Body::empty())
+                .expect("构造请求"),
+        )
+        .await
+        .expect("请求应当完成");
+    assert_eq!(ready.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = body_json(ready).await;
+    assert_eq!(body["checks"]["database"], "ok");
+    assert_eq!(body["checks"]["migrations"], "ok");
+    assert_eq!(body["checks"]["storage"], "error");
+}
+
+#[tokio::test]
+async fn readyz_returns_503_when_storage_credentials_are_wrong() {
+    let env = environment().await;
+    let (_db, database) = migrated_database(env).await;
+    let (_dir, root) = static_fixture();
+    let mut config = integration_config(env, root);
+    config.storage.access_key_id = server::config::Secret::new("wrong-access-key");
+    config.storage.secret_access_key = server::config::Secret::new("wrong-secret-key");
+    let storage = Storage::new(&config.storage).expect("构造 storage");
+    let app = build_router(AppState::new(config, database, storage));
+
+    let ready = app
+        .oneshot(
+            Request::builder()
+                .uri("/readyz")
+                .body(Body::empty())
+                .expect("构造请求"),
+        )
+        .await
+        .expect("请求应当完成");
+    assert_eq!(ready.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = body_json(ready).await;
+    assert_eq!(body["checks"]["database"], "ok");
+    assert_eq!(body["checks"]["migrations"], "ok");
+    assert_eq!(body["checks"]["storage"], "error");
+}
+
+#[tokio::test]
 async fn readyz_storage_check_is_bounded_by_its_own_timeout() {
     let env = environment().await;
     let (_db, database) = migrated_database(env).await;
