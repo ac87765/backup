@@ -31,10 +31,22 @@ pub const FRAME_OVERHEAD: usize = 1 + NONCE_LEN + TAG_LEN;
 ///
 /// # 安全
 ///
-/// **仅用于**生成/校验固定测试向量与跨实现兼容性测试。
-/// 生产代码必须使用 [`seal_random`]，由 CSPRNG 生成 nonce；
+/// 只在启用 `test-vectors` feature（或 crate 自身的测试）时编译。
+/// **仅用于**生成/校验固定测试向量与跨实现兼容性测试；
+/// 生产代码必须使用 [`seal_random`]，由 CSPRNG 生成 nonce。
 /// 手工固定 nonce 会导致 nonce 复用，直接摧毁 XChaCha20-Poly1305 的安全性。
+#[cfg(any(test, feature = "test-vectors"))]
 pub fn seal_with_nonce(
+    key: &[u8; crate::keys::KEY_LEN],
+    nonce: &[u8; NONCE_LEN],
+    aad: &[u8],
+    plaintext: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    seal_frame(key, nonce, aad, plaintext)
+}
+
+/// 实际封装逻辑。nonce 由调用方（生产路径的 CSPRNG 或测试向量）提供。
+fn seal_frame(
     key: &[u8; crate::keys::KEY_LEN],
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
@@ -71,7 +83,7 @@ pub(crate) fn seal_random(
 ) -> Result<Vec<u8>, CryptoError> {
     let mut nonce = [0u8; NONCE_LEN];
     getrandom::getrandom(&mut nonce).map_err(|_| CryptoError::Randomness)?;
-    seal_with_nonce(key, &nonce, aad, plaintext)
+    seal_frame(key, &nonce, aad, plaintext)
 }
 
 /// 校验并解密一帧密文。

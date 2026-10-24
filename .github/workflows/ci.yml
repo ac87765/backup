@@ -41,6 +41,23 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
+      # 2.10：`aead::seal_with_nonce` 只允许出现在测试向量构建里。
+      # 生产（非 cfg(test)、未开 feature）构建中不得包含该符号。
+      # 注意：rlib 内的 lib.rmeta 会保留源码中所有条目的名字（包括 cfg 关闭的），
+      # 因此只检查真正参与链接的目标文件（*.o）。
+      - name: 确认 test-vectors 符号未进入生产构建
+        run: |
+          cargo build -p crypto-core
+          probe="$(mktemp -d)"
+          (cd "$probe" && ar x "$GITHUB_WORKSPACE/target/debug/libcrypto_core.rlib")
+          if find "$probe" -name '*.o' -exec strings {} + | grep -q 'seal_with_nonce'; then
+            echo "error: aead::seal_with_nonce 泄漏到非测试构建" >&2
+            exit 1
+          fi
+          rm -rf "$probe"
+          # 下游实现需要时可在 dev-dependencies 中开启该 feature。
+          cargo check -p crypto-core --features test-vectors
+
       - name: cargo deny check
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
         with:

@@ -6,6 +6,7 @@
       "password": "correct horse battery staple",
       "salt_hex": "31313131313131313131313131313131",
       "params": {
+        "algorithm": "argon2id",
         "m_cost_kib": 65536,
         "t_cost": 3,
         "p_cost": 1
@@ -19,13 +20,14 @@
       "password": "ｐａｓｓｗｏｒｄ１２３",
       "salt_hex": "32323232323232323232323232323232",
       "params": {
-        "m_cost_kib": 32768,
-        "t_cost": 2,
+        "algorithm": "argon2id",
+        "m_cost_kib": 131072,
+        "t_cost": 3,
         "p_cost": 1
       },
-      "root_hex": "4b431b2249a40c6695ef2c94de7a83a790b956f8b3191b7f7ba604d3ff78fe6a",
-      "pwd_wrap_hex": "6a10a98cebfc8baed1a9208ecf5272a5be1cf44de6b1fcdf15810c16f8147d44",
-      "auth_key_hex": "5d4a93c8a919dac3806e531eb89818a7aaaa3797d32848d7eaa8785bd12d3770"
+      "root_hex": "04af926d1484efd82628b4604aa246fa05ada33e444ed8324ac6f22dbaf3ed49",
+      "pwd_wrap_hex": "45cbe25c6ae4a07f6bc8bc35761abe3e40d5a4b6b737ec94523e6075d5c61518",
+      "auth_key_hex": "5923e500a780ee8fde353d0790b1724843e42daecf07944950cf0f81b5c68375"
     }
   ]
 }

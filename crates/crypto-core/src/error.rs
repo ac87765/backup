@@ -59,6 +59,18 @@ pub enum CryptoError {
     #[error("元数据编码失败")]
     MetadataEncoding,
 
+    /// KDF 参数中的算法标识缺失或不是本实现支持的算法。
+    #[error("不支持的 KDF 算法：参数缺失或需要升级客户端")]
+    UnsupportedKdfAlgorithm,
+
+    /// 版本元数据里的 content_id 与服务端给出的内容不一致（可能是回滚攻击）。
+    #[error("版本元数据中的内容 ID 与服务端给出的内容不一致")]
+    ContentBindingMismatch,
+
+    /// 解密后的明文总长度与版本元数据记录的大小不一致。
+    #[error("解密后的明文总长度与版本元数据记录的大小不一致")]
+    PlaintextSizeMismatch,
+
     /// 名称令牌的十六进制表示非法。
     #[error("名称令牌格式非法")]
     InvalidNameToken,

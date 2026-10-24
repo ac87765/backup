@@ -19,6 +19,7 @@
 ```
 
 解析时接受大写、无连字符、花括号与 `urn:uuid:` 形式，但参与密码学计算的一律是上面的规范形式。
+nil UUID 与非 v4 UUID（v1/v5 等）一律拒绝：客户端只会生成 v4，出现其他版本说明数据有问题。
 `node_id` / `content_id` / `version_id` 同时也是创建类请求的幂等键。
 
 ## 2. 密文帧
@@ -70,9 +71,19 @@ root = Argon2id(NFKC(password), salt16, m=64 MiB, t=3, p=1) -> 32B
 ```
 
 - 密码先做 Unicode **NFKC** 规范化（不同输入法/平台输入同一密码得到同一结果）。
-- 默认参数 `m_cost_kib = 65536`、`t_cost = 3`、`p_cost = 1`，随账号存储（`users.kdf_params`），
-  允许每个账号不同；客户端在使用服务端返回的参数前必须做范围校验（防止客户端 DoS）。
-- 参数 JSON 形状（持久化契约）：`{"m_cost_kib":65536,"t_cost":3,"p_cost":1}`。
+- 参数随账号存储（`users.kdf_params`，prelogin 原样返回），允许每个账号不同。
+- 参数 JSON 形状（持久化契约，算法字段必填）：
+
+  ```json
+  {"algorithm":"argon2id","m_cost_kib":65536,"t_cost":3,"p_cost":1}
+  ```
+
+  `algorithm` 是枚举，当前唯一取值 `argon2id`（隐含 Argon2 版本 `0x13`）；未知值或缺失一律拒绝，
+  客户端提示“需要升级客户端”且不发送任何派生值。
+- 客户端在派生前 MUST 校验范围：`65536 ≤ m_cost_kib ≤ 262144`（64–256 MiB）、
+  `3 ≤ t_cost ≤ 8`、`p_cost = 1`。下界防止被篡改的 prelogin 响应把客户端降级到廉价参数
+  （否则截获的 `auth_key` 可被低成本离线爆破）；上界防止客户端被拖入 OOM/长时间计算。
+  弱参数只能通过仅测试可见的入口使用，生产 API 没有绕过校验的路径。
 - `pwd_wrap = HKDF-SHA256(root, info = "bk/v1/pwd-wrap")`，`auth_key = HKDF-SHA256(root, info = "bk/v1/auth")`。
   两者互相独立：拿到 `auth_key` 无法推出 `pwd_wrap`。
 - 服务端存 `auth_hash = HMAC-SHA256(pepper_vN, auth_key)` 与 `pepper_version`，比对使用常量时间。
@@ -115,11 +126,17 @@ HKDF 未显式给出 salt 时使用 RFC 5869 的“全零盐”。
 版本元数据同样用节点密钥加密，明文是：
 
 ```json
-{"size":10485760,"mtime":1700000000,"mime":"application/pdf"}
+{"content_id":"6ba7b811-9dad-41d1-80b4-00c04fd430c8","size":10485760,"mtime":1700000000,"mime":"application/pdf"}
 ```
 
-- `size`：明文大小（字节，u64）；`mtime`：原始修改时间（Unix 秒，i64）；`mime`：MIME 类型，未知时为空串。
+- `content_id`：该版本引用的内容 ID（规范小写 UUID 字符串）；`size`：明文总大小（字节，u64）；
+  `mtime`：原始修改时间（Unix 秒，i64）；`mime`：MIME 类型，未知时为空串。
 - 字段顺序如上（JSON 不要求顺序，但实现按此顺序序列化以便测试向量稳定）。
+- **版本与内容绑定**：版本 → content 的指针由服务端保存。下载任一版本时，客户端 MUST 先解密
+  版本元数据并校验其 `content_id` 等于服务端给出的 content，再在解密完成后校验明文总长度
+  等于 `size`；任一不符即按完整性错误处理且不保存文件。这样服务端把版本指向同一节点的另一个
+  （更旧的）content 时会被检测出来（回滚攻击）。
+- 恢复旧版本时，客户端为新 `version_id` 重新加密一份版本元数据，其 `content_id` 指向被恢复的 content。
 - 服务端永远看不到这两个 JSON 的任何字段。
 
 ## 7. 分块
@@ -136,11 +153,12 @@ HKDF 未显式给出 salt 时使用 RFC 5869 的“全零盐”。
 ## 8. 名称令牌
 
 ```
-name_token = HMAC-SHA256(name_key, parent_id ‖ lower(NFC(name)))
+name_token = HMAC-SHA256(name_key, parent_id ‖ NFC(lower(NFC(name))))
 ```
 
 - `parent_id` 是父节点 UUID 的规范小写字符串（36 字节 ASCII）。
-- `name` 先做 Unicode **NFC** 规范化，再转小写（`lower(NFC(name))`）。
+- `name` 先做 Unicode **NFC** 规范化，再转小写，然后**再**做一次 NFC
+  （`NFC(lower(NFC(name)))`）：大小写映射可能产生非 NFC 的序列，第二次规范化保证结果唯一。
 - 结果是 32 字节，服务端以十六进制文本比较；数据库上有部分唯一索引
   `(user_id, parent_id, name_token) WHERE deleted_at IS NULL`。
 - 不同目录下同名文件的令牌不同（`parent_id` 参与 HMAC）；同一目录下大小写不同或 NFC/NFD 不同但语义相同的名称视为重名。
@@ -167,10 +185,19 @@ display  = Crockford-Base32(payload)      # 55 个字符，每 5 个一组用 '-
 | 文件 | 覆盖内容 |
 |---|---|
 | `aead.json` | 帧格式、空明文、Unicode AAD、空 AAD |
-| `kdf.json` | 默认参数派生、NFKC 规范化（全角字符） |
-| `node.json` | 节点密钥包裹、节点/版本元数据、名称令牌、AAD 拼接 |
+| `kdf.json` | 默认参数派生、NFKC 规范化（全角字符）；参数均在允许范围内 |
+| `node.json` | 节点密钥包裹、节点/版本元数据（含 `content_id` 绑定与大小校验）、名称令牌（含大小写折叠）、AAD 拼接 |
 | `chunk.json` | 空文件单块、普通单块、两块内容的最后一块 |
 | `recovery.json` | 恢复密钥展示编码、`rk_wrap`/`rk_auth` 派生 |
+
+固定 nonce 的封帧入口 `aead::seal_with_nonce` 位于 `test-vectors` feature 之后
+（crate 自身测试通过 `cfg(test)` 可见）；下游实现若要跑向量，在 dev-dependencies 中开启：
+
+```toml
+crypto-core = { path = "...", features = ["test-vectors"] }
+```
+
+生产构建不会包含该符号（CI 会检查）。
 
 重新生成向量（仅在明确知道影响时执行，并在 PR 中说明原因）：
 

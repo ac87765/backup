@@ -59,8 +59,9 @@ pub use domain::*;
 pub use error::CryptoError;
 pub use ids::{ContentId, NodeId, VersionId};
 pub use kdf::{
-    KDF_OUTPUT_LEN, KDF_SALT_LEN, KdfParams, PasswordKeys, derive_keys_from_password,
-    derive_password_keys, derive_root_key, generate_salt,
+    KDF_OUTPUT_LEN, KDF_SALT_LEN, KdfAlgorithm, KdfParams, MAX_M_COST_KIB, MAX_T_COST,
+    MIN_M_COST_KIB, MIN_T_COST, PasswordKeys, REQUIRED_P_COST, derive_keys_from_password,
+    derive_password_keys, derive_root_key, generate_salt, parse_kdf_params,
 };
 pub use keys::{
     AuthKey, ContentKey, KEY_LEN, MasterKey, NameKey, NodeKey, PasswordWrapKey, RecoveryAuthKey,
@@ -71,8 +72,9 @@ pub use mk::{
 };
 pub use node::{
     NAME_TOKEN_LEN, NameToken, NodeMetadata, VersionMetadata, compute_name_token,
-    decrypt_node_metadata, decrypt_version_metadata, derive_name_key, encrypt_node_metadata,
-    encrypt_version_metadata, unwrap_node_key, wrap_node_key,
+    decrypt_node_metadata, decrypt_version_metadata, decrypt_version_metadata_for_content,
+    derive_name_key, encrypt_node_metadata, encrypt_version_metadata, unwrap_node_key,
+    verify_plaintext_size, wrap_node_key,
 };
 pub use recovery::{
     RECOVERY_CHECKSUM_LEN, RECOVERY_DISPLAY_GROUP_SIZE, RECOVERY_KEY_LEN, RECOVERY_SYMBOL_COUNT,

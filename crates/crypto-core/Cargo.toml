@@ -32,6 +32,13 @@ unicode-normalization = "0.1"
 uuid = "1"
 zeroize = { version = "1", features = ["derive"] }
 
+[features]
+# 仅用于测试向量/跨实现校验：暴露 aead::seal_with_nonce（固定 nonce 封帧）。
+# 生产构建与发布产物绝不能开启；crate 自身测试通过 cfg(test) 已可见。
+# 下游 crate 在 dev-dependencies 中按需开启：
+#   crypto-core = { path = "...", features = ["test-vectors"] }
+test-vectors = []
+
 [dev-dependencies]
 # 性质测试：随机往返与逐字节篡改检测。
 proptest = "1"

@@ -56,13 +56,13 @@ pub fn unwrap_mk_with_recovery(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kdf::{KdfParams, derive_keys_from_password};
+    use crate::kdf::{KdfParams, derive_keys_from_password_for_tests};
 
     fn password_keys() -> crate::kdf::PasswordKeys {
-        derive_keys_from_password(
+        derive_keys_from_password_for_tests(
             "correct horse battery staple",
             &[0x11u8; 16],
-            &KdfParams::new(8 * 1024, 1, 1).unwrap(),
+            &KdfParams::for_tests(8 * 1024, 1, 1),
         )
         .unwrap()
     }
@@ -85,10 +85,10 @@ mod tests {
     #[test]
     fn wrong_password_key_cannot_unwrap() {
         let first = password_keys();
-        let second = derive_keys_from_password(
+        let second = derive_keys_from_password_for_tests(
             "another password",
             &[0x22u8; 16],
-            &KdfParams::new(8 * 1024, 1, 1).unwrap(),
+            &KdfParams::for_tests(8 * 1024, 1, 1),
         )
         .unwrap();
         let master_key = MasterKey::generate().unwrap();

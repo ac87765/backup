@@ -16,11 +16,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::encoding::{decode_hex, encode_hex};
 use crate::{
-    ContentId, KdfParams, MasterKey, NameToken, NodeId, NodeKey, NodeMetadata, RecoveryKey,
-    VersionId, VersionMetadata, aad, aead, compute_name_token, decrypt_chunk,
-    decrypt_node_metadata, decrypt_version_metadata, derive_content_key, derive_keys_from_password,
-    derive_name_key, derive_password_keys, derive_recovery_keys, derive_root_key,
-    encode_recovery_key, parse_recovery_key, unwrap_node_key,
+    ContentId, CryptoError, KdfParams, MasterKey, NameToken, NodeId, NodeKey, NodeMetadata,
+    RecoveryKey, VersionId, VersionMetadata, aad, aead, compute_name_token, decrypt_chunk,
+    decrypt_node_metadata, decrypt_version_metadata_for_content, derive_content_key,
+    derive_keys_from_password, derive_name_key, derive_password_keys, derive_recovery_keys,
+    derive_root_key, encode_recovery_key, parse_recovery_key, unwrap_node_key,
+    verify_plaintext_size,
 };
 
 const AEAD_FILE: &str = "aead.json";
@@ -186,7 +187,8 @@ fn build_kdf_vectors() -> KdfVectors {
             "nfkc-fullwidth",
             "ｐａｓｓｗｏｒｄ１２３",
             [0x32u8; 16],
-            KdfParams::new(32 * 1024, 2, 1).unwrap(),
+            // 参数必须在生产允许范围内（64–256 MiB、t 3–8、p=1）。
+            KdfParams::new(128 * 1024, 3, 1).unwrap(),
         ),
     ];
 
@@ -262,6 +264,7 @@ struct NodeCase {
     node_id: String,
     parent_id: String,
     version_id: String,
+    content_id: String,
     master_key_hex: String,
     node_key_hex: String,
     wrapped_node_key_hex: String,
@@ -284,10 +287,12 @@ fn build_node_vectors() -> NodeVectors {
     let node_id = NodeId::parse(NODE_ID).unwrap();
     let parent_id = NodeId::parse(PARENT_ID).unwrap();
     let version_id = VersionId::parse(VERSION_ID).unwrap();
+    let content_id = ContentId::parse(CONTENT_ID).unwrap();
 
     let master_key = MasterKey::from_bytes([0x41u8; 32]);
     let node_key = NodeKey::from_bytes([0x42u8; 32]);
-    let file_name = "报告 2026.pdf".to_owned();
+    // 含大写、土耳其语 İ 与中文：覆盖 NFC(lower(NFC(name))) 的大小写折叠路径。
+    let file_name = "İstanbul 报告 2026.PDF".to_owned();
 
     let wrap_nonce = [0x51u8; 24];
     let node_meta_nonce = [0x52u8; 24];
@@ -314,6 +319,7 @@ fn build_node_vectors() -> NodeVectors {
     .unwrap();
 
     let version_metadata = VersionMetadata {
+        content_id: content_id.clone(),
         size: 10 * 1024 * 1024,
         mtime: 1_700_000_000,
         mime: "application/pdf".to_owned(),
@@ -337,6 +343,7 @@ fn build_node_vectors() -> NodeVectors {
             node_id: node_id.as_str().to_owned(),
             parent_id: parent_id.as_str().to_owned(),
             version_id: version_id.as_str().to_owned(),
+            content_id: content_id.as_str().to_owned(),
             master_key_hex: encode_hex(master_key.as_bytes()),
             node_key_hex: encode_hex(node_key.as_bytes()),
             wrapped_node_key_hex: encode_hex(&wrapped_node_key),
@@ -394,17 +401,57 @@ fn node_vectors_match() {
             case.node_meta_plaintext
         );
 
-        // 版本元数据。
+        // 版本元数据：必须绑定 content_id，并提供大小校验。
         assert_eq!(
             encode_hex(&aad::version_metadata(&version_id)),
             case.version_meta_aad_hex
         );
+        let content_id = ContentId::parse(&case.content_id).unwrap();
         let version_meta_frame = bytes_by_hex(&case.version_meta_frame_hex);
-        let version_metadata =
-            decrypt_version_metadata(&node_key, &version_id, &version_meta_frame).unwrap();
+        let version_metadata = decrypt_version_metadata_for_content(
+            &node_key,
+            &version_id,
+            &content_id,
+            &version_meta_frame,
+        )
+        .unwrap();
+        assert_eq!(version_metadata.content_id, content_id);
         assert_eq!(version_metadata.size, 10 * 1024 * 1024);
         assert_eq!(version_metadata.mtime, 1_700_000_000);
         assert_eq!(version_metadata.mime, "application/pdf");
+        assert_eq!(
+            verify_plaintext_size(&version_metadata, 10 * 1024 * 1024),
+            Ok(())
+        );
+        assert_eq!(
+            verify_plaintext_size(&version_metadata, 10 * 1024 * 1024 - 1),
+            Err(CryptoError::PlaintextSizeMismatch)
+        );
+
+        // 指向另一个 content 时必须被拒绝（回滚攻击）。
+        let other_content = ContentId::parse("6ba7b811-9dad-41d1-80b4-00c04fd430c9").unwrap();
+        assert_eq!(
+            decrypt_version_metadata_for_content(
+                &node_key,
+                &version_id,
+                &other_content,
+                &version_meta_frame
+            ),
+            Err(CryptoError::ContentBindingMismatch)
+        );
+
+        assert_eq!(
+            String::from_utf8(
+                aead::open(
+                    node_key.as_bytes(),
+                    &aad::version_metadata(&version_id),
+                    &version_meta_frame
+                )
+                .unwrap()
+            )
+            .unwrap(),
+            case.version_meta_plaintext
+        );
 
         // 名称令牌。
         let name_key = derive_name_key(&master_key).unwrap();
@@ -522,7 +569,7 @@ fn chunk_vectors_match() {
         )
         .unwrap();
         assert_eq!(
-            plaintext,
+            plaintext.as_slice(),
             bytes_by_hex(&case.plaintext_hex),
             "case {}",
             case.name
@@ -535,7 +582,7 @@ fn chunk_vectors_match() {
                 content_key.as_bytes(),
                 &nonce,
                 &aad::chunk(&content_id, case.index, case.count, case.is_last),
-                &plaintext
+                plaintext.as_slice()
             )
             .unwrap(),
             frame,

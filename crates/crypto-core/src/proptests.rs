@@ -87,7 +87,7 @@ proptest! {
 
         let ciphertext = encrypt_chunk(&content_key, &content_id, 0, 1, true, &plaintext).unwrap();
         let decrypted = decrypt_chunk(&content_key, &content_id, 0, 1, true, &ciphertext).unwrap();
-        prop_assert_eq!(decrypted, plaintext);
+        prop_assert_eq!(decrypted.as_slice(), plaintext.as_slice());
     }
 
     #[test]

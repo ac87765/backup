@@ -76,6 +76,8 @@ pub fn encrypt_chunk(
 ///
 /// 调用方必须传入该块应有的 `index`/`count`/`is_last`（来自版本块清单），
 /// 而不是从密文中读取——否则服务端可以篡改块顺序而不被发现。
+///
+/// 返回值用 [`Zeroizing`] 包裹：明文在离开作用域时会被清零，且不再额外复制。
 pub fn decrypt_chunk(
     content_key: &ContentKey,
     content_id: &ContentId,
@@ -83,7 +85,7 @@ pub fn decrypt_chunk(
     count: u32,
     is_last: bool,
     ciphertext: &[u8],
-) -> Result<Vec<u8>, CryptoError> {
+) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
     validate_layout(index, count, is_last)?;
 
     // 先限制长度，避免超大“块”造成内存放大。
@@ -100,7 +102,7 @@ pub fn decrypt_chunk(
     // 非最后一块必须是满块，防止服务端返回一个被“缩短”的中间块。
     validate_plaintext_size(index, count, plaintext.len())?;
 
-    Ok(plaintext.to_vec())
+    Ok(plaintext)
 }
 
 fn validate_layout(index: u32, count: u32, is_last: bool) -> Result<(), CryptoError> {
@@ -160,7 +162,7 @@ mod tests {
             CHUNK_CIPHERTEXT_OVERHEAD + plaintext.len()
         );
         let decrypted = decrypt_chunk(&key, &content, 0, 1, true, &ciphertext).unwrap();
-        assert_eq!(decrypted, plaintext);
+        assert_eq!(decrypted.as_slice(), plaintext.as_slice());
     }
 
     #[test]
@@ -200,12 +202,16 @@ mod tests {
         let second_ciphertext = encrypt_chunk(&key, &content, 1, count, true, &second).unwrap();
 
         assert_eq!(
-            decrypt_chunk(&key, &content, 0, count, false, &first_ciphertext).unwrap(),
-            first
+            decrypt_chunk(&key, &content, 0, count, false, &first_ciphertext)
+                .unwrap()
+                .as_slice(),
+            first.as_slice()
         );
         assert_eq!(
-            decrypt_chunk(&key, &content, 1, count, true, &second_ciphertext).unwrap(),
-            second
+            decrypt_chunk(&key, &content, 1, count, true, &second_ciphertext)
+                .unwrap()
+                .as_slice(),
+            second.as_slice()
         );
     }
 
