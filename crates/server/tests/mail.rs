@@ -23,7 +23,7 @@ use sqlx::{PgPool, Row};
 use tracing_subscriber::fmt::MakeWriter;
 use uuid::Uuid;
 
-use common::{environment, migrated_database};
+use common::{environment, insert_test_user, migrated_database};
 
 struct Buffer(Arc<Mutex<Vec<u8>>>);
 
@@ -120,6 +120,7 @@ async fn file_mode_writes_mail_without_storing_plaintext_token() {
     let mailer = build_mailer(&config).expect("构造 file mailer");
     let resolver: Arc<dyn RecipientResolver> = Arc::new(FixedResolver);
     let user_id = Uuid::new_v4();
+    insert_test_user(&database, user_id).await;
     enqueue_test_mail(&database, user_id).await;
 
     let stats = run_batch(&database, &mailer, &resolver, "http://localhost", 10)
@@ -163,6 +164,7 @@ async fn smtp_failure_is_retried_with_a_new_token() {
     let mailer = build_mailer(&config).expect("构造 smtp mailer");
     let resolver: Arc<dyn RecipientResolver> = Arc::new(FixedResolver);
     let user_id = Uuid::new_v4();
+    insert_test_user(&database, user_id).await;
     enqueue_test_mail(&database, user_id).await;
 
     // 第一次：SMTP 连接被立即关闭 → outbox 保留并退避。
@@ -249,6 +251,7 @@ async fn lease_aware_email_worker_releases_remaining_mail() {
     let (_test_db, database) = migrated_database(env).await;
     let resolver: Arc<dyn RecipientResolver> = Arc::new(FixedResolver);
     let user_id = Uuid::new_v4();
+    insert_test_user(&database, user_id).await;
     for _ in 0..5 {
         enqueue_test_mail(&database, user_id).await;
     }

@@ -21,7 +21,7 @@ use server::storage::{FaultInjectionConfig, InjectedErrorKind, ObjectOperation, 
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
-use common::{environment, integration_storage_config, migrated_database};
+use common::{environment, insert_test_user, integration_storage_config, migrated_database};
 
 async fn enqueue(database: &Database, keys: &[String]) {
     let mut tx = database.pool().begin().await.expect("开始事务");
@@ -350,10 +350,12 @@ async fn job_and_queue_metrics_are_exported() {
     // 放一条删除任务与一封邮件，验证积压/最老年龄指标。
     let key = format!("v1/{}/{}", Uuid::new_v4(), Uuid::new_v4());
     enqueue(&database, &[key]).await;
+    let user_id = Uuid::new_v4();
+    insert_test_user(&database, user_id).await;
     let mut tx = database.pool().begin().await.expect("开始事务");
     server::jobs::email::enqueue_email(
         &mut tx,
-        Uuid::new_v4(),
+        user_id,
         server::jobs::email::PURPOSE_TEST,
         &serde_json::json!({}),
     )

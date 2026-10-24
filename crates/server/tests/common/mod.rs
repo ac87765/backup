@@ -231,6 +231,43 @@ pub fn minio_container(env: &TestEnvironment) -> &'static ContainerAsync<Generic
     env.minio
 }
 
+/// 插入一条最小的 users 行（仅用于第 5 组邮件队列测试的 FK 依赖）。
+///
+/// `email_outbox` / `email_tokens` 在第 6 组补了指向 `users` 的外键；
+/// 这里提供一个不经过认证流程的最小用户，避免测试直接使用随机 UUID。
+pub async fn insert_test_user(database: &server::Database, user_id: Uuid) {
+    let email = format!("test-{user_id}@example.com");
+    let params = serde_json::json!({
+        "algorithm": "argon2id",
+        "m_cost_kib": 65536,
+        "t_cost": 3,
+        "p_cost": 1,
+    });
+    let salt = [0_u8; 16];
+    let hash = [0_u8; 32];
+    let wrapped = vec![1_u8; crypto_core::FRAME_OVERHEAD + crypto_core::KEY_LEN];
+    sqlx::query(
+        r#"
+        INSERT INTO users (
+            id, email, kdf_params, kdf_salt, auth_hash, pepper_version,
+            recovery_auth_hash, recovery_pepper_version, wrapped_mk, recovery_wrapped_mk
+        )
+        VALUES ($1, $2::text::citext, $3, $4, $5, 1, $6, 1, $7, $8)
+        "#,
+    )
+    .bind(user_id)
+    .bind(email)
+    .bind(params)
+    .bind(salt.as_slice())
+    .bind(hash.as_slice())
+    .bind(hash.as_slice())
+    .bind(wrapped.as_slice())
+    .bind(wrapped.as_slice())
+    .execute(database.pool())
+    .await
+    .expect("插入测试用户");
+}
+
 /// 构造一个不连接任何真实依赖的配置（只用于应用骨架/中间件测试）。
 pub fn test_config(static_dir: std::path::PathBuf) -> server::Config {
     server::Config {
