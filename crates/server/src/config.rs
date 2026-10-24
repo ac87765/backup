@@ -131,6 +131,29 @@ pub struct DatabaseConfig {
     pub max_connections: u32,
 }
 
+/// `server migrate` 的配置：只加载并校验数据库部分。
+///
+/// 迁移不会访问对象存储、不会发邮件、也不会监听端口，因此不应要求这些
+/// 与迁移无关的配置项存在；否则发布流程必须先准备一整套运行期配置。
+#[derive(Debug, Clone)]
+pub struct MigrateConfig {
+    pub database: DatabaseConfig,
+}
+
+impl MigrateConfig {
+    /// 从进程环境变量加载迁移所需配置。
+    pub fn load() -> Result<Self, ConfigError> {
+        Self::from_figment(&env_figment())
+    }
+
+    /// 从任意 figment 数据源加载（测试用）。
+    pub fn from_figment(figment: &Figment) -> Result<Self, ConfigError> {
+        Ok(Self {
+            database: parse_database_config(figment)?,
+        })
+    }
+}
+
 /// 对象存储配置。
 ///
 /// 内网 endpoint 供服务端自身 stat/list/delete 使用；公网 endpoint 只用于生成预签名 URL
@@ -258,13 +281,7 @@ impl Config {
     /// 的读取路径变得不可预测。我们先把环境变量原样收集成字符串，再交给
     /// figment 的 `Serialized` provider 合并——配置解析仍然是 figment。
     pub fn load() -> Result<Self, ConfigError> {
-        let values: std::collections::HashMap<String, String> = std::env::vars()
-            .filter_map(|(key, value)| {
-                key.strip_prefix(ENV_PREFIX)
-                    .map(|name| (name.to_ascii_lowercase(), value))
-            })
-            .collect();
-        Self::from_figment(&Figment::new().merge(Serialized::defaults(values)))
+        Self::from_figment(&env_figment())
     }
 
     /// 从任意 figment 数据源加载（测试用 `Serialized` 注入，避免依赖进程环境）。
@@ -279,20 +296,7 @@ impl Config {
         )?;
         let static_dir = PathBuf::from(string_with_default(figment, keys::STATIC_DIR, "web/dist")?);
 
-        let database_url = required_secret(figment, keys::DATABASE_URL)?;
-        if !(database_url.expose().starts_with("postgres://")
-            || database_url.expose().starts_with("postgresql://"))
-        {
-            return Err(ConfigError::invalid(
-                keys::DATABASE_URL,
-                "必须是 postgres:// 或 postgresql:// 连接串",
-            ));
-        }
-        let max_connections = parse_u32(
-            &string_with_default(figment, keys::DATABASE_MAX_CONNECTIONS, "10")?,
-            keys::DATABASE_MAX_CONNECTIONS,
-            1..=1024,
-        )?;
+        let database = parse_database_config(figment)?;
 
         let kind = parse_storage_kind(&required_string(figment, keys::STORAGE_KIND)?)?;
         let bucket = required_string(figment, keys::STORAGE_BUCKET)?;
@@ -338,10 +342,7 @@ impl Config {
             bind_addr,
             metrics_addr,
             static_dir,
-            database: DatabaseConfig {
-                url: database_url,
-                max_connections,
-            },
+            database,
             storage: StorageConfig {
                 kind,
                 bucket,
@@ -356,6 +357,26 @@ impl Config {
             mail,
         })
     }
+}
+
+/// 只解析数据库配置（`serve` 与 `migrate` 共用）。
+fn parse_database_config(figment: &Figment) -> Result<DatabaseConfig, ConfigError> {
+    let url = required_secret(figment, keys::DATABASE_URL)?;
+    if !(url.expose().starts_with("postgres://") || url.expose().starts_with("postgresql://")) {
+        return Err(ConfigError::invalid(
+            keys::DATABASE_URL,
+            "必须是 postgres:// 或 postgresql:// 连接串",
+        ));
+    }
+    let max_connections = parse_u32(
+        &string_with_default(figment, keys::DATABASE_MAX_CONNECTIONS, "10")?,
+        keys::DATABASE_MAX_CONNECTIONS,
+        1..=1024,
+    )?;
+    Ok(DatabaseConfig {
+        url,
+        max_connections,
+    })
 }
 
 /// 解析邮件配置。
@@ -431,6 +452,20 @@ fn parse_mail_config(figment: &Figment) -> Result<MailConfig, ConfigError> {
         }
         _ => Err(ConfigError::invalid(keys::MAIL_MODE, "必须是 file 或 smtp")),
     }
+}
+
+/// 把进程环境变量中的 `BACKUP_*` 原样收集成 figment 数据源。
+///
+/// 不用 figment 的 `Env` provider：它会把 `true`、`123456` 之类的值自动解析成
+/// bool/数字，既可能吃掉数字型密钥的前导零，也让布尔配置的读取路径不可预测。
+fn env_figment() -> Figment {
+    let values: std::collections::HashMap<String, String> = std::env::vars()
+        .filter_map(|(key, value)| {
+            key.strip_prefix(ENV_PREFIX)
+                .map(|name| (name.to_ascii_lowercase(), value))
+        })
+        .collect();
+    Figment::new().merge(Serialized::defaults(values))
 }
 
 /// 环境变量名 → figment 内部键：去掉 `BACKUP_` 前缀并小写。
@@ -641,6 +676,30 @@ mod tests {
         assert_eq!(config.storage.kind, StorageKind::S3);
         assert_eq!(config.storage.public_origin(), "http://127.0.0.1:9000");
         assert_eq!(config.storage.internal_endpoint, "http://127.0.0.1:9000");
+    }
+
+    #[test]
+    fn migrate_config_loads_with_only_database_url() {
+        let pairs = [("database_url", "postgres://backup:pw@127.0.0.1:5432/backup")];
+        let config =
+            MigrateConfig::from_figment(&figment_from(&pairs)).expect("迁移配置只要求数据库连接串");
+        assert_eq!(config.database.max_connections, 10);
+        assert_eq!(
+            config.database.url.expose(),
+            "postgres://backup:pw@127.0.0.1:5432/backup"
+        );
+    }
+
+    #[test]
+    fn migrate_config_still_requires_database_url() {
+        let err = MigrateConfig::from_figment(&figment_from(&[]))
+            .expect_err("缺少数据库连接串时 migrate 配置必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Missing {
+                key: keys::DATABASE_URL
+            }
+        );
     }
 
     #[test]

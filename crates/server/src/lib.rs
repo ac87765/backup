@@ -17,7 +17,7 @@ pub mod telemetry;
 
 pub use api::AppState;
 pub use api::build_router;
-pub use config::Config;
+pub use config::{Config, MigrateConfig};
 pub use db::{Database, MigrationState};
 pub use error::StartupError;
 pub use storage::Storage;

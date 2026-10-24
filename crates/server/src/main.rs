@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use server::{
-    AppState, Config, Database, StartupError, Storage, build_router, config, jobs, mail, metrics,
-    shutdown,
+    AppState, Config, Database, MigrateConfig, StartupError, Storage, build_router, config, jobs,
+    mail, metrics, shutdown,
 };
 
 #[derive(Debug, Parser)]
@@ -137,7 +137,8 @@ async fn serve() -> anyhow::Result<()> {
 }
 
 async fn migrate() -> anyhow::Result<()> {
-    let config = Config::load()?;
+    // 迁移只依赖数据库；不要求存储、邮件或监听地址等运行期配置。
+    let config = MigrateConfig::load()?;
     let database = Database::connect(&config.database).await?;
     database.migrate().await?;
     let state = database.migration_state().await?;
