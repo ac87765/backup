@@ -42,6 +42,7 @@
 - [x] 4.7 建立 utoipa OpenAPI 生成与 `web/` 端 `openapi-typescript` 生成脚本，CI 检查生成物无漂移
 - [x] 4.8 建立集成测试框架（testcontainers PostgreSQL + MinIO、每测试独立 schema/bucket 前缀），验证可并行运行
 - [x] 4.9 审查修复（4a）：`/readyz` 的存储探针必须能识别 bucket 不存在（不能把 HEAD 的 404 一律当成可达，改用对 `v1/` 前缀 limit 1 的 list 或等价方式），集成测试覆盖“bucket 不存在 → 503”与“凭据错误 → 503”；`/assets/` 下不存在的文件返回 404（不回退到 index.html），集成测试覆盖
+- [ ] 4.10 审查修复（4b）：OpenDAL 的 `list_with(..).limit(n)` 只是每页大小提示、仍会翻完全部分页（见 opendal-core `OpList::limit` 文档），因此 `probe` 与 `list_prefix(prefix, limit)` 必须改用 `lister_with` 流式读取并在取到 n 条后停止；MinIO 集成测试放 3 个对象后断言 `list_prefix(prefix, 1)` 恰好返回 1 条。优雅停机改为单一总期限：在途请求与后台任务共用同一个 30 秒截止时间（不再各自 30 秒），测试覆盖
 
 ## 5. 后台任务框架
 
