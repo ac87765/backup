@@ -94,6 +94,14 @@ npm ci
 npm run dev        # http://localhost:5173
 ```
 
+`npm run dev` / `npm run build` / `npm test` 会先执行 `npm run build:wasm`，把
+`crypto-wasm` 打包到 `web/src/generated/crypto-wasm/`（已被 `.gitignore` 忽略），
+所以本地需要先装好 wasm-pack。
+
+> **WASM 只在 Web Worker 中加载**：主线程通过 `src/worker/client.ts` 的 Comlink 代理
+> 调用加密操作，永远不接触密钥。ESLint（`no-restricted-imports`）与
+> `src/worker/isolation.test.ts` 会强制这一点。
+
 ### 4. 浏览器加密模块（WASM）
 
 ```bash
@@ -103,6 +111,25 @@ wasm-pack build crates/crypto-wasm --target web --release --no-opt
 `--no-opt` 跳过 binaryen（`wasm-opt`）下载，用于本地与 CI 的功能验证；
 带 `wasm-opt` 的发布构建在镜像构建阶段执行（第 9 组）。产物在
 `crates/crypto-wasm/pkg/`，已被 `.gitignore` 忽略。
+
+浏览器内测试（需要本机 Chrome；ChromeDriver 与 Chrome 大版本必须一致，
+必要时用 `--chromedriver <path>` 指定）：
+
+```bash
+wasm-pack test --headless --chrome --release crates/crypto-wasm
+```
+
+### 5. 端到端测试（CSP）
+
+```bash
+cd web
+npx playwright install chromium   # 首次
+npm run test:e2e
+```
+
+Playwright 会以 `VITE_SELFTEST=1` 构建生产产物，并用 `vite preview` 加
+`script-src 'self' 'wasm-unsafe-eval'` 的 CSP 响应头，然后验证一次完整的
+Worker 加解密往返与锁定错误码。
 
 ## 检查命令
 
@@ -121,11 +148,12 @@ npm test
 npm run build
 ```
 
-后续涉及 WASM 测试与数据库查询时，还要追加：
+涉及 WASM 与端到端时，还要追加：
 
 ```bash
-wasm-pack test --headless --chrome crates/crypto-wasm
-cargo sqlx prepare --workspace --check
+wasm-pack test --headless --chrome --release crates/crypto-wasm
+cd web && npm run test:e2e
+cargo sqlx prepare --workspace --check   # 有数据库查询后
 openspec validate bootstrap-e2ee-backup-mvp --strict
 ```
 
@@ -133,10 +161,13 @@ openspec validate bootstrap-e2ee-backup-mvp --strict
 
 ## CI
 
-[.github/workflows/ci.yml](.github/workflows/ci.yml) 包含三个并行任务：
+[.github/workflows/ci.yml](.github/workflows/ci.yml) 包含五个并行任务：
 
-- `Rust`：fmt、clippy（`-D warnings`）、test、cargo deny、WASM 构建
-- `Web`：typecheck、lint、test、build
+- `Rust`：fmt、clippy（`-D warnings`）、test、符号泄漏检查、cargo deny、
+  `wasm-pack test --headless --chrome`、WASM 构建
+- `Web`：先生成 WASM 绑定，再 typecheck、lint、test、build
+- `E2E`：Playwright 在生产构建 + 严格 CSP 下跑 WASM 冒烟用例
+- `OpenSpec`：固定 CLI 版本执行 `validate --strict`
 - `Dev stack`：实际启动 `deploy/docker-compose.dev.yml`，等待 PostgreSQL/MinIO 健康，
   并执行 `minio-init` 验证 bucket 与 CORS 配置
 

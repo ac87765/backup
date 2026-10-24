@@ -24,7 +24,7 @@ env:
 jobs:
   rust:
     name: Rust (fmt / clippy / test / deny / wasm)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -72,6 +72,10 @@ jobs:
           sudo install /tmp/wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack /usr/local/bin/wasm-pack
           wasm-pack --version
 
+      # 3.1：浏览器里跑全部测试向量与 KeyStore 契约（含默认 KDF 参数 64 MiB/t=3）。
+      - name: wasm-pack test（headless Chrome）
+        run: wasm-pack test --headless --chrome --release crates/crypto-wasm
+
       # --no-opt 跳过 binaryen（wasm-opt）下载：CI 只验证 WASM 与 wasm-bindgen 绑定
       # 能正确产出；带 wasm-opt 的发布构建在镜像构建阶段执行（见 deploy/ 与 9.1）。
       - name: 构建 WASM
@@ -79,13 +83,16 @@ jobs:
 
   web:
     name: Web (typecheck / lint / test / build)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # 前端构建需要先生成 WASM 绑定（typecheck 依赖生成的 .d.ts）。
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
@@ -94,8 +101,19 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      - name: 安装 wasm-pack 0.15.0
+        run: |
+          curl -fsSL -o /tmp/wasm-pack.tar.gz \
+            https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz
+          tar -xzf /tmp/wasm-pack.tar.gz -C /tmp
+          sudo install /tmp/wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack /usr/local/bin/wasm-pack
+          wasm-pack --version
+
       - name: 安装依赖
         run: npm ci
+
+      - name: 生成 WASM 绑定
+        run: npm run build:wasm
 
       - name: typecheck
         run: npm run typecheck
@@ -109,9 +127,44 @@ jobs:
       - name: build
         run: npm run build
 
+  e2e:
+    name: E2E (Playwright, strict CSP)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 安装 wasm-pack 0.15.0
+        run: |
+          curl -fsSL -o /tmp/wasm-pack.tar.gz \
+            https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz
+          tar -xzf /tmp/wasm-pack.tar.gz -C /tmp
+          sudo install /tmp/wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack /usr/local/bin/wasm-pack
+          wasm-pack --version
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 安装 Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: 运行 CSP / WASM 冒烟用例
+        run: npm run test:e2e
+
   spec:
     name: OpenSpec (validate --strict)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -129,7 +182,7 @@ jobs:
 
   dev-stack:
     name: Dev stack (PostgreSQL + MinIO)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
