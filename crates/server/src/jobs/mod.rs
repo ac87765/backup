@@ -18,11 +18,54 @@ pub mod retry;
 pub mod scan;
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::Database;
 use crate::Storage;
 use crate::mail::Mailer;
 use crate::shutdown::Shutdown;
+
+/// 队列型任务的租约设置。
+///
+/// 生产默认 5 分钟租约、留 60 秒安全余量：worker 在剩余时间不足安全余量时
+/// 不再开始新的工作项，并把本批剩余项立即释放，让其他实例可以马上领取。
+/// 测试可以通过 [`LeaseConfig::new`] 使用短租约。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LeaseConfig {
+    pub lease: Duration,
+    pub safety_margin: Duration,
+}
+
+impl LeaseConfig {
+    /// 生产默认值（design D10：`claimed_until = now() + 5min`）。
+    pub const DEFAULT: Self = Self {
+        lease: Duration::from_secs(5 * 60),
+        safety_margin: Duration::from_secs(60),
+    };
+
+    pub fn new(lease: Duration, safety_margin: Duration) -> Self {
+        Self {
+            lease,
+            safety_margin,
+        }
+    }
+
+    /// 距租约到期还剩多久（已过期时为零）。
+    pub fn remaining(self, claimed_at: Instant) -> Duration {
+        self.lease.saturating_sub(claimed_at.elapsed())
+    }
+
+    /// 是否还允许开始新的工作项；剩余时间不足安全余量时必须停止。
+    pub fn allows_new_item(self, claimed_at: Instant) -> bool {
+        self.remaining(claimed_at) > self.safety_margin
+    }
+}
+
+impl Default for LeaseConfig {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
 
 /// 扫描型任务的固定数字 ID。
 ///
@@ -83,7 +126,24 @@ pub fn start(
 mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
-    use super::job_ids;
+    use super::{LeaseConfig, job_ids};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn default_lease_is_five_minutes_with_one_minute_margin() {
+        let lease = LeaseConfig::DEFAULT;
+        assert_eq!(lease.lease, Duration::from_secs(5 * 60));
+        assert_eq!(lease.safety_margin, Duration::from_secs(60));
+    }
+
+    #[test]
+    fn starting_a_new_item_stops_when_safety_margin_is_reached() {
+        let lease = LeaseConfig::new(Duration::from_secs(10), Duration::from_secs(6));
+        assert!(lease.allows_new_item(Instant::now()));
+        // 已用 5 秒 → 剩余 5 秒，不足 6 秒安全余量。
+        let started = Instant::now() - Duration::from_secs(5);
+        assert!(!lease.allows_new_item(started));
+    }
 
     #[test]
     fn advisory_lock_job_ids_are_unique() {

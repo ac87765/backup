@@ -8,21 +8,20 @@
 //! `&mut Transaction`，从类型上保证不会在事务外直接登记。
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rand::Rng;
 use sqlx::{PgPool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use super::LeaseConfig;
 use super::metrics;
 use super::retry::{backoff_delay, classify_storage_error};
 use crate::{Database, Storage};
 
 /// 一批领取的最大行数。
 pub const BATCH_SIZE: i64 = 100;
-/// 领取租约：处理太慢时由其他实例重新领取。
-pub const CLAIM_LEASE: Duration = Duration::from_secs(5 * 60);
 
 /// 已领取的待删除对象。
 #[derive(Debug, Clone)]
@@ -40,6 +39,8 @@ pub struct DeletionStats {
     pub deleted: usize,
     pub failed: usize,
     pub lease_lost: usize,
+    /// 因租约即将到期而主动释放、留给其他实例处理的数量。
+    pub released: usize,
 }
 
 /// 在业务事务内登记待删除对象。
@@ -63,6 +64,15 @@ pub async fn enqueue_object_deletions(
 
 /// 领取一批到期任务（短事务，提交后才返回）。
 pub async fn claim_batch(pool: &PgPool, limit: i64) -> Result<Vec<ClaimedDeletion>, sqlx::Error> {
+    claim_batch_with_lease(pool, limit, LeaseConfig::DEFAULT.lease).await
+}
+
+/// 使用指定租约领取一批任务（短事务，提交后才返回）。
+pub async fn claim_batch_with_lease(
+    pool: &PgPool,
+    limit: i64,
+    lease: Duration,
+) -> Result<Vec<ClaimedDeletion>, sqlx::Error> {
     let claim_token = Uuid::new_v4();
     let mut tx = pool.begin().await?;
     let claimed = sqlx::query_as!(
@@ -82,7 +92,7 @@ pub async fn claim_batch(pool: &PgPool, limit: i64) -> Result<Vec<ClaimedDeletio
         )
         RETURNING id, object_key, attempts, claim_token AS "claim_token!"
         "#,
-        CLAIM_LEASE.as_secs_f64(),
+        lease.as_secs_f64(),
         claim_token,
         limit,
     )
@@ -90,6 +100,30 @@ pub async fn claim_batch(pool: &PgPool, limit: i64) -> Result<Vec<ClaimedDeletio
     .await?;
     tx.commit().await?;
     Ok(claimed)
+}
+
+/// 立即释放本批尚未开始的任务（必须匹配 claim_token）。
+///
+/// `WHERE id = ANY($1)` 需要数组绑定，sqlx 的离线 `.sqlx` 元数据无法自动生成；
+/// 这里使用与宏版等价的参数化查询（没有任何字符串拼接），由审查者在可连接
+/// 数据库的环境中选择是否改回 `sqlx::query!` 并重新生成 `.sqlx/`。
+pub async fn release(pool: &PgPool, ids: &[i64], claim_token: Uuid) -> Result<u64, sqlx::Error> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let result = sqlx::query(
+        r#"
+        UPDATE object_deletions
+        SET claimed_until = NULL,
+            claim_token = NULL
+        WHERE id = ANY($1::bigint[]) AND claim_token = $2
+        "#,
+    )
+    .bind(ids)
+    .bind(claim_token)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 /// 删除成功后移除队列行（必须匹配 claim_token）。
@@ -133,20 +167,48 @@ pub async fn fail(
     Ok(result.rows_affected() == 1)
 }
 
-/// 领取并处理一批删除任务。
+/// 领取并处理一批删除任务（生产默认租约）。
 pub async fn run_batch(
     database: &Database,
     storage: &Arc<Storage>,
     limit: i64,
 ) -> Result<DeletionStats, sqlx::Error> {
-    let claimed = claim_batch(database.pool(), limit).await?;
+    run_batch_with_lease(database, storage, limit, LeaseConfig::DEFAULT).await
+}
+
+/// 领取并处理一批删除任务，使用指定的租约设置。
+pub async fn run_batch_with_lease(
+    database: &Database,
+    storage: &Arc<Storage>,
+    limit: i64,
+    lease: LeaseConfig,
+) -> Result<DeletionStats, sqlx::Error> {
+    let claimed = claim_batch_with_lease(database.pool(), limit, lease.lease).await?;
+    // 从领取成功时开始计时；这是计算租约剩余时间的基准。
+    let claimed_at = Instant::now();
     let deletion = storage.deletion_handle();
     let mut stats = DeletionStats {
         claimed: claimed.len(),
         ..DeletionStats::default()
     };
 
-    for item in claimed {
+    let mut index = 0;
+    while index < claimed.len() {
+        if !lease.allows_new_item(claimed_at) {
+            let remaining_ids: Vec<i64> = claimed[index..].iter().map(|item| item.id).collect();
+            let released =
+                release(database.pool(), &remaining_ids, claimed[index].claim_token).await?;
+            stats.released += released as usize;
+            tracing::warn!(
+                released,
+                remaining_ms = lease.remaining(claimed_at).as_millis() as u64,
+                "对象删除租约即将到期，已释放本批剩余任务"
+            );
+            break;
+        }
+
+        let item = &claimed[index];
+        index += 1;
         match deletion.delete(&item.object_key).await {
             Ok(()) => match complete(database.pool(), item.id, item.claim_token).await {
                 Ok(true) => {
@@ -210,6 +272,7 @@ pub async fn worker_loop(database: Database, storage: Arc<Storage>, shutdown: Ca
                     claimed = stats.claimed,
                     deleted = stats.deleted,
                     failed = stats.failed,
+                    released = stats.released,
                     "对象删除批次完成"
                 );
             }

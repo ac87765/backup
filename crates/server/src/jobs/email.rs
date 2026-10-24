@@ -8,7 +8,7 @@
 //! 测试注入固定收件人。
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use rand::Rng;
@@ -17,15 +17,16 @@ use sqlx::{PgPool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use super::LeaseConfig;
 use super::metrics;
 use super::retry::backoff_delay;
 use crate::Database;
 use crate::mail::{Mailer, RenderedMail, render_test_mail};
 
 /// 一批领取的最大行数。
-pub const BATCH_SIZE: i64 = 100;
-/// 领取租约。
-pub const CLAIM_LEASE: Duration = Duration::from_secs(5 * 60);
+///
+/// 邮件发送是慢操作（含网络往返），批次比删除队列小，避免一批占用租约过久。
+pub const BATCH_SIZE: i64 = 20;
 /// 邮件令牌有效期（第 6 组验证接口使用）。
 const TOKEN_TTL_HOURS: i32 = 24;
 /// 本组唯一支持的测试模板。
@@ -63,6 +64,8 @@ pub struct EmailStats {
     pub sent: usize,
     pub failed: usize,
     pub lease_lost: usize,
+    /// 因租约即将到期而主动释放、留给其他实例处理的数量。
+    pub released: usize,
 }
 
 /// 在业务事务内登记一封邮件（只接受 `&mut Transaction`）。
@@ -86,8 +89,17 @@ pub async fn enqueue_email(
     .await
 }
 
-/// 领取一批到期邮件。
+/// 领取一批到期邮件（生产默认租约）。
 pub async fn claim_batch(pool: &PgPool, limit: i64) -> Result<Vec<ClaimedEmail>, sqlx::Error> {
+    claim_batch_with_lease(pool, limit, LeaseConfig::DEFAULT.lease).await
+}
+
+/// 使用指定租约领取一批到期邮件。
+pub async fn claim_batch_with_lease(
+    pool: &PgPool,
+    limit: i64,
+    lease: Duration,
+) -> Result<Vec<ClaimedEmail>, sqlx::Error> {
     let claim_token = Uuid::new_v4();
     let mut tx = pool.begin().await?;
     let claimed = sqlx::query_as!(
@@ -107,7 +119,7 @@ pub async fn claim_batch(pool: &PgPool, limit: i64) -> Result<Vec<ClaimedEmail>,
         )
         RETURNING id, user_id, purpose, params, attempts, claim_token AS "claim_token!"
         "#,
-        CLAIM_LEASE.as_secs_f64(),
+        lease.as_secs_f64(),
         claim_token,
         limit,
     )
@@ -115,6 +127,28 @@ pub async fn claim_batch(pool: &PgPool, limit: i64) -> Result<Vec<ClaimedEmail>,
     .await?;
     tx.commit().await?;
     Ok(claimed)
+}
+
+/// 立即释放本批尚未开始的邮件（必须匹配 claim_token）。
+///
+/// 同删除队列：数组绑定使用参数化查询，避免在无法连接数据库时手写 `.sqlx/`。
+pub async fn release(pool: &PgPool, ids: &[i64], claim_token: Uuid) -> Result<u64, sqlx::Error> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let result = sqlx::query(
+        r#"
+        UPDATE email_outbox
+        SET claimed_until = NULL,
+            claim_token = NULL
+        WHERE id = ANY($1::bigint[]) AND claim_token = $2
+        "#,
+    )
+    .bind(ids)
+    .bind(claim_token)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 pub async fn complete(pool: &PgPool, id: i64, claim_token: Uuid) -> Result<bool, sqlx::Error> {
@@ -156,20 +190,49 @@ pub async fn fail(
     Ok(result.rows_affected() == 1)
 }
 
-/// 处理一批邮件：生成令牌 → 写哈希 → 渲染 → 发送 → 删除 outbox 行。
+/// 处理一批邮件（生产默认租约）：生成令牌 → 写哈希 → 渲染 → 发送 → 删除 outbox 行。
 pub async fn run_batch(
     database: &Database,
     mailer: &Arc<dyn Mailer>,
     resolver: &Arc<dyn RecipientResolver>,
     limit: i64,
 ) -> Result<EmailStats, sqlx::Error> {
-    let claimed = claim_batch(database.pool(), limit).await?;
+    run_batch_with_lease(database, mailer, resolver, limit, LeaseConfig::DEFAULT).await
+}
+
+/// 使用指定租约处理一批邮件。
+pub async fn run_batch_with_lease(
+    database: &Database,
+    mailer: &Arc<dyn Mailer>,
+    resolver: &Arc<dyn RecipientResolver>,
+    limit: i64,
+    lease: LeaseConfig,
+) -> Result<EmailStats, sqlx::Error> {
+    let claimed = claim_batch_with_lease(database.pool(), limit, lease.lease).await?;
+    // 从领取成功时开始计时；这是计算租约剩余时间的基准。
+    let claimed_at = Instant::now();
     let mut stats = EmailStats {
         claimed: claimed.len(),
         ..EmailStats::default()
     };
 
-    for item in claimed {
+    let mut index = 0;
+    while index < claimed.len() {
+        if !lease.allows_new_item(claimed_at) {
+            let remaining_ids: Vec<i64> = claimed[index..].iter().map(|item| item.id).collect();
+            let released =
+                release(database.pool(), &remaining_ids, claimed[index].claim_token).await?;
+            stats.released += released as usize;
+            tracing::warn!(
+                released,
+                remaining_ms = lease.remaining(claimed_at).as_millis() as u64,
+                "邮件租约即将到期，已释放本批剩余邮件"
+            );
+            break;
+        }
+
+        let item = &claimed[index];
+        index += 1;
         if item.purpose != PURPOSE_TEST {
             // 未知模板属于配置/代码错误，但仍按失败重试，避免静默丢邮件。
             if fail(
@@ -218,7 +281,7 @@ pub async fn run_batch(
         sqlx::query!(
             "DELETE FROM email_tokens WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL",
             item.user_id,
-            item.purpose,
+            item.purpose.as_str(),
         )
         .execute(&mut *tx)
         .await?;
@@ -228,7 +291,7 @@ pub async fn run_batch(
             VALUES ($1, $2, $3, now() + make_interval(hours => $4))
             "#,
             item.user_id,
-            item.purpose,
+            item.purpose.as_str(),
             token_hash,
             TOKEN_TTL_HOURS,
         )
@@ -303,6 +366,7 @@ pub async fn worker_loop(
                     claimed = stats.claimed,
                     sent = stats.sent,
                     failed = stats.failed,
+                    released = stats.released,
                     "邮件批次完成"
                 );
             }
@@ -343,6 +407,11 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
     use super::*;
+
+    #[test]
+    fn email_batch_is_about_twenty() {
+        assert_eq!(BATCH_SIZE, 20);
+    }
 
     #[test]
     fn tokens_are_random_and_hashed() {

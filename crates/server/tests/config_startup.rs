@@ -22,6 +22,7 @@ fn valid_env() -> Vec<(&'static str, &'static str)> {
         ("BACKUP_STORAGE_ACCESS_KEY_ID", "access-key-value"),
         ("BACKUP_STORAGE_SECRET_ACCESS_KEY", "secret-key-value"),
         ("BACKUP_STORAGE_ALLOW_HTTP", "true"),
+        ("BACKUP_MAIL_MODE", "file"),
     ]
 }
 
@@ -37,6 +38,27 @@ fn missing_config_exits_non_zero_and_names_the_item() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("BACKUP_DATABASE_URL"),
+        "错误日志必须指出缺失的配置项，实际 stderr: {stderr}"
+    );
+}
+
+#[test]
+fn missing_mail_mode_exits_non_zero_and_names_the_item() {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
+    command.arg("serve").env_clear();
+    for (key, value) in valid_env() {
+        if key != "BACKUP_MAIL_MODE" {
+            command.env(key, value);
+        }
+    }
+    let output = command.output().expect("应当能启动 server 二进制");
+    assert!(
+        !output.status.success(),
+        "缺少 BACKUP_MAIL_MODE 必须非零退出"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("BACKUP_MAIL_MODE"),
         "错误日志必须指出缺失的配置项，实际 stderr: {stderr}"
     );
 }

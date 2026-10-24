@@ -12,7 +12,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use server::Database;
-use server::jobs::deletion::{claim_batch, complete, enqueue_object_deletions, run_batch};
+use server::jobs::LeaseConfig;
+use server::jobs::deletion::{
+    claim_batch, complete, enqueue_object_deletions, run_batch, run_batch_with_lease,
+};
 use server::jobs::scan::{ScanJob, ScanOutcome, run_once};
 use server::storage::{FaultInjectionConfig, InjectedErrorKind, ObjectOperation, Storage};
 use sqlx::{Postgres, Row, Transaction};
@@ -191,6 +194,48 @@ async fn one_item_failure_does_not_block_other_items() {
         .expect("读取剩余队列");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<i32, _>("attempts"), 1);
+}
+
+#[tokio::test]
+async fn lease_aware_worker_releases_remaining_items_for_another_worker() {
+    let env = environment().await;
+    let (_test_db, database) = migrated_database(env).await;
+    let base = real_storage_async().await;
+    // 慢存储：每次删除耗时 1.8 秒，用来触发“剩余时间不足安全余量”。
+    let slow = Arc::new(
+        base.with_fault_injection(
+            FaultInjectionConfig::new(0, InjectedErrorKind::Unavailable)
+                .only(ObjectOperation::Delete)
+                .with_delay(Duration::from_millis(1_800)),
+        ),
+    );
+    let keys: Vec<String> = (0..5)
+        .map(|_| format!("v1/{}/{}", Uuid::new_v4(), Uuid::new_v4()))
+        .collect();
+    enqueue(&database, &keys).await;
+
+    let lease = LeaseConfig::new(Duration::from_secs(3), Duration::from_millis(1_500));
+    let stats = run_batch_with_lease(&database, &slow, 10, lease)
+        .await
+        .expect("处理删除批次");
+    assert_eq!(stats.claimed, 5);
+    assert_eq!(stats.deleted, 1, "只应开始处理第一个项目");
+    assert_eq!(stats.released, 4, "租约接近到期时必须释放剩余项目");
+
+    let released: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM object_deletions \
+         WHERE claimed_until IS NULL AND claim_token IS NULL",
+    )
+    .fetch_one(database.pool())
+    .await
+    .expect("统计已释放行");
+    assert_eq!(released, 4);
+
+    // 另一个 worker 可以立即领取（无需等待租约到期）。
+    let reclaimed = claim_batch(database.pool(), 10)
+        .await
+        .expect("另一个 worker 立即领取");
+    assert_eq!(reclaimed.len(), 4, "被释放的项目应可被立即重新领取");
 }
 
 struct ProbeJob {

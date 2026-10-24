@@ -57,8 +57,8 @@ opendal = { version = "0.59", default-features = false, features = [
     # 显式使用 no-provider 的 reqwest transport：加密后端统一由下面的 ring 提供，
     # 避免 OpenDAL 默认的 reqwest/rustls 引入 aws-lc-rs（体积与 cmake 构建依赖）。
     "http-transport-reqwest-rustls-no-provider",
-    "layers-concurrent-limit",
-    "layers-retry",
+    # 单次对象存储操作的 30 秒硬超时（见 storage::OPERATION_TIMEOUT）。
+    # 未使用的 layers-concurrent-limit / layers-retry 不再开启，减少不必要依赖。
     "layers-timeout",
 ] }
 # OpenDAL 的 reqwest transport（no-provider），由本 crate 在启动时安装为默认 transport。

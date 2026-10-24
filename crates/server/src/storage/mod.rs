@@ -25,6 +25,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use opendal::Operator;
+use opendal::layers::TimeoutLayer;
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
@@ -32,6 +33,12 @@ use crate::config::{StorageConfig, StorageKind};
 
 /// 预签名 URL 的最长有效期（15 分钟）。
 pub const MAX_PRESIGN_TTL: Duration = Duration::from_secs(15 * 60);
+
+/// 单次对象存储操作的硬超时（design D3 / 第 5 组审查修复）。
+///
+/// 对象存储故障时不能让后台 worker 或请求处理线程无限等待；OpenDAL 的
+/// `TimeoutLayer` 同时约束控制面操作（stat/delete/presign）与 IO 操作（list 等）。
+pub const OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 健康检查探测使用的前缀。
 ///
@@ -158,6 +165,10 @@ pub struct FaultInjectionConfig {
     pub kind: InjectedErrorKind,
     /// `None` 表示所有操作都注入；`Some(op)` 只注入指定操作。
     pub operation: Option<ObjectOperation>,
+    /// 延迟模式：命中的操作在调用真实后端前先等待这么久。
+    ///
+    /// 与错误注入相互独立，可用于“慢存储”场景（例如验证队列的租约感知）。
+    pub delay: Option<Duration>,
 }
 
 impl FaultInjectionConfig {
@@ -166,11 +177,18 @@ impl FaultInjectionConfig {
             fail_first,
             kind,
             operation: None,
+            delay: None,
         }
     }
 
     pub fn only(mut self, operation: ObjectOperation) -> Self {
         self.operation = Some(operation);
+        self
+    }
+
+    /// 让命中的操作先延迟 `delay` 再执行（慢速故障注入）。
+    pub fn with_delay(mut self, delay: Duration) -> Self {
+        self.delay = Some(delay);
         self
     }
 }
@@ -331,12 +349,15 @@ impl FaultInjector {
         }
     }
 
-    fn maybe_fail(&self, operation: ObjectOperation) -> Result<(), StorageError> {
-        if self
-            .config
+    /// 当前配置是否作用于该操作。
+    fn applies(&self, operation: ObjectOperation) -> bool {
+        self.config
             .operation
-            .is_some_and(|configured| configured != operation)
-        {
+            .is_none_or(|configured| configured == operation)
+    }
+
+    fn maybe_fail(&self, operation: ObjectOperation) -> Result<(), StorageError> {
+        if !self.applies(operation) {
             return Ok(());
         }
         let injected = self
@@ -351,22 +372,35 @@ impl FaultInjector {
             Ok(())
         }
     }
+
+    /// 慢速故障注入：只延迟命中的操作，不消耗错误注入计数。
+    async fn maybe_delay(&self, operation: ObjectOperation) {
+        if !self.applies(operation) {
+            return;
+        }
+        if let Some(delay) = self.config.delay {
+            tokio::time::sleep(delay).await;
+        }
+    }
 }
 
 #[async_trait]
 impl ObjectBackend for FaultInjector {
     async fn stat(&self, object_key: &str) -> Result<Option<ObjectMetadata>, StorageError> {
         self.maybe_fail(ObjectOperation::Stat)?;
+        self.maybe_delay(ObjectOperation::Stat).await;
         self.inner.stat(object_key).await
     }
 
     async fn list(&self, prefix: &str, limit: usize) -> Result<Vec<ObjectEntry>, StorageError> {
         self.maybe_fail(ObjectOperation::List)?;
+        self.maybe_delay(ObjectOperation::List).await;
         self.inner.list(prefix, limit).await
     }
 
     async fn delete(&self, object_key: &str) -> Result<(), StorageError> {
         self.maybe_fail(ObjectOperation::Delete)?;
+        self.maybe_delay(ObjectOperation::Delete).await;
         self.inner.delete(object_key).await
     }
 
@@ -376,6 +410,7 @@ impl ObjectBackend for FaultInjector {
         ttl: Duration,
     ) -> Result<PresignedUrl, StorageError> {
         self.maybe_fail(ObjectOperation::PresignWrite)?;
+        self.maybe_delay(ObjectOperation::PresignWrite).await;
         self.inner.presign_write(object_key, ttl).await
     }
 
@@ -385,6 +420,7 @@ impl ObjectBackend for FaultInjector {
         ttl: Duration,
     ) -> Result<PresignedUrl, StorageError> {
         self.maybe_fail(ObjectOperation::PresignRead)?;
+        self.maybe_delay(ObjectOperation::PresignRead).await;
         self.inner.presign_read(object_key, ttl).await
     }
 }
@@ -488,7 +524,9 @@ impl ObjectBackend for OpenDalBackend {
 }
 
 fn build_operator(config: &StorageConfig, endpoint: &str) -> Result<Operator, StorageError> {
-    match config.kind {
+    // 两个 operator 都可能访问网络：内网 operator 做数据面操作，公网 operator
+    // 生成预签名 URL。统一在网络边界上加 30 秒硬超时，避免故障时无限等待。
+    let operator = match config.kind {
         StorageKind::S3 => {
             let builder = opendal::services::S3::default()
                 .bucket(&config.bucket)
@@ -499,7 +537,7 @@ fn build_operator(config: &StorageConfig, endpoint: &str) -> Result<Operator, St
                 // 不读取 ~/.aws/config 或 EC2 元数据：配置必须全部来自环境变量。
                 .disable_config_load()
                 .disable_ec2_metadata();
-            Ok(Operator::new(builder).map_err(StorageError::Config)?)
+            Operator::new(builder).map_err(StorageError::Config)?
         }
         StorageKind::Oss => {
             let builder = opendal::services::Oss::default()
@@ -507,9 +545,14 @@ fn build_operator(config: &StorageConfig, endpoint: &str) -> Result<Operator, St
                 .endpoint(endpoint)
                 .access_key_id(config.access_key_id.expose())
                 .access_key_secret(config.secret_access_key.expose());
-            Ok(Operator::new(builder).map_err(StorageError::Config)?)
+            Operator::new(builder).map_err(StorageError::Config)?
         }
-    }
+    };
+    Ok(operator.layer(
+        TimeoutLayer::new()
+            .with_timeout(OPERATION_TIMEOUT)
+            .with_io_timeout(OPERATION_TIMEOUT),
+    ))
 }
 
 #[cfg(test)]
@@ -650,5 +693,35 @@ mod tests {
                 .await
                 .is_ok()
         );
+    }
+
+    #[tokio::test]
+    async fn fault_injection_can_delay_only_the_targeted_operation() {
+        let backend = Arc::new(CountingBackend {
+            calls: AtomicUsize::new(0),
+        });
+        let injected = FaultInjector::new(
+            backend.clone(),
+            FaultInjectionConfig::new(0, InjectedErrorKind::Unavailable)
+                .only(ObjectOperation::Delete)
+                .with_delay(Duration::from_millis(80)),
+        );
+
+        let started = std::time::Instant::now();
+        injected.delete("key").await.expect("延迟后删除成功");
+        assert!(
+            started.elapsed() >= Duration::from_millis(80),
+            "命中操作必须被延迟"
+        );
+        assert_eq!(backend.calls.load(Ordering::SeqCst), 1);
+
+        // 非目标操作不延迟，也不会被错误注入影响。
+        injected.list("v1/", 1).await.expect("list 不受影响");
+        assert_eq!(backend.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn operation_timeout_is_thirty_seconds() {
+        assert_eq!(OPERATION_TIMEOUT, Duration::from_secs(30));
     }
 }

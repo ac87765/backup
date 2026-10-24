@@ -10,11 +10,15 @@ mod common;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use server::config::{MailConfig, SmtpConfig, SmtpTls};
-use server::jobs::email::{PURPOSE_TEST, RecipientResolver, enqueue_email, run_batch};
-use server::mail::build_mailer;
+use server::jobs::LeaseConfig;
+use server::jobs::email::{
+    PURPOSE_TEST, RecipientResolver, claim_batch, enqueue_email, run_batch, run_batch_with_lease,
+};
+use server::mail::{MailError, Mailer, RenderedMail, build_mailer};
 use sqlx::{PgPool, Row};
 use tracing_subscriber::fmt::MakeWriter;
 use uuid::Uuid;
@@ -64,6 +68,19 @@ struct FixedResolver;
 impl RecipientResolver for FixedResolver {
     async fn resolve(&self, _pool: &PgPool, _user_id: Uuid) -> Result<Option<String>, sqlx::Error> {
         Ok(Some("user@example.com".to_owned()))
+    }
+}
+
+/// 慢速邮件发送器：模拟一次发送耗时接近租约安全余量的情况。
+struct SlowMailer {
+    delay: Duration,
+}
+
+#[async_trait]
+impl Mailer for SlowMailer {
+    async fn send(&self, _mail: &RenderedMail) -> Result<(), MailError> {
+        tokio::time::sleep(self.delay).await;
+        Ok(())
     }
 }
 
@@ -141,6 +158,7 @@ async fn smtp_failure_is_retried_with_a_new_token() {
         username: None,
         password: None,
         tls: SmtpTls::None,
+        allow_insecure: true,
     });
     let mailer = build_mailer(&config).expect("构造 smtp mailer");
     let resolver: Arc<dyn RecipientResolver> = Arc::new(FixedResolver);
@@ -223,6 +241,41 @@ async fn assert_token_not_in_database(database: &server::Database, user_id: Uuid
             .await
             .expect("读取令牌哈希");
     assert_ne!(hashed, token);
+}
+
+#[tokio::test]
+async fn lease_aware_email_worker_releases_remaining_mail() {
+    let env = environment().await;
+    let (_test_db, database) = migrated_database(env).await;
+    let resolver: Arc<dyn RecipientResolver> = Arc::new(FixedResolver);
+    let user_id = Uuid::new_v4();
+    for _ in 0..5 {
+        enqueue_test_mail(&database, user_id).await;
+    }
+
+    let mailer: Arc<dyn Mailer> = Arc::new(SlowMailer {
+        delay: Duration::from_millis(1_800),
+    });
+    let lease = LeaseConfig::new(Duration::from_secs(3), Duration::from_millis(1_500));
+    let stats = run_batch_with_lease(&database, &mailer, &resolver, 10, lease)
+        .await
+        .expect("处理邮件批次");
+    assert_eq!(stats.claimed, 5);
+    assert_eq!(stats.sent, 1, "只应发送第一封邮件");
+    assert_eq!(stats.released, 4, "租约接近到期时必须释放剩余邮件");
+
+    let released: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM email_outbox WHERE claimed_until IS NULL AND claim_token IS NULL",
+    )
+    .fetch_one(database.pool())
+    .await
+    .expect("统计已释放邮件");
+    assert_eq!(released, 4);
+
+    let reclaimed = claim_batch(database.pool(), 10)
+        .await
+        .expect("另一个 worker 立即领取");
+    assert_eq!(reclaimed.len(), 4, "被释放的邮件应可被立即重新领取");
 }
 
 struct FakeSmtp {

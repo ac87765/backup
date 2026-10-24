@@ -7,6 +7,7 @@
 
 mod common;
 
+#[cfg(unix)]
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,7 +23,9 @@ use server::shutdown::{Shutdown, serve_with_shutdown};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Notify;
 
-use common::{config_env, environment, migrated_database, static_fixture, test_config, test_state};
+#[cfg(unix)]
+use common::{config_env, environment, migrated_database};
+use common::{static_fixture, test_config, test_state};
 
 #[derive(Clone)]
 struct SlowState {

@@ -17,6 +17,9 @@ use lettre::{AsyncTransport, Message, Tokio1Executor};
 
 use crate::config::{MailConfig, SmtpConfig, SmtpTls};
 
+/// 单次 SMTP 会话的硬超时。邮件队列会重试，因此宁可失败也不能永久挂住 worker。
+pub const SMTP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// 邮件发送错误。错误信息不包含收件人、正文或令牌。
 #[derive(Debug, thiserror::Error)]
 pub enum MailError {
@@ -100,9 +103,14 @@ impl SmtpMailer {
             SmtpTls::Starttls => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&config.host)
                 .map_err(MailError::Smtp)?
                 .port(config.port),
+            SmtpTls::Implicit => AsyncSmtpTransport::<Tokio1Executor>::relay(&config.host)
+                .map_err(MailError::Smtp)?
+                .port(config.port),
             SmtpTls::None => AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&config.host)
                 .port(config.port),
         };
+        // 显式设置会话超时：默认的 60 秒会让一个卡住的 SMTP 连接长时间占住 worker。
+        let builder = builder.timeout(Some(SMTP_TIMEOUT));
         let builder = match (&config.username, &config.password) {
             (Some(username), Some(password)) => builder.credentials(Credentials::new(
                 username.expose().to_owned(),
@@ -154,4 +162,42 @@ pub fn render_test_mail(to: &str, token: &str) -> (String, String) {
              #token={token}\n"
         ),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
+    use super::*;
+    use crate::config::Secret;
+
+    #[tokio::test]
+    async fn all_smtp_tls_modes_construct_a_mailer() {
+        // 与 storage::ensure_http_stack 一样，先把进程级 rustls provider 固定为 ring。
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        for tls in [SmtpTls::Starttls, SmtpTls::Implicit, SmtpTls::None] {
+            let config = SmtpConfig {
+                host: "smtp.example.com".to_owned(),
+                port: 2525,
+                from: "backup@example.com".to_owned(),
+                username: Some(Secret::new("user")),
+                password: Some(Secret::new("password")),
+                tls,
+                allow_insecure: tls == SmtpTls::None,
+            };
+            SmtpMailer::new(&config)
+                .unwrap_or_else(|error| panic!("{tls:?} 模式应能构造发送器: {error}"));
+        }
+    }
+
+    #[test]
+    fn smtp_session_timeout_is_fifteen_seconds() {
+        assert_eq!(SMTP_TIMEOUT, std::time::Duration::from_secs(15));
+    }
+
+    #[test]
+    fn mail_error_kinds_are_stable() {
+        assert_eq!(MailError::Config("x").kind(), "config");
+        assert_eq!(MailError::Io(std::io::Error::other("x")).kind(), "io");
+    }
 }

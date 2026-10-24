@@ -119,14 +119,15 @@ cargo run -p server -- openapi   # 输出 OpenAPI 规范到 stdout（不需要�
 | `BACKUP_STORAGE_SECRET_ACCESS_KEY` | 必填 | 访问密钥（密钥） |
 | `BACKUP_STORAGE_ALLOW_HTTP` | `false` | 允许 http endpoint（本地 MinIO 需要设为 `true`） |
 | `BACKUP_JOBS_ENABLED` | `true` | 是否在本实例运行后台任务（关闭便于拆分独立 worker） |
-| `BACKUP_MAIL_MODE` | `file` | `file`（写本地目录，不真正发送）或 `smtp` |
+| `BACKUP_MAIL_MODE` | 必填 | `file`（写本地目录，不真正发送）或 `smtp` |
 | `BACKUP_MAIL_DIR` | `var/mail` | `file` 模式的邮件目录 |
 | `BACKUP_SMTP_HOST` | `smtp` 模式必填 | SMTP 主机 |
-| `BACKUP_SMTP_PORT` | `587` | SMTP 端口 |
+| `BACKUP_SMTP_PORT` | `465`/`587`/`25` | SMTP 端口；未设置时按 TLS 模式取默认值（implicit/starttls/none） |
 | `BACKUP_SMTP_FROM` | `smtp` 模式必填 | 发件人地址 |
-| `BACKUP_SMTP_USERNAME` | 可选 | SMTP 用户名（与密码必须同时配置） |
-| `BACKUP_SMTP_PASSWORD` | 可选 | SMTP 密码（密钥） |
-| `BACKUP_SMTP_TLS` | `starttls` | `starttls` 或 `none`（本地假 SMTP 测试用） |
+| `BACKUP_SMTP_USERNAME` | TLS 模式必填 | SMTP 用户名（与密码必须同时配置） |
+| `BACKUP_SMTP_PASSWORD` | TLS 模式必填 | SMTP 密码（密钥） |
+| `BACKUP_SMTP_TLS` | `starttls` | `starttls`、`implicit`（隐式 TLS/465）或 `none`（本地 mailpit 测试用） |
+| `BACKUP_SMTP_ALLOW_INSECURE` | `false` | 显式允许明文 SMTP（可无认证）；只用于本地测试 |
 
 密钥类配置在日志与 `Debug` 输出中固定显示为 `[REDACTED]`。缺项或非法值时进程以非零退出码
 退出，日志只指出配置项名称，不输出配置值。`BACKUP_MAIL_MODE=file` 启动时会输出一条

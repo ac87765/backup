@@ -45,6 +45,7 @@ pub mod keys {
     pub const SMTP_USERNAME: &str = "BACKUP_SMTP_USERNAME";
     pub const SMTP_PASSWORD: &str = "BACKUP_SMTP_PASSWORD";
     pub const SMTP_TLS: &str = "BACKUP_SMTP_TLS";
+    pub const SMTP_ALLOW_INSECURE: &str = "BACKUP_SMTP_ALLOW_INSECURE";
 }
 
 /// 启动配置错误。
@@ -174,7 +175,11 @@ impl MailMode {
 /// SMTP 连接加密方式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SmtpTls {
+    /// 先明文连接，再用 STARTTLS 升级（通常 587）。
     Starttls,
+    /// 从连接建立起就是 TLS（隐式 TLS / SMTPS，通常 465）。
+    Implicit,
+    /// 完全明文（只允许本地 mailpit 等测试环境，需显式开启 allow_insecure）。
     None,
 }
 
@@ -182,12 +187,25 @@ impl SmtpTls {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Starttls => "starttls",
+            Self::Implicit => "implicit",
             Self::None => "none",
+        }
+    }
+
+    /// 该模式下未显式配置端口时的默认端口。
+    fn default_port(self) -> &'static str {
+        match self {
+            Self::Starttls => "587",
+            Self::Implicit => "465",
+            Self::None => "25",
         }
     }
 }
 
-/// SMTP 配置。用户名/密码要么都配置，要么都不配置（本地无认证 SMTP）。
+/// SMTP 配置。
+///
+/// TLS 模式（`starttls` / `implicit`）始终要求用户名与密码；只有显式设置
+/// `BACKUP_SMTP_ALLOW_INSECURE=true` 才允许明文连接（可无认证，本地 mailpit 测试用）。
 #[derive(Debug, Clone)]
 pub struct SmtpConfig {
     pub host: String,
@@ -196,6 +214,8 @@ pub struct SmtpConfig {
     pub username: Option<Secret>,
     pub password: Option<Secret>,
     pub tls: SmtpTls,
+    /// 是否显式允许明文或无认证连接。
+    pub allow_insecure: bool,
 }
 
 /// 邮件配置。
@@ -338,17 +358,34 @@ impl Config {
     }
 }
 
-/// 解析邮件配置。模式缺省为 `file`（开发友好）；`smtp` 模式缺配置时启动失败。
+/// 解析邮件配置。
+///
+/// `BACKUP_MAIL_MODE` 没有默认值：显式选择 `file` 或 `smtp`，缺失时启动失败并指出项名。
 fn parse_mail_config(figment: &Figment) -> Result<MailConfig, ConfigError> {
-    let mode = string_with_default(figment, keys::MAIL_MODE, "file")?;
+    let mode = required_string(figment, keys::MAIL_MODE)?;
     match mode.trim().to_ascii_lowercase().as_str() {
         "file" => Ok(MailConfig::File {
             dir: PathBuf::from(string_with_default(figment, keys::MAIL_DIR, "var/mail")?),
         }),
         "smtp" => {
             let host = required_string(figment, keys::SMTP_HOST)?;
+            let tls = match string_with_default(figment, keys::SMTP_TLS, "starttls")?
+                .trim()
+                .to_ascii_lowercase()
+                .as_str()
+            {
+                "starttls" => SmtpTls::Starttls,
+                "implicit" => SmtpTls::Implicit,
+                "none" => SmtpTls::None,
+                _ => {
+                    return Err(ConfigError::invalid(
+                        keys::SMTP_TLS,
+                        "必须是 starttls、implicit 或 none",
+                    ));
+                }
+            };
             let port = parse_u16(
-                &string_with_default(figment, keys::SMTP_PORT, "587")?,
+                &string_with_default(figment, keys::SMTP_PORT, tls.default_port())?,
                 keys::SMTP_PORT,
             )?;
             let from = required_string(figment, keys::SMTP_FROM)?;
@@ -363,20 +400,25 @@ fn parse_mail_config(figment: &Figment) -> Result<MailConfig, ConfigError> {
                     "SMTP 用户名与密码必须同时配置或同时省略",
                 ));
             }
-            let tls = match string_with_default(figment, keys::SMTP_TLS, "starttls")?
-                .trim()
-                .to_ascii_lowercase()
-                .as_str()
-            {
-                "starttls" => SmtpTls::Starttls,
-                "none" => SmtpTls::None,
-                _ => {
-                    return Err(ConfigError::invalid(
-                        keys::SMTP_TLS,
-                        "必须是 starttls 或 none",
-                    ));
-                }
-            };
+            let allow_insecure = parse_bool(
+                &string_with_default(figment, keys::SMTP_ALLOW_INSECURE, "false")?,
+                keys::SMTP_ALLOW_INSECURE,
+            )?;
+            // 安全默认：必须 TLS 且必须认证。
+            // - TLS 模式下用户名/密码始终必填；
+            // - 明文连接（含无认证）只在 `allow_insecure` 显式开启时允许（本地 mailpit）。
+            if tls != SmtpTls::None && username.is_none() {
+                return Err(ConfigError::invalid(
+                    keys::SMTP_USERNAME,
+                    "TLS 模式下用户名与密码必填",
+                ));
+            }
+            if !allow_insecure && tls == SmtpTls::None {
+                return Err(ConfigError::invalid(
+                    keys::SMTP_ALLOW_INSECURE,
+                    "明文 SMTP 必须显式设置 BACKUP_SMTP_ALLOW_INSECURE=true",
+                ));
+            }
             Ok(MailConfig::Smtp(SmtpConfig {
                 host,
                 port,
@@ -384,6 +426,7 @@ fn parse_mail_config(figment: &Figment) -> Result<MailConfig, ConfigError> {
                 username,
                 password,
                 tls,
+                allow_insecure,
             }))
         }
         _ => Err(ConfigError::invalid(keys::MAIL_MODE, "必须是 file 或 smtp")),
@@ -581,6 +624,7 @@ mod tests {
             ("storage_access_key_id", "minio-access-key-value"),
             ("storage_secret_access_key", "minio-secret-key-value"),
             ("storage_allow_http", "true"),
+            ("mail_mode", "file"),
         ]
     }
 
@@ -756,12 +800,42 @@ mod tests {
     }
 
     #[test]
-    fn mail_defaults_to_file_mode() {
+    fn file_mode_uses_default_mail_dir() {
         let config = load(&complete_pairs()).expect("配置应当合法");
         match config.mail {
             MailConfig::File { dir } => assert_eq!(dir, PathBuf::from("var/mail")),
-            MailConfig::Smtp(_) => panic!("默认应为 file 模式"),
+            MailConfig::Smtp(_) => panic!("应为 file 模式"),
         }
+    }
+
+    #[test]
+    fn missing_mail_mode_names_the_item() {
+        let pairs: Vec<_> = complete_pairs()
+            .into_iter()
+            .filter(|(key, _)| *key != "mail_mode")
+            .collect();
+        let err = load(&pairs).expect_err("缺少邮件模式必须启动失败");
+        assert_eq!(
+            err,
+            ConfigError::Missing {
+                key: keys::MAIL_MODE
+            }
+        );
+        assert!(err.to_string().contains("BACKUP_MAIL_MODE"));
+    }
+
+    #[test]
+    fn unknown_mail_mode_is_rejected() {
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "sendmail"));
+        let err = load(&pairs).expect_err("未知邮件模式必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::MAIL_MODE,
+                reason: "必须是 file 或 smtp"
+            }
+        );
     }
 
     #[test]
@@ -806,7 +880,7 @@ mod tests {
     }
 
     #[test]
-    fn smtp_mode_accepts_full_configuration() {
+    fn smtp_mode_accepts_secure_full_configuration() {
         let mut pairs = complete_pairs();
         pairs.push(("mail_mode", "smtp"));
         pairs.push(("smtp_host", "smtp.example.com"));
@@ -814,13 +888,15 @@ mod tests {
         pairs.push(("smtp_from", "backup@example.com"));
         pairs.push(("smtp_username", "user"));
         pairs.push(("smtp_password", "smtp-secret-value"));
-        pairs.push(("smtp_tls", "none"));
+        pairs.push(("smtp_tls", "implicit"));
         let config = load(&pairs).expect("配置应当合法");
         match &config.mail {
             MailConfig::Smtp(smtp) => {
                 assert_eq!(smtp.host, "smtp.example.com");
                 assert_eq!(smtp.port, 2525);
-                assert_eq!(smtp.tls, SmtpTls::None);
+                assert_eq!(smtp.tls, SmtpTls::Implicit);
+                assert!(!smtp.allow_insecure);
+                assert!(smtp.username.is_some());
                 assert!(smtp.password.is_some());
             }
             MailConfig::File { .. } => panic!("应为 smtp 模式"),
@@ -828,5 +904,156 @@ mod tests {
         let debug = format!("{config:?}");
         assert!(!debug.contains("smtp-secret-value"));
         assert!(debug.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn smtp_tls_defaults_to_starttls_port_587() {
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "smtp"));
+        pairs.push(("smtp_host", "smtp.example.com"));
+        pairs.push(("smtp_from", "backup@example.com"));
+        pairs.push(("smtp_username", "user"));
+        pairs.push(("smtp_password", "smtp-secret-value"));
+        let config = load(&pairs).expect("配置应当合法");
+        match &config.mail {
+            MailConfig::Smtp(smtp) => {
+                assert_eq!(smtp.tls, SmtpTls::Starttls);
+                assert_eq!(smtp.port, 587);
+            }
+            MailConfig::File { .. } => panic!("应为 smtp 模式"),
+        }
+    }
+
+    #[test]
+    fn smtp_implicit_tls_defaults_to_port_465() {
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "smtp"));
+        pairs.push(("smtp_host", "smtp.example.com"));
+        pairs.push(("smtp_from", "backup@example.com"));
+        pairs.push(("smtp_username", "user"));
+        pairs.push(("smtp_password", "smtp-secret-value"));
+        pairs.push(("smtp_tls", "implicit"));
+        let config = load(&pairs).expect("配置应当合法");
+        match &config.mail {
+            MailConfig::Smtp(smtp) => {
+                assert_eq!(smtp.tls, SmtpTls::Implicit);
+                assert_eq!(smtp.port, 465);
+            }
+            MailConfig::File { .. } => panic!("应为 smtp 模式"),
+        }
+    }
+
+    #[test]
+    fn smtp_unknown_tls_mode_is_rejected() {
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "smtp"));
+        pairs.push(("smtp_host", "smtp.example.com"));
+        pairs.push(("smtp_from", "backup@example.com"));
+        pairs.push(("smtp_username", "user"));
+        pairs.push(("smtp_password", "smtp-secret-value"));
+        pairs.push(("smtp_tls", "ssl"));
+        let err = load(&pairs).expect_err("未知 TLS 模式必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::SMTP_TLS,
+                reason: "必须是 starttls、implicit 或 none"
+            }
+        );
+    }
+
+    #[test]
+    fn smtp_tls_requires_credentials_by_default() {
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "smtp"));
+        pairs.push(("smtp_host", "smtp.example.com"));
+        pairs.push(("smtp_from", "backup@example.com"));
+        pairs.push(("smtp_tls", "starttls"));
+        let err = load(&pairs).expect_err("TLS 模式下无认证必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::SMTP_USERNAME,
+                reason: "TLS 模式下用户名与密码必填"
+            }
+        );
+    }
+
+    #[test]
+    fn smtp_plaintext_requires_explicit_opt_in() {
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "smtp"));
+        pairs.push(("smtp_host", "127.0.0.1"));
+        pairs.push(("smtp_from", "backup@example.com"));
+        pairs.push(("smtp_username", "user"));
+        pairs.push(("smtp_password", "smtp-secret-value"));
+        pairs.push(("smtp_tls", "none"));
+        let err = load(&pairs).expect_err("明文 SMTP 默认必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::SMTP_ALLOW_INSECURE,
+                reason: "明文 SMTP 必须显式设置 BACKUP_SMTP_ALLOW_INSECURE=true"
+            }
+        );
+        assert!(err.to_string().contains("BACKUP_SMTP_ALLOW_INSECURE"));
+    }
+
+    #[test]
+    fn smtp_insecure_opt_in_allows_plaintext_and_missing_credentials() {
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "smtp"));
+        pairs.push(("smtp_host", "127.0.0.1"));
+        pairs.push(("smtp_port", "1025"));
+        pairs.push(("smtp_from", "backup@example.com"));
+        pairs.push(("smtp_tls", "none"));
+        pairs.push(("smtp_allow_insecure", "true"));
+        let config = load(&pairs).expect("显式允许不安全连接时应当合法");
+        match &config.mail {
+            MailConfig::Smtp(smtp) => {
+                assert_eq!(smtp.tls, SmtpTls::None);
+                assert_eq!(smtp.port, 1025);
+                assert!(smtp.allow_insecure);
+                assert!(smtp.username.is_none());
+                assert!(smtp.password.is_none());
+            }
+            MailConfig::File { .. } => panic!("应为 smtp 模式"),
+        }
+    }
+
+    #[test]
+    fn smtp_tls_never_allows_missing_credentials_even_with_insecure_flag() {
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "smtp"));
+        pairs.push(("smtp_host", "smtp.example.com"));
+        pairs.push(("smtp_from", "backup@example.com"));
+        pairs.push(("smtp_tls", "starttls"));
+        pairs.push(("smtp_allow_insecure", "true"));
+        let err = load(&pairs).expect_err("TLS 模式始终要求用户名与密码");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::SMTP_USERNAME,
+                reason: "TLS 模式下用户名与密码必填"
+            }
+        );
+    }
+
+    #[test]
+    fn smtp_allow_insecure_rejects_invalid_boolean() {
+        let mut pairs = complete_pairs();
+        pairs.push(("mail_mode", "smtp"));
+        pairs.push(("smtp_host", "127.0.0.1"));
+        pairs.push(("smtp_from", "backup@example.com"));
+        pairs.push(("smtp_tls", "none"));
+        pairs.push(("smtp_allow_insecure", "maybe"));
+        let err = load(&pairs).expect_err("非法布尔值必须失败");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::SMTP_ALLOW_INSECURE,
+                reason: "必须是 true 或 false"
+            }
+        );
     }
 }
