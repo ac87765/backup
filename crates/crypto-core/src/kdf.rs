@@ -375,6 +375,10 @@ mod tests {
             Err(CryptoError::UnsupportedKdfAlgorithm)
         );
 
+        // 直接反序列化（服务端返回体 → KdfParams）同样必须失败。
+        assert!(serde_json::from_str::<KdfParams>(unknown).is_err());
+        assert!(serde_json::from_str::<KdfParams>(missing).is_err());
+
         // 大小写不匹配同样视为未知算法（JSON 契约要求精确小写）。
         let wrong_case = r#"{"algorithm":"Argon2id","m_cost_kib":65536,"t_cost":3,"p_cost":1}"#;
         assert_eq!(
