@@ -17,6 +17,10 @@
 - [x] 2.5 实现 content_key 派生与分块加解密（AAD 绑定 content_id/idx/count/is_last），测试重排、截断、跨 content 拼接、空文件均按 spec 处理
 - [x] 2.6 生成并提交 `testdata/crypto-vectors/*.json`，增加 proptest 往返测试，所有密钥类型实现 `Zeroize`，验证 `cargo test -p crypto-core` 通过
 - [x] 2.7 编写 `docs/crypto-format.md` 描述密钥层级与帧格式（与 design D5 一致），验证文档中每个 AAD 前缀与代码常量一致（测试中断言）
+- [ ] 2.8 KdfParams 增加 `algorithm` 枚举字段（仅 `argon2id`，未知/缺失拒绝），范围收紧为 m 64–256 MiB、t 3–8、p=1，测试用弱参数只走仅测试可见入口；更新 kdf 向量与 docs，测试覆盖降级/过大/未知算法三个 spec 场景
+- [ ] 2.9 VersionMetadata 增加 `content_id` 字段（JSON 契约见 design D5），提供“解密版本元数据并校验 content_id 与明文大小”的 API，更新 node 向量与 docs，测试覆盖“版本被指向旧内容”“明文大小不符”场景
+- [ ] 2.10 `aead::seal_with_nonce` 移到 `test-vectors` feature 后（仅 dev-dependencies 开启），验证不开 feature 时该符号不可见、`cargo test --workspace` 仍通过
+- [ ] 2.11 格式冻结前的收尾：名称规范化改为 `NFC(lower(NFC(name)))`（更新 name_token 向量）；ID 解析拒绝 nil 与非 v4 UUID；`decrypt_chunk` 返回 `Zeroizing<Vec<u8>>` 不再额外复制，各项有对应测试
 
 ## 3. 加密 WASM 绑定与 Worker 基座
 
@@ -73,7 +77,7 @@
 - [ ] 8.5 实现会话过期扫描与孤儿对象巡检任务（仅处理 >48h 对象），集成测试验证配额释放与对象入删除队列
 - [ ] 8.6 实现下载接口（块清单 + 预签名 GET），集成测试验证他人文件 404
 - [ ] 8.7 前端 Worker 上传管线：分片读取→加密→并发 PUT（3–4）→确认→提交，带抖动指数退避（单块 5 次）、IndexedDB 持久化进度与文件指纹、刷新后续传，Vitest + 故障注入验证
-- [ ] 8.8 前端 Worker 下载管线：File System Access API 优先、自托管 Service Worker 流式降级、按序解密、失败时丢弃部分文件，Playwright 验证下载文件 SHA-256 与原文件一致
+- [ ] 8.8 前端 Worker 下载管线：File System Access API 优先、自托管 Service Worker 流式降级、先解密版本元数据并校验 content_id、按序解密、结束时校验明文总大小、失败时丢弃部分文件，Playwright 验证下载文件 SHA-256 与原文件一致
 - [ ] 8.9 前端上传/下载队列 UI（进度、暂停/取消、失败重试），Playwright 覆盖断网重连后完成上传
 
 ## 9. 部署与端到端验证

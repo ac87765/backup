@@ -80,6 +80,14 @@ testdata/crypto-vectors/   # 跨实现测试向量 (JSON)
   服务端存:  auth_hash = HMAC-SHA256(pepper_vN, auth_key), pepper_version
   ```
   登录比对使用常量时间比较。pepper 来自配置，带版本号以支持轮换（用户下次登录时用新 pepper 重算）。
+  KDF 参数的持久化 JSON 契约（`users.kdf_params`，prelogin 原样返回）：
+  ```json
+  {"algorithm":"argon2id","m_cost_kib":65536,"t_cost":3,"p_cost":1}
+  ```
+  `algorithm` 是枚举，当前唯一取值 `argon2id`（隐含 Argon2 版本 0x13），未知值或缺失一律拒绝；新增算法只能追加枚举值。
+  客户端在派生前 MUST 校验参数范围：`65536 ≤ m_cost_kib ≤ 262144`（64–256 MiB）、`3 ≤ t_cost ≤ 8`、`p_cost = 1`。
+  下界防止被篡改的 prelogin 响应把客户端降级到廉价参数（从而让截获的 auth_key 可被低成本离线爆破），上界防止客户端被拖入 OOM/长时间计算。
+  测试可使用更弱参数，但只能通过仅测试可见的入口，生产 API 不提供绕过校验的路径。
 - **理由**：服务端从不接触密码；auth_key 是高熵值，服务端不需要再做慢哈希——数据库泄露后攻击者本来就可以拿 `wrapped_mk` 做离线猜测，其代价由客户端 Argon2id 决定，服务端再加一层 Argon2 并不提高这条路径的成本，反而增加登录 CPU 开销与 DoS 面。pepper 防止仅数据库泄露时直接用 hash 构造登录。
 - **备选**：OPAQUE（`opaque-ke`）——更强（服务端连 auth_key 都看不到、抵御预计算），但协议复杂、需要两轮交互、浏览器侧实现与审计成本高；列为后续 change。SRP——同样复杂且已被 OPAQUE 取代。
 - **风险**：KDF 参数在客户端执行，低端手机上 64 MiB/t=3 可能需要 2–4 秒 → 在 Worker 中执行并显示进度；参数随账号存储，可逐步调整。
@@ -94,7 +102,7 @@ testdata/crypto-vectors/   # 跨实现测试向量 (JSON)
    └─ 每个节点 node_key (32B 随机)
         ├─ wrapped_key     = AEAD(MK, node_key, aad="bk/v1/node-key|" ‖ node_id)
         ├─ 节点元数据        = AEAD(node_key, json{name}, aad="bk/v1/node-meta|" ‖ node_id)
-        ├─ 版本元数据        = AEAD(node_key, json{size,mtime,mime}, aad="bk/v1/ver-meta|" ‖ version_id)
+        ├─ 版本元数据        = AEAD(node_key, json{content_id,size,mtime,mime}, aad="bk/v1/ver-meta|" ‖ version_id)
         └─ content_key     = HKDF(node_key, salt=content_id, info="bk/v1/content")
              └─ chunk_i     = AEAD(content_key, data_i,
                                    aad="bk/v1/chunk|" ‖ content_id ‖ u32be(i) ‖ u32be(n) ‖ u8(is_last))
@@ -106,10 +114,11 @@ testdata/crypto-vectors/   # 跨实现测试向量 (JSON)
 - **理由**：
   - 每节点独立密钥，为将来“分享某个文件夹/文件”留出空间（只需对节点密钥重新包裹），且一个节点密钥泄露不影响其他节点。
   - 每次上传产生一个 `content`（ID 由客户端生成），块 AAD 绑定 content_id 而不是 version_id：恢复旧版本时新版本直接引用原 content，无需重新加密、也不重复计配额。
+  - 版本 → content 的指向由服务端保存，若不加保护，服务端可把某版本指向同一节点的另一个（例如更旧的）content，客户端能正常解密却拿到错误内容（回滚攻击）。因此版本元数据明文中包含 `content_id`（规范小写 UUID 字符串）与明文 `size`：下载时客户端 MUST 先解密版本元数据，校验其 `content_id` 等于服务端给出的 content，并在解密完成后校验明文总长度等于 `size`，任一不符即按完整性错误处理。恢复旧版本时，客户端为新 version_id 重新加密一份版本元数据，其 `content_id` 指向被恢复的 content。版本元数据 JSON 契约：`{"content_id":"<uuid>","size":<u64>,"mtime":<i64>,"mime":"<string>"}`。
   - 所有 AAD 带域分隔前缀，杜绝跨用途复用密文。XChaCha 的 192 位随机 nonce 使随机 nonce 碰撞概率可忽略。
   - 节点 ID、content ID、version ID 由客户端生成（UUIDv4），因此客户端加密前就知道 AAD；同时它们天然充当创建类请求的幂等键。服务端校验格式与唯一性。
 - **备选**：AES-256-GCM（浏览器 Web Crypto 原生支持、速度更快，但 96 位 nonce 随机生成在大量块下有碰撞上限）；层级包裹（子节点密钥由父文件夹密钥包裹，移动节点需要重新包裹，复杂度高，MVP 不需要）。
-- **威胁模型影响**：数据库 + OSS 完全泄露时，攻击者只能对每个账号的密码做离线 Argon2id 猜测；服务端篡改密文/调换密钥/重排块均被 AEAD 检出。服务端仍可观察树结构、密文大小、时间（见 client-encryption spec 的信息边界）。
+- **威胁模型影响**：数据库 + OSS 完全泄露时，攻击者只能对每个账号的密码做离线 Argon2id 猜测；服务端篡改密文/调换密钥/重排块/把版本指向错误 content 均被检出。服务端仍可观察树结构、密文大小、时间（见 client-encryption spec 的信息边界）。
 
 ### D6. 同名约束靠名称令牌 + 部分唯一索引
 - **决策**：`name_token = HMAC-SHA256(name_key, parent_id ‖ lower(NFC(name)))`；数据库 `UNIQUE (user_id, parent_id, name_token) WHERE deleted_at IS NULL`。
