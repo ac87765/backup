@@ -33,14 +33,14 @@
 
 ## 4. 服务端基础设施
 
-- [ ] 4.1 实现配置加载与校验（figment + secrecy），缺项时非零退出并指出项名，单元测试覆盖缺项与非法值
-- [ ] 4.2 实现 Axum 应用骨架：请求 ID、JSON tracing 日志（含脱敏字段过滤）、统一错误类型 `{code,message,request_id}`、请求体上限、安全响应头/CSP、静态文件托管，集成测试验证 413、500 不泄露细节、响应头齐全
-- [ ] 4.3 接入 sqlx 连接池与 `server migrate` / `server serve` 子命令，serve 时迁移版本落后即退出，集成测试验证
-- [ ] 4.4 实现 `/healthz`、`/readyz`（DB + 迁移版本 + 存储 stat）与独立端口 Prometheus 指标，集成测试验证 DB 停止时 readyz=503
+- [x] 4.1 实现配置加载与校验（figment + secrecy），缺项时非零退出并指出项名，单元测试覆盖缺项与非法值
+- [x] 4.2 实现 Axum 应用骨架：请求 ID、JSON tracing 日志（含脱敏字段过滤）、统一错误类型 `{code,message,request_id}`、请求体上限、安全响应头/CSP、静态文件托管，集成测试验证 413、500 不泄露细节、响应头齐全
+- [x] 4.3 接入 sqlx 连接池与 `server migrate` / `server serve` 子命令，serve 时迁移版本落后即退出，集成测试验证
+- [x] 4.4 实现 `/healthz`、`/readyz`（DB + 迁移版本 + 存储 stat）与独立端口 Prometheus 指标，集成测试验证 DB 停止时 readyz=503
 - [ ] 4.5 实现存储层：OpenDAL operator（OSS 内网 + 公网 presign 双 operator；dev/test 用 S3/MinIO），封装 presign_write/presign_read/stat/delete/list 与故障注入 layer，集成测试（MinIO）验证预签名 PUT/GET 往返
 - [ ] 4.6 实现优雅停机（CancellationToken + TaskTracker，30s 上限），集成测试验证 SIGTERM 时进行中请求完成
 - [ ] 4.7 建立 utoipa OpenAPI 生成与 `web/` 端 `openapi-typescript` 生成脚本，CI 检查生成物无漂移
-- [ ] 4.8 建立集成测试框架（testcontainers PostgreSQL + MinIO、每测试独立 schema/bucket 前缀），验证可并行运行
+- [x] 4.8 建立集成测试框架（testcontainers PostgreSQL + MinIO、每测试独立 schema/bucket 前缀），验证可并行运行
 
 ## 5. 后台任务框架
 

@@ -3,7 +3,7 @@
 浏览器内完成加密与解密的个人文件备份服务：文件以密文形式存放在阿里云 OSS，
 服务端只保存账号、树结构与配额等元数据，看不到文件名、文件内容或任何密钥。
 
-当前仓库处于 **第 1 组：工程脚手架**。密码学核心、HTTP API、上传/下载管线等按
+当前仓库处于 **第 4 组：服务端基础设施**。密码学核心、HTTP API、上传/下载管线等按
 `openspec/changes/bootstrap-e2ee-backup-mvp/tasks.md` 的分组逐步实现。
 
 ## 设计与契约
@@ -78,13 +78,52 @@ docker compose -f deploy/docker-compose.dev.yml down -v
 
 ### 2. 后端
 
+服务端配置全部来自 `BACKUP_` 前缀的环境变量。本地 compose 起来后可以这样启动：
+
 ```bash
-cargo build --workspace
-cargo run -p server
+export BACKUP_DATABASE_URL='postgres://backup:backup-dev-password@127.0.0.1:5432/backup'
+export BACKUP_STORAGE_KIND=s3
+export BACKUP_STORAGE_BUCKET=backup
+export BACKUP_STORAGE_REGION=us-east-1
+export BACKUP_STORAGE_INTERNAL_ENDPOINT='http://127.0.0.1:9000'
+export BACKUP_STORAGE_PUBLIC_ENDPOINT='http://127.0.0.1:9000'
+export BACKUP_STORAGE_ACCESS_KEY_ID=backup
+export BACKUP_STORAGE_SECRET_ACCESS_KEY=backup-dev-secret
+export BACKUP_STORAGE_ALLOW_HTTP=true
+
+cargo run -p server -- migrate   # 发布流程中先执行迁移
+cargo run -p server -- serve     # 启动 HTTP API + 前端静态文件
 ```
 
-> 第 1 组的 `server` 是空实现（不监听端口）。配置加载、HTTP 服务与迁移在第 4 组接入，
-> 届时本文会补充所需环境变量。
+`serve` 启动时会校验迁移版本：数据库落后于代码、或已应用迁移的校验和不一致时拒绝启动；
+数据库版本领先于代码（回滚场景）允许启动。`/healthz` 是存活检查，`/readyz` 是就绪检查
+（数据库、迁移版本、对象存储各带 2 秒独立超时）。Prometheus 指标默认在
+`127.0.0.1:9091/metrics` 单独端口提供。
+
+配置项（未列出的都有默认值）：
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `BACKUP_BIND_ADDR` | `127.0.0.1:8080` | HTTP 监听地址 |
+| `BACKUP_METRICS_ADDR` | `127.0.0.1:9091` | Prometheus 指标监听地址（默认只绑定回环） |
+| `BACKUP_STATIC_DIR` | `web/dist` | 前端构建产物目录 |
+| `BACKUP_DATABASE_URL` | 必填 | PostgreSQL 连接串（密钥） |
+| `BACKUP_DATABASE_MAX_CONNECTIONS` | `10` | 连接池上限 |
+| `BACKUP_STORAGE_KIND` | 必填 | `s3`（MinIO/测试）或 `oss`（阿里云） |
+| `BACKUP_STORAGE_BUCKET` | 必填 | bucket 名称 |
+| `BACKUP_STORAGE_REGION` | `us-east-1`（`oss` 必填） | 对象存储 region |
+| `BACKUP_STORAGE_INTERNAL_ENDPOINT` | 必填 | 服务端 `stat`/`list`/`delete` 使用的内网 endpoint |
+| `BACKUP_STORAGE_PUBLIC_ENDPOINT` | 必填 | 只用于生成预签名 URL 的公网 endpoint，其 origin 会追加到 CSP `connect-src` |
+| `BACKUP_STORAGE_ACCESS_KEY_ID` | 必填 | 访问密钥 ID（密钥） |
+| `BACKUP_STORAGE_SECRET_ACCESS_KEY` | 必填 | 访问密钥（密钥） |
+| `BACKUP_STORAGE_ALLOW_HTTP` | `false` | 允许 http endpoint（本地 MinIO 需要设为 `true`） |
+
+密钥类配置在日志与 `Debug` 输出中固定显示为 `[REDACTED]`。缺项或非法值时进程以非零退出码
+退出，日志只指出配置项名称，不输出配置值。
+
+服务端集成测试使用 testcontainers 启动真实 PostgreSQL 与 MinIO，因此运行
+`cargo test --workspace` 需要可用的 Docker（Windows 本机没有原生 Docker，请在有 Docker 的
+WSL 里执行；测试不会在缺少 Docker 时静默跳过，而是明确失败）。
 
 ### 3. 前端
 
@@ -138,7 +177,8 @@ Worker 加解密往返与锁定错误码。
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+SQLX_OFFLINE=true cargo test --workspace   # server 集成测试会用 testcontainers 启动 PostgreSQL/MinIO
+cargo sqlx prepare --workspace --check      # 校验 .sqlx/ 与查询宏一致（CI 也执行）
 cargo deny check
 
 cd web
@@ -163,7 +203,8 @@ openspec validate bootstrap-e2ee-backup-mvp --strict
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) 包含五个并行任务：
 
-- `Rust`：fmt、clippy（`-D warnings`）、test、符号泄漏检查、cargo deny、
+- `Rust`：fmt、clippy（`-D warnings`）、`cargo sqlx prepare --check`（离线查询缓存）、
+  test（testcontainers 启动真实 PostgreSQL/MinIO）、符号泄漏检查、cargo deny、
   `wasm-pack test --headless --chrome`、WASM 构建
 - `Web`：先生成 WASM 绑定，再 typecheck、lint、test、build
 - `E2E`：Playwright 在生产构建 + 严格 CSP 下跑 WASM 冒烟用例

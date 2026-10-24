@@ -25,12 +25,22 @@ jobs:
   rust:
     name: Rust (fmt / clippy / test / deny / wasm)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
+    env:
+      # 编译期 SQL 校验使用仓库中提交的 .sqlx 查询缓存；CI 不连接数据库。
+      SQLX_OFFLINE: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # rust-toolchain.toml 固定了版本、组件与 wasm32 目标，rustup 会自动安装。
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+
+      # 4.3：校验 .sqlx/ 与代码中的 sqlx 查询宏保持一致（离线模式，无需数据库）。
+      - name: 安装 sqlx-cli 0.8.6
+        run: cargo install sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres --locked
+
+      - name: cargo sqlx prepare --check
+        run: cargo sqlx prepare --workspace --check
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
