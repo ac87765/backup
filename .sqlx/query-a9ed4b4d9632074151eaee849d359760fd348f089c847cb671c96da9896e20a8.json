@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE object_deletions\n        SET claimed_until = NULL,\n            claim_token = NULL\n        WHERE id = ANY($1::bigint[]) AND claim_token = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a9ed4b4d9632074151eaee849d359760fd348f089c847cb671c96da9896e20a8"
+}

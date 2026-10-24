@@ -130,22 +130,20 @@ pub async fn claim_batch_with_lease(
 }
 
 /// 立即释放本批尚未开始的邮件（必须匹配 claim_token）。
-///
-/// 同删除队列：数组绑定使用参数化查询，避免在无法连接数据库时手写 `.sqlx/`。
 pub async fn release(pool: &PgPool, ids: &[i64], claim_token: Uuid) -> Result<u64, sqlx::Error> {
     if ids.is_empty() {
         return Ok(0);
     }
-    let result = sqlx::query(
+    let result = sqlx::query!(
         r#"
         UPDATE email_outbox
         SET claimed_until = NULL,
             claim_token = NULL
         WHERE id = ANY($1::bigint[]) AND claim_token = $2
         "#,
+        ids,
+        claim_token,
     )
-    .bind(ids)
-    .bind(claim_token)
     .execute(pool)
     .await?;
     Ok(result.rows_affected())

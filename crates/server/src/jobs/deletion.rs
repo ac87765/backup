@@ -103,24 +103,20 @@ pub async fn claim_batch_with_lease(
 }
 
 /// 立即释放本批尚未开始的任务（必须匹配 claim_token）。
-///
-/// `WHERE id = ANY($1)` 需要数组绑定，sqlx 的离线 `.sqlx` 元数据无法自动生成；
-/// 这里使用与宏版等价的参数化查询（没有任何字符串拼接），由审查者在可连接
-/// 数据库的环境中选择是否改回 `sqlx::query!` 并重新生成 `.sqlx/`。
 pub async fn release(pool: &PgPool, ids: &[i64], claim_token: Uuid) -> Result<u64, sqlx::Error> {
     if ids.is_empty() {
         return Ok(0);
     }
-    let result = sqlx::query(
+    let result = sqlx::query!(
         r#"
         UPDATE object_deletions
         SET claimed_until = NULL,
             claim_token = NULL
         WHERE id = ANY($1::bigint[]) AND claim_token = $2
         "#,
+        ids,
+        claim_token,
     )
-    .bind(ids)
-    .bind(claim_token)
     .execute(pool)
     .await?;
     Ok(result.rows_affected())
