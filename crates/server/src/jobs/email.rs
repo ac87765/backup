@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use rand::Rng;
+use rand::{Rng, TryRngCore};
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
@@ -385,9 +385,15 @@ pub async fn worker_loop(
 }
 
 /// 生成 256 位令牌（hex，64 字符）。
+///
+/// 令牌直接来自操作系统 CSPRNG；取随机数失败（极罕见）时回退到 rand 的
+/// 进程 CSPRNG（ThreadRng 同样由 OsRng 播种），绝不使用固定值或计数器。
 fn generate_token() -> String {
     let mut bytes = [0_u8; 32];
-    rand::rng().fill(&mut bytes);
+    if let Err(error) = rand::rngs::OsRng.try_fill_bytes(&mut bytes) {
+        tracing::warn!(error = %error, "操作系统随机数不可用，回退到进程 CSPRNG 生成邮件令牌");
+        rand::rng().fill(&mut bytes);
+    }
     let mut token = String::with_capacity(64);
     for byte in bytes {
         use std::fmt::Write;
