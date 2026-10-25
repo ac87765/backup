@@ -127,6 +127,8 @@ services:
       BACKUP_AUTH_PEPPER: e2e-pepper-value-0123456789abcdef
       BACKUP_AUTH_FAKE_SALT_KEY: e2e-fake-salt-key-0123456789abcdef
       BACKUP_TRUSTED_PROXIES: ""
+      # E2E 从同一 IP 注册大量测试账号；生产默认每 IP 每小时 5 个。
+      BACKUP_REGISTRATION_RATE_LIMIT_PER_HOUR: "100000"
     ports:
       - "127.0.0.1:${E2E_HTTP_PORT:-8080}:8080"
     volumes:

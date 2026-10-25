@@ -69,6 +69,8 @@ const env = {
           process.env.E2E_USER_WRITE_RATE_LIMIT,
       }
     : {}),
+  // E2E 从同一 IP 注册大量测试账号；生产默认每 IP 每小时 5 个。
+  BACKUP_REGISTRATION_RATE_LIMIT_PER_HOUR: '100000',
 }
 
 const migrated = spawnSync(serverBinary, ['migrate'], {

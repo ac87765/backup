@@ -58,13 +58,9 @@ pub const EMAIL_PURPOSE_VERIFY: &str = "verify_email";
 /// 重发验证邮件的账号维度节流窗口（分钟）。
 pub const RESEND_THROTTLE_MINUTES: i32 = 10;
 
-/// 每 IP 每小时允许的成功注册账号数（add-admin-console D2）。
+/// 每 IP 每小时允许的成功注册账号数的默认值（add-admin-console D2）；
+/// 实际值来自 `BACKUP_REGISTRATION_RATE_LIMIT_PER_HOUR`。
 pub const REGISTRATION_LIMIT_PER_HOUR: u32 = 5;
-/// 以 `NonZeroU32` 形式暴露给 governor（常量求值，不产生运行时错误路径）。
-const REGISTRATIONS_PER_HOUR: NonZeroU32 = match NonZeroU32::new(REGISTRATION_LIMIT_PER_HOUR) {
-    Some(value) => value,
-    None => NonZeroU32::MIN,
-};
 
 /// 每用户每分钟的写接口上限由配置项
 /// `BACKUP_USER_WRITE_RATE_LIMIT_PER_MINUTE` 提供；批量上传接口各算一次请求。
@@ -87,12 +83,13 @@ impl AuthContext {
         config: AuthConfig,
         per_minute: NonZeroU32,
         user_write_per_minute: NonZeroU32,
+        registrations_per_hour: NonZeroU32,
     ) -> Self {
         Self {
             config: Arc::new(config),
             limiter: Arc::new(IpRateLimiter::new(per_minute)),
             registration_limiter: Arc::new(IpRateLimiter::with_quota(Quota::per_hour(
-                REGISTRATIONS_PER_HOUR,
+                registrations_per_hour,
             ))),
             user_write_limiter: Arc::new(UserWriteRateLimiter::new(user_write_per_minute)),
         }
@@ -160,7 +157,7 @@ impl AuthContext {
         self.limiter.check(ip).map_err(ApiError::too_many_requests)
     }
 
-    /// 检查并消耗该 IP 的一次注册配额（每小时 5 个成功注册）。
+    /// 检查并消耗该 IP 的一次注册配额（默认每小时 5 个成功注册）。
     pub fn check_registration(&self, ip: IpAddr) -> Result<(), ApiError> {
         self.registration_limiter
             .check(ip)
@@ -572,6 +569,7 @@ mod tests {
             test_auth_config(),
             NonZeroU32::new(60).expect("60"),
             NonZeroU32::new(240).expect("240"),
+            NonZeroU32::new(5).expect("5"),
         );
         let first = context.fake_salt("user@example.com").expect("盐");
         let second = context.fake_salt("user@example.com").expect("盐");
@@ -586,6 +584,7 @@ mod tests {
             test_auth_config(),
             NonZeroU32::new(60).expect("60"),
             NonZeroU32::new(240).expect("240"),
+            NonZeroU32::new(5).expect("5"),
         );
         let salt = context.fake_salt("user@example.com").expect("盐");
         let with_pepper = hmac_sha256(

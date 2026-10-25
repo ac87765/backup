@@ -481,6 +481,7 @@ pub fn test_config(static_dir: std::path::PathBuf) -> server::Config {
         trusted_proxies: Vec::new(),
         auth_rate_limit_per_minute: std::num::NonZeroU32::new(60).expect("60"),
         user_write_rate_limit_per_minute: std::num::NonZeroU32::new(600).expect("600"),
+        registration_rate_limit_per_hour: std::num::NonZeroU32::new(5).expect("5"),
         default_quota_bytes: server::config::DEFAULT_NEW_USER_QUOTA_BYTES as i64,
         max_quota_bytes: server::config::DEFAULT_MAX_QUOTA_BYTES as i64,
     }

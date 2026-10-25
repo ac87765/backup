@@ -71,6 +71,7 @@ pub mod keys {
     pub const TRUSTED_PROXIES: &str = "BACKUP_TRUSTED_PROXIES";
     pub const AUTH_RATE_LIMIT_PER_MINUTE: &str = "BACKUP_AUTH_RATE_LIMIT_PER_MINUTE";
     pub const USER_WRITE_RATE_LIMIT_PER_MINUTE: &str = "BACKUP_USER_WRITE_RATE_LIMIT_PER_MINUTE";
+    pub const REGISTRATION_RATE_LIMIT_PER_HOUR: &str = "BACKUP_REGISTRATION_RATE_LIMIT_PER_HOUR";
     pub const DEFAULT_QUOTA_BYTES: &str = "BACKUP_DEFAULT_QUOTA_BYTES";
     pub const MAX_QUOTA_BYTES: &str = "BACKUP_MAX_QUOTA_BYTES";
 }
@@ -387,6 +388,9 @@ pub struct Config {
     /// 每个已认证用户每分钟允许的写接口请求数（进程内令牌桶）。
     /// 批量 presign/confirm 各算一次请求，因此默认值按高吞吐上传估算。
     pub user_write_rate_limit_per_minute: NonZeroU32,
+    /// 每个 IP 每小时允许的成功注册账号数（add-admin-console D2，默认 5）。
+    /// 只有 E2E 等同一 IP 批量注册测试账号的环境才需要调高。
+    pub registration_rate_limit_per_hour: NonZeroU32,
     /// 新用户默认配额（字节），也是 app_settings 未设置时的回退值。
     pub default_quota_bytes: i64,
     /// 管理员可为单个用户设置的最大配额（字节）。
@@ -462,6 +466,7 @@ impl Config {
         let trusted_proxies = parse_trusted_proxies(figment)?;
         let auth_rate_limit_per_minute = parse_auth_rate_limit(figment)?;
         let user_write_rate_limit_per_minute = parse_user_write_rate_limit(figment)?;
+        let registration_rate_limit_per_hour = parse_registration_rate_limit(figment)?;
         let (default_quota_bytes, max_quota_bytes) = parse_quota_config(figment)?;
 
         // 启动期校验浏览器访问 origin：OSS 的 public endpoint 必须是不带 bucket
@@ -491,6 +496,7 @@ impl Config {
             trusted_proxies,
             auth_rate_limit_per_minute,
             user_write_rate_limit_per_minute,
+            registration_rate_limit_per_hour,
             default_quota_bytes,
             max_quota_bytes,
         })
@@ -630,6 +636,19 @@ fn parse_auth_rate_limit(figment: &Figment) -> Result<NonZeroU32, ConfigError> {
     )?;
     NonZeroU32::new(value).ok_or(ConfigError::invalid(
         keys::AUTH_RATE_LIMIT_PER_MINUTE,
+        "必须是正整数",
+    ))
+}
+
+/// 每个 IP 每小时的成功注册上限。
+fn parse_registration_rate_limit(figment: &Figment) -> Result<NonZeroU32, ConfigError> {
+    let value = parse_u32(
+        &string_with_default(figment, keys::REGISTRATION_RATE_LIMIT_PER_HOUR, "5")?,
+        keys::REGISTRATION_RATE_LIMIT_PER_HOUR,
+        1..=1_000_000,
+    )?;
+    NonZeroU32::new(value).ok_or(ConfigError::invalid(
+        keys::REGISTRATION_RATE_LIMIT_PER_HOUR,
         "必须是正整数",
     ))
 }
@@ -1709,6 +1728,28 @@ mod tests {
             err,
             ConfigError::Invalid {
                 key: keys::DEFAULT_QUOTA_BYTES,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn registration_rate_limit_defaults_to_five_and_rejects_zero() {
+        let config = load(&complete_pairs()).expect("配置应当合法");
+        assert_eq!(config.registration_rate_limit_per_hour.get(), 5);
+
+        let mut pairs = complete_pairs();
+        pairs.push(("registration_rate_limit_per_hour", "1000"));
+        let config = load(&pairs).expect("显式配置应当生效");
+        assert_eq!(config.registration_rate_limit_per_hour.get(), 1000);
+
+        let mut pairs = complete_pairs();
+        pairs.push(("registration_rate_limit_per_hour", "0"));
+        let err = load(&pairs).expect_err("限流为 0 必须失败");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: keys::REGISTRATION_RATE_LIMIT_PER_HOUR,
                 ..
             }
         ));

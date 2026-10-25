@@ -43,6 +43,7 @@ impl AppState {
             config.auth.clone(),
             config.auth_rate_limit_per_minute,
             config.user_write_rate_limit_per_minute,
+            config.registration_rate_limit_per_hour,
         ));
         Self {
             config: Arc::new(config),
