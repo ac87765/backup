@@ -87,6 +87,9 @@ class ContractServer {
         kdf_salt: hex(new Uint8Array(16).fill(0x11)),
         wrapped_mk: '01'.repeat(73),
         root_node_id: ROOT_ID,
+        status: 'active',
+        status_reason: null,
+        is_admin: false,
       })
     }
     if (url === '/api/v1/me/usage' && method === 'GET') {

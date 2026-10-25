@@ -26,6 +26,24 @@ export function errorMessage(error: unknown): string {
     if (error.code === 'email_not_verified') {
       return '请先完成邮箱验证'
     }
+    if (error.code === 'account_pending') {
+      return '账号正在等待管理员审核'
+    }
+    if (error.code === 'account_suspended') {
+      return `账号已被停用：${error.message}`
+    }
+    if (error.code === 'account_rejected') {
+      return `账号未通过审核：${error.message}`
+    }
+    if (error.code === 'registration_closed') {
+      return '暂不开放注册'
+    }
+    if (error.code === 'reauth_required') {
+      return '为确保安全，请重新登录后再继续'
+    }
+    if (error.code === 'cannot_modify_self') {
+      return '不能停用或拒绝自己的账号'
+    }
     if (error.code === 'unauthenticated') {
       return '登录已失效，请重新登录'
     }

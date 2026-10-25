@@ -14,6 +14,9 @@ const USER = {
   email: 'user@example.com',
   emailVerified: true,
   rootNodeId: '550e8400-e29b-41d4-a716-44665544000a',
+  status: 'active' as const,
+  statusReason: null,
+  isAdmin: false,
 }
 
 function trashItem(overrides: Partial<TrashNodeView> = {}): TrashNodeView {

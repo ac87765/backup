@@ -10,8 +10,14 @@ import {
 
 import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/context'
+import { AdminAuditPage } from './admin/AdminAuditPage'
+import { AdminLayout, RequireAdmin } from './admin/AdminLayout'
+import { AdminOverviewPage } from './admin/AdminOverviewPage'
+import { AdminSettingsPage } from './admin/AdminSettingsPage'
+import { AdminUsersPage } from './admin/AdminUsersPage'
 import { FilesPage } from './pages/FilesPage'
 import { LoginPage } from './pages/LoginPage'
+import { PendingPage } from './pages/PendingPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ResetPage } from './pages/ResetPage'
 import { SecurityPage } from './pages/SecurityPage'
@@ -38,6 +44,10 @@ function RequireSession({ children }: { children: ReactNode }) {
   }
   if (!unlocked) {
     return <Navigate to="/unlock" state={{ from }} replace />
+  }
+  if (user.status === 'pending') {
+    // pending 用户的全部登录态路由都显示等待审核页（add-admin-console D6）。
+    return <PendingPage />
   }
   return <>{children}</>
 }
@@ -122,6 +132,20 @@ function AppRoutes() {
           </RequireSession>
         }
       />
+
+      <Route
+        path="/admin"
+        element={
+          <RequireAdmin>
+            <AdminLayout />
+          </RequireAdmin>
+        }
+      >
+        <Route index element={<AdminOverviewPage />} />
+        <Route path="users" element={<AdminUsersPage />} />
+        <Route path="settings" element={<AdminSettingsPage />} />
+        <Route path="audit" element={<AdminAuditPage />} />
+      </Route>
 
       {/* 旧地址兼容：重定向到账号设置对应分区。 */}
       <Route

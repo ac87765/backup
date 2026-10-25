@@ -65,6 +65,9 @@ export interface PreparedRecoveryRotationView {
   display: string
 }
 
+/** 账号状态（add-admin-console D2）。 */
+export type AccountStatus = 'pending' | 'active' | 'suspended' | 'rejected'
+
 /** 主线程可见的当前用户；不含任何密钥或包裹材料。 */
 export interface CurrentUser {
   userId: string
@@ -72,6 +75,12 @@ export interface CurrentUser {
   emailVerified: boolean
   /** 根文件夹 ID（非密钥；文件浏览器从根开始导航）。 */
   rootNodeId: string
+  /** 账号状态；pending 时所有登录态路由显示等待审核页。 */
+  status: AccountStatus
+  /** 停用/拒绝原因；其余状态为 null。 */
+  statusReason: string | null
+  /** 是否为管理员；决定账号菜单是否显示管理后台入口。 */
+  isAdmin: boolean
 }
 
 /** 会话列表项（主线程可见，不含令牌）。 */

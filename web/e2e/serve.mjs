@@ -6,8 +6,12 @@
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import process from 'node:process'
+
+const require = createRequire(import.meta.url)
+const { Client } = require('pg')
 
 const webRoot = process.cwd()
 const repositoryRoot = path.resolve(webRoot, '..')
@@ -74,6 +78,22 @@ const migrated = spawnSync(serverBinary, ['migrate'], {
 if (migrated.status !== 0) {
   console.error('server migrate 失败')
   process.exit(migrated.status ?? 1)
+}
+
+/**
+ * 既有 E2E 场景（注册后直接上传）需要开放注册；默认与本地开发一致使用
+ * `open`，管理后台专用场景会通过设置页临时切回审批模式并在结束时恢复。
+ * 设置 E2E_REGISTRATION_MODE=leave 可跳过这一步。
+ */
+const registrationMode = process.env.E2E_REGISTRATION_MODE ?? 'open'
+if (registrationMode !== 'leave') {
+  const client = new Client({ connectionString: databaseUrl })
+  await client.connect()
+  await client.query(
+    "UPDATE app_settings SET value = $1::jsonb, updated_at = now() WHERE key = 'registration_mode'",
+    [JSON.stringify(registrationMode)],
+  )
+  await client.end()
 }
 
 const server = spawn(serverBinary, ['serve'], { env, stdio: 'inherit' })

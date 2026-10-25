@@ -9,6 +9,7 @@
  */
 import type { components } from '../api/schema'
 import type {
+  AccountStatus,
   AuthErrorPayload,
   AuthWorkerApi,
   CryptoBackend,
@@ -52,6 +53,19 @@ function authError(
   return retryAfter
     ? { code, message, retryAfter }
     : { code, message }
+}
+
+function parseStatus(value: string | undefined): AccountStatus {
+  switch (value) {
+    case 'pending':
+    case 'active':
+    case 'suspended':
+    case 'rejected':
+      return value
+    default:
+      // 与旧版服务端兼容：缺少状态字段时按可用处理。
+      return 'active'
+  }
 }
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -195,6 +209,9 @@ export class AuthClient implements AuthWorkerApi {
         email: response.email,
         emailVerified: response.email_verified,
         rootNodeId: response.root_node_id,
+        status: parseStatus(response.status),
+        statusReason: response.status_reason ?? null,
+        isAdmin: response.is_admin ?? false,
       },
       kdfParamsJson: JSON.stringify(response.kdf_params),
       kdfSalt: hexToBytes(response.kdf_salt),
@@ -217,6 +234,9 @@ export class AuthClient implements AuthWorkerApi {
           email: response.email,
           emailVerified: response.email_verified,
           rootNodeId: response.root_node_id,
+          status: parseStatus(response.status),
+          statusReason: response.status_reason ?? null,
+          isAdmin: response.is_admin ?? false,
         },
         kdfParamsJson: JSON.stringify(response.kdf_params),
         kdfSalt: hexToBytes(response.kdf_salt),

@@ -10,6 +10,7 @@ import {
   fileRow,
   registerVerifyAndLogin,
 } from './session'
+import { grantAdmin } from './admin'
 
 /**
  * design D9：人工截图审查，不做像素断言。
@@ -342,4 +343,24 @@ test('桌面与手机两种视口截图', async ({ page }) => {
   await page.getByRole('menuitem', { name: '账号设置' }).click()
   await expect(page.getByTestId('settings-page')).toBeVisible()
   await capture(page, 'settings-mobile')
+
+  // 管理后台（桌面 1440×900）：概览、用户、设置、审计日志。
+  await page.setViewportSize({ width: 1440, height: 900 })
+  grantAdmin(email)
+  await page.reload()
+  await page.goto('/admin')
+  await expect(page.getByTestId('admin-overview')).toBeVisible()
+  await capture(page, 'admin-overview-desktop')
+
+  await page.goto('/admin/users')
+  await expect(page.getByTestId('admin-users')).toBeVisible()
+  await capture(page, 'admin-users-desktop')
+
+  await page.goto('/admin/settings')
+  await expect(page.getByTestId('admin-settings')).toBeVisible()
+  await capture(page, 'admin-settings-desktop')
+
+  await page.goto('/admin/audit')
+  await expect(page.getByTestId('admin-audit')).toBeVisible()
+  await capture(page, 'admin-audit-desktop')
 })

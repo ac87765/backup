@@ -13,6 +13,7 @@ import {
   FolderOpen,
   FolderPlus,
   FolderUp,
+  LayoutDashboard,
   LogOut,
   Menu as MenuIcon,
   Search,
@@ -263,6 +264,16 @@ function AccountMenu() {
   }
 
   const items: MenuItem[] = [
+    ...(user?.isAdmin
+      ? [
+          {
+            label: '管理后台',
+            testId: 'account-admin',
+            icon: <LayoutDashboard size={16} />,
+            onSelect: () => void navigate('/admin'),
+          } satisfies MenuItem,
+        ]
+      : []),
     {
       label: '账号设置',
       icon: <Settings size={16} />,
