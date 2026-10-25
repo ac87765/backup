@@ -92,6 +92,27 @@ describe('文件浏览器页面', () => {
     )
   })
 
+  it('空文件夹显示“上传文件”与“新建文件夹”入口', async () => {
+    const listFolder = vi.fn().mockResolvedValue({
+      items: [],
+      nextCursor: null,
+    })
+    const getUsage = vi.fn().mockResolvedValue({
+      usedBytes: 0,
+      reservedBytes: 0,
+      quotaBytes: 1024,
+    })
+    renderPage({ listFolder, getUsage })
+
+    expect(await screen.findByText('这个文件夹还是空的')).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: '上传文件' }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: '新建文件夹' }),
+    ).toBeVisible()
+  })
+
   it('空名称在客户端被拒绝，不发创建请求', async () => {
     const listFolder = vi.fn().mockResolvedValue({
       items: [],
