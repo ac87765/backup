@@ -15,9 +15,18 @@ interface ToastItem {
   id: number
   message: string
   tone: ToastTone
+  closing: boolean
+}
+
+interface AutoTimer {
+  timeout: ReturnType<typeof setTimeout> | null
+  deadline: number
+  remaining: number
 }
 
 const AUTO_DISMISS_MS = 3_000
+const TOAST_EXIT_MS = 180
+const MAX_VISIBLE = 3
 
 const TONE_META: Record<
   ToastTone,
@@ -39,36 +48,149 @@ const TONE_META: Record<
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
+  const itemsRef = useRef<ToastItem[]>([])
   const nextId = useRef(0)
-  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+  const autoTimers = useRef(new Map<number, AutoTimer>())
+  const removeTimers = useRef(
+    new Map<number, ReturnType<typeof setTimeout>>(),
+  )
 
-  const dismiss = useCallback((id: number) => {
-    const timer = timers.current.get(id)
+  const commit = useCallback((next: ToastItem[]) => {
+    itemsRef.current = next
+    setToasts(next)
+  }, [])
+
+  const clearAuto = useCallback((id: number) => {
+    const timer = autoTimers.current.get(id)
+    if (timer?.timeout) {
+      clearTimeout(timer.timeout)
+    }
+    autoTimers.current.delete(id)
+  }, [])
+
+  const clearRemove = useCallback((id: number) => {
+    const timer = removeTimers.current.get(id)
     if (timer) {
       clearTimeout(timer)
-      timers.current.delete(id)
+      removeTimers.current.delete(id)
     }
-    setToasts((previous) => previous.filter((toast) => toast.id !== id))
   }, [])
+
+  const remove = useCallback(
+    (id: number) => {
+      clearAuto(id)
+      clearRemove(id)
+      commit(itemsRef.current.filter((toast) => toast.id !== id))
+    },
+    [clearAuto, clearRemove, commit],
+  )
+
+  const beginClose = useCallback(
+    (id: number) => {
+      const current = itemsRef.current.find((toast) => toast.id === id)
+      if (!current || current.closing) {
+        return
+      }
+      clearAuto(id)
+      commit(
+        itemsRef.current.map((toast) =>
+          toast.id === id ? { ...toast, closing: true } : toast,
+        ),
+      )
+      const timer = setTimeout(() => remove(id), TOAST_EXIT_MS)
+      removeTimers.current.set(id, timer)
+    },
+    [clearAuto, commit, remove],
+  )
+
+  const scheduleClose = useCallback(
+    (id: number, delay: number) => {
+      clearAuto(id)
+      const timeout = setTimeout(() => {
+        autoTimers.current.delete(id)
+        beginClose(id)
+      }, delay)
+      autoTimers.current.set(id, {
+        timeout,
+        deadline: Date.now() + delay,
+        remaining: delay,
+      })
+    },
+    [beginClose, clearAuto],
+  )
+
+  const pause = useCallback((id: number) => {
+    const timer = autoTimers.current.get(id)
+    if (!timer?.timeout) {
+      return
+    }
+    clearTimeout(timer.timeout)
+    autoTimers.current.set(id, {
+      timeout: null,
+      deadline: 0,
+      remaining: Math.max(0, timer.deadline - Date.now()),
+    })
+  }, [])
+
+  const resume = useCallback(
+    (id: number) => {
+      const timer = autoTimers.current.get(id)
+      if (!timer || timer.timeout) {
+        return
+      }
+      scheduleClose(id, timer.remaining || AUTO_DISMISS_MS)
+    },
+    [scheduleClose],
+  )
 
   const showToast = useCallback(
     (message: string, tone: ToastTone = 'success') => {
+      const existing = itemsRef.current.find(
+        (toast) => toast.message === message,
+      )
+      if (existing) {
+        clearRemove(existing.id)
+        commit(
+          itemsRef.current.map((toast) =>
+            toast.id === existing.id
+              ? { ...toast, tone, closing: false }
+              : toast,
+          ),
+        )
+        scheduleClose(existing.id, AUTO_DISMISS_MS)
+        return
+      }
+
+      let next = [...itemsRef.current]
+      if (next.length >= MAX_VISIBLE) {
+        const oldest = next[0]
+        clearAuto(oldest.id)
+        clearRemove(oldest.id)
+        next = next.slice(1)
+      }
       const id = nextId.current
       nextId.current += 1
-      setToasts((previous) => [...previous, { id, message, tone }])
-      const timer = setTimeout(() => dismiss(id), AUTO_DISMISS_MS)
-      timers.current.set(id, timer)
+      next.push({ id, message, tone, closing: false })
+      commit(next)
+      scheduleClose(id, AUTO_DISMISS_MS)
     },
-    [dismiss],
+    [clearAuto, clearRemove, commit, scheduleClose],
   )
 
   useEffect(() => {
-    const pending = timers.current
+    const autos = autoTimers.current
+    const removes = removeTimers.current
     return () => {
-      for (const timer of pending.values()) {
+      for (const timer of autos.values()) {
+        if (timer.timeout) {
+          clearTimeout(timer.timeout)
+        }
+      }
+      for (const timer of removes.values()) {
         clearTimeout(timer)
       }
-      pending.clear()
+      autos.clear()
+      removes.clear()
     }
   }, [])
 
@@ -80,15 +202,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             role="status"
             aria-live="polite"
-            className="pointer-events-none fixed right-4 top-4 z-[60] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-2"
+            className="pointer-events-none fixed bottom-4 left-4 z-[60] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-2 md:left-64"
           >
             {toasts.map((toast) => (
               <div
                 key={toast.id}
                 data-testid="toast"
                 data-tone={toast.tone}
+                data-closing={toast.closing ? 'true' : 'false'}
+                onPointerEnter={() => pause(toast.id)}
+                onPointerLeave={() => resume(toast.id)}
                 className={cx(
-                  'pointer-events-auto flex items-start gap-2.5 rounded-card border border-line bg-white px-4 py-3 text-sm leading-6 text-ink-900 shadow-pop',
+                  'flex items-start gap-2.5 rounded-card border border-line bg-white px-4 py-3 text-sm leading-6 text-ink-900 shadow-pop',
+                  toast.closing
+                    ? 'animate-toast-out pointer-events-none'
+                    : 'animate-toast-in pointer-events-auto',
                   TONE_META[toast.tone].className,
                 )}
               >

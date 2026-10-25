@@ -54,6 +54,264 @@
   --radius-control: 8px;
 
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.12);
+
+  /* design D10 动效令牌。 */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 260ms;
+}
+
+@keyframes ui-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ui-pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ui-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ui-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes ui-dialog-out {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@keyframes ui-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes ui-toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes ui-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ui-panel-out {
+  to {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+@keyframes ui-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes ui-drawer-out {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes ui-breathe {
+  50% {
+    transform: scale(1.01);
+  }
+}
+
+@keyframes ui-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes ui-row-out {
+  to {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@layer components {
+  .motion-fast {
+    transition-duration: var(--duration-fast);
+  }
+
+  .motion-base {
+    transition-duration: var(--duration-base);
+  }
+
+  .motion-slow {
+    transition-duration: var(--duration-slow);
+  }
+
+  .animate-menu-in {
+    animation: ui-pop-in var(--duration-fast) var(--ease-out) both;
+    transform-origin: top;
+  }
+
+  .animate-menu-out {
+    animation: ui-pop-out var(--duration-fast) var(--ease-out) both;
+    pointer-events: none;
+  }
+
+  .animate-dialog-in {
+    animation: ui-dialog-in var(--duration-base) var(--ease-out) both;
+  }
+
+  .dialog-surface::backdrop {
+    animation: ui-fade-in var(--duration-base) var(--ease-out);
+  }
+
+  .animate-dialog-out {
+    animation: ui-dialog-out var(--duration-fast) var(--ease-out) both;
+    pointer-events: none;
+  }
+
+  .dialog-closing::backdrop {
+    animation: ui-fade-out var(--duration-fast) var(--ease-out) both;
+  }
+
+  .animate-toast-in {
+    animation: ui-toast-in var(--duration-base) var(--ease-out) both;
+  }
+
+  .animate-toast-out {
+    animation: ui-toast-out var(--duration-fast) var(--ease-out) both;
+  }
+
+  .animate-panel-in {
+    animation: ui-panel-in var(--duration-slow) var(--ease-out) both;
+  }
+
+  .animate-panel-out {
+    animation: ui-panel-out var(--duration-base) var(--ease-out) both;
+  }
+
+  .animate-overlay-in {
+    animation: ui-fade-in var(--duration-base) var(--ease-out) both;
+  }
+
+  .animate-drawer-in {
+    animation: ui-drawer-in var(--duration-slow) var(--ease-out) both;
+  }
+
+  .animate-drawer-out {
+    animation: ui-drawer-out var(--duration-base) var(--ease-out) both;
+  }
+
+  .animate-breathe {
+    animation: ui-breathe 2s var(--ease-out) infinite;
+  }
+
+  .animate-content-in {
+    animation: ui-fade-in var(--duration-base) var(--ease-out) both;
+  }
+
+  .animate-row-in {
+    animation: ui-fade-in var(--duration-base) var(--ease-out) both;
+  }
+
+  .row-leave {
+    animation: ui-row-out var(--duration-base) var(--ease-out) both;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: var(--color-canvas);
+  }
+
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(255 255 255 / 0.65),
+      transparent
+    );
+    animation: ui-shimmer 1.4s linear infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after,
+  ::backdrop {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-breathe,
+  .skeleton::after {
+    animation: none !important;
+  }
 }
 
 @layer base {
