@@ -164,6 +164,38 @@ describe('文件列表交互', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
+  it('拖入文件时显示覆盖层，松开后上传到当前文件夹', async () => {
+    const uploadFile = vi.fn().mockResolvedValue({
+      nodeId: 'node-1',
+      versionId: 'version-1',
+      contentId: 'content-1',
+      name: '拖拽.txt',
+      size: 5,
+    })
+    renderPage(api({ uploadFile }))
+    await screen.findByText('b.txt')
+
+    const file = new File(['hello'], '拖拽.txt', { type: 'text/plain' })
+    fireEvent.dragEnter(window, {
+      dataTransfer: { types: ['Files'], files: [file] },
+    })
+    expect(screen.getByTestId('drop-overlay')).toHaveTextContent(
+      '松开以上传到“我的文件”',
+    )
+
+    fireEvent.drop(window, {
+      dataTransfer: { types: ['Files'], files: [file] },
+    })
+    expect(screen.queryByTestId('drop-overlay')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(uploadFile).toHaveBeenCalledWith(
+        USER.rootNodeId,
+        file,
+        expect.any(Function),
+      )
+    })
+  })
+
   it('本地存储只包含视图模式与排序两个键', async () => {
     const user = userEvent.setup()
     renderPage(api())

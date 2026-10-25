@@ -1,12 +1,5 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type DragEvent,
-} from 'react'
-import { FolderPlus, Search, Upload } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FolderPlus, Search, Upload, UploadCloud } from 'lucide-react'
 
 import { useAuth } from '../auth/context'
 import { errorCode, errorMessage } from '../auth/errors'
@@ -30,7 +23,10 @@ import type { FileActions } from './file-actions'
 import { FileToolbar } from './FileToolbar'
 import { sortByName } from './format'
 import { validateName } from './name-validation'
-import { TransferQueue, type TransferItemView } from './TransferQueue'
+import {
+  TransferPanel,
+  type TransferItemView,
+} from './TransferPanel'
 import {
   filterFileNodes,
   loadSort,
@@ -82,11 +78,13 @@ export function FileBrowser() {
   const [versionsError, setVersionsError] = useState<string | null>(null)
 
   const [transfers, setTransfers] = useState<TransferItemView[]>([])
+  const [dragActive, setDragActive] = useState(false)
   const uploadInputRef = useRef<HTMLInputElement>(null)
   const versionInputRef = useRef<HTMLInputElement>(null)
   const versionTargetRef = useRef<FileNodeView | null>(null)
   const pendingUploadsLoaded = useRef(false)
   const lastOpenRef = useRef<{ id: string; at: number }>({ id: '', at: 0 })
+  const dragDepthRef = useRef(0)
 
   const current = path[path.length - 1]
   const currentId = current?.id ?? null
@@ -450,6 +448,17 @@ export function FileBrowser() {
     )
   }, [])
 
+  const dismissCompleted = useCallback(() => {
+    setTransfers((previous) =>
+      previous.filter(
+        (entry) =>
+          entry.status !== 'completed' &&
+          entry.status !== 'cancelled' &&
+          entry.status !== 'failed',
+      ),
+    )
+  }, [])
+
   const handleUploadInput = (files: FileList | null) => {
     if (!files || !current) {
       return
@@ -467,16 +476,6 @@ export function FileBrowser() {
       return
     }
     void startUpload(file, target.parentId ?? rootId, target.id)
-  }
-
-  const handleDrop = (event: DragEvent<HTMLElement>) => {
-    event.preventDefault()
-    if (!current) {
-      return
-    }
-    for (const file of Array.from(event.dataTransfer.files)) {
-      void startUpload(file, current.id)
-    }
   }
 
   const startVersionUpload = (node: FileNodeView) => {
@@ -556,6 +555,65 @@ export function FileBrowser() {
       version.size,
     )
   }
+
+  // 全页拖拽上传：只在页面内出现文件时显示覆盖层，松开后上传到当前文件夹。
+  useEffect(() => {
+    const hasFiles = (event: DragEvent): boolean =>
+      Boolean(event.dataTransfer?.types.includes('Files'))
+
+    const onDragEnter = (event: DragEvent) => {
+      if (!hasFiles(event)) {
+        return
+      }
+      event.preventDefault()
+      dragDepthRef.current += 1
+      setDragActive(true)
+    }
+    const onDragOver = (event: DragEvent) => {
+      if (!hasFiles(event)) {
+        return
+      }
+      event.preventDefault()
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'copy'
+      }
+    }
+    const onDragLeave = (event: DragEvent) => {
+      if (!hasFiles(event)) {
+        return
+      }
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+      if (dragDepthRef.current === 0) {
+        setDragActive(false)
+      }
+    }
+    const onDrop = (event: DragEvent) => {
+      const files = event.dataTransfer?.files
+      if (!files || files.length === 0) {
+        return
+      }
+      event.preventDefault()
+      dragDepthRef.current = 0
+      setDragActive(false)
+      if (!current) {
+        return
+      }
+      for (const file of Array.from(files)) {
+        void startUpload(file, current.id)
+      }
+    }
+
+    window.addEventListener('dragenter', onDragEnter)
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragenter', onDragEnter)
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [current, startUpload])
 
   useEffect(() => {
     if (!api || !currentId) {
@@ -853,12 +911,7 @@ export function FileBrowser() {
       onUploadRequest={() => uploadInputRef.current?.click()}
       onNewFolderRequest={openCreate}
     >
-      <div
-        data-testid="file-drop-zone"
-        className="space-y-4"
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={handleDrop}
-      >
+      <div data-testid="file-drop-zone" className="space-y-4">
         <input
           ref={uploadInputRef}
           type="file"
@@ -938,7 +991,7 @@ export function FileBrowser() {
         )}
       </div>
 
-      <TransferQueue
+      <TransferPanel
         items={transfers}
         onPause={(item) => void pauseTransfer(item)}
         onResume={(item) => void resumeTransfer(item)}
@@ -946,6 +999,7 @@ export function FileBrowser() {
         onRetry={retryTransfer}
         onResumeFile={(item, file) => void resumeUploadFile(item, file)}
         onDismiss={dismissTransfer}
+        onDismissCompleted={dismissCompleted}
       />
 
       <CreateFolderDialog
@@ -996,6 +1050,22 @@ export function FileBrowser() {
           onDownload={downloadVersion}
           onRestore={(version) => void restoreVersion(version)}
         />
+      )}
+      {dragActive && current && (
+        <div
+          data-testid="drop-overlay"
+          className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-brand-600/90 p-6 backdrop-blur-sm"
+        >
+          <div className="flex max-w-lg flex-col items-center gap-3 rounded-card border-2 border-dashed border-white/80 bg-white/10 px-10 py-12 text-center text-white">
+            <UploadCloud size={48} aria-hidden="true" />
+            <p className="text-lg font-semibold">
+              松开以上传到“{current.name}”
+            </p>
+            <p className="text-sm text-white/80">
+              文件会在本机加密后上传
+            </p>
+          </div>
+        </div>
       )}
     </AppShell>
   )
