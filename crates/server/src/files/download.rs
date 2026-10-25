@@ -43,6 +43,9 @@ pub struct DownloadManifest {
     /// 该 content 的密文字节总数。
     pub ciphertext_size: i64,
     pub chunk_count: i32,
+    /// 文件节点的包裹密钥（hex）。客户端解包后用于解密版本元数据与块；
+    /// 刷新页面后无需先列目录也能下载。
+    pub wrapped_key: Option<String>,
     /// 所有 URL 的过期时间（同一批次生成，≤ 15 分钟）。
     pub expires_at: String,
     pub chunks: Vec<DownloadChunk>,
@@ -83,10 +86,17 @@ pub async fn download_version(
     // 关键：同时限定 version、node 与 user_id；跨用户与不存在都落到 404。
     let version = sqlx::query!(
         r#"
-        SELECT fv.content_id, fv.encrypted_meta, c.ciphertext_size, c.chunk_count
+        SELECT
+            fv.content_id,
+            fv.encrypted_meta,
+            c.ciphertext_size,
+            c.chunk_count,
+            n.wrapped_key
         FROM file_versions fv
         JOIN contents c
             ON c.id = fv.content_id AND c.user_id = fv.user_id
+        JOIN nodes n
+            ON n.id = fv.node_id AND n.user_id = fv.user_id
         WHERE fv.id = $1
           AND fv.node_id = $2
           AND fv.user_id = $3
@@ -145,6 +155,7 @@ pub async fn download_version(
         encrypted_meta: encode_hex(&version.encrypted_meta),
         ciphertext_size: version.ciphertext_size,
         chunk_count: version.chunk_count,
+        wrapped_key: version.wrapped_key.as_deref().map(encode_hex),
         expires_at: format_time(OffsetDateTime::now_utc() + time::Duration::minutes(15)),
         chunks: items,
     }))

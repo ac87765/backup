@@ -840,6 +840,11 @@ export interface components {
             ciphertext_size: number;
             /** Format: int32 */
             chunk_count: number;
+            /**
+             * @description 文件节点的包裹密钥（hex）。客户端解包后用于解密版本元数据与块；
+             *     刷新页面后无需先列目录也能下载。
+             */
+            wrapped_key?: string | null;
             /** @description 所有 URL 的过期时间（同一批次生成，≤ 15 分钟）。 */
             expires_at: string;
             chunks: components["schemas"]["DownloadChunk"][];
@@ -1145,6 +1150,13 @@ export interface components {
              * @description 已确认块数（续传时与 `GET .../chunks` 配合使用）。
              */
             confirmed_chunks: number;
+            /**
+             * @description 新文件：会话创建时客户端提交的包裹节点密钥（hex）。新版本：目标节点的
+             *     包裹密钥。仅用于刷新后重新加载节点密钥，不含任何明文或密钥本身。
+             */
+            wrapped_key?: string | null;
+            /** @description 新文件：加密节点元数据（hex）。新版本：目标节点的加密元数据。 */
+            encrypted_meta?: string | null;
             expires_at: string;
             created_at: string;
         };

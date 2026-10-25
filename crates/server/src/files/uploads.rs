@@ -151,6 +151,11 @@ pub struct UploadSessionResponse {
     pub declared_size: i64,
     /// 已确认块数（续传时与 `GET .../chunks` 配合使用）。
     pub confirmed_chunks: i64,
+    /// 新文件：会话创建时客户端提交的包裹节点密钥（hex）。新版本：目标节点的
+    /// 包裹密钥。仅用于刷新后重新加载节点密钥，不含任何明文或密钥本身。
+    pub wrapped_key: Option<String>,
+    /// 新文件：加密节点元数据（hex）。新版本：目标节点的加密元数据。
+    pub encrypted_meta: Option<String>,
     pub expires_at: String,
     pub created_at: String,
 }
@@ -522,6 +527,8 @@ fn session_response(row: &SessionRow, confirmed: i64) -> UploadSessionResponse {
         chunk_count: row.chunk_count,
         declared_size: row.declared_size,
         confirmed_chunks: confirmed,
+        wrapped_key: row.wrapped_key.as_deref().map(encode_hex),
+        encrypted_meta: row.encrypted_meta.as_deref().map(encode_hex),
         expires_at: format_time(row.expires_at),
         created_at: format_time(row.created_at),
     }
@@ -714,7 +721,26 @@ pub async fn get_upload_session(
     let confirmed = confirmed_count(&mut tx, session.user_id, row.id)
         .await
         .map_err(ApiError::internal)?;
-    let response = session_response(&row, confirmed);
+    let mut response = session_response(&row, confirmed);
+    // 新版本会话的节点密钥属于已有目标节点：GET 会话时一并返回，便于刷新后
+    // 在 Worker 内重新加载节点密钥。新文件会话的字段已由 session_response 填充。
+    if row.kind == KIND_NEW_VERSION {
+        let node = sqlx::query!(
+            r#"
+            SELECT wrapped_key, encrypted_meta
+            FROM nodes
+            WHERE id = $1 AND user_id = $2
+            "#,
+            row.node_id,
+            session.user_id,
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(ApiError::not_found)?;
+        response.wrapped_key = node.wrapped_key.as_deref().map(encode_hex);
+        response.encrypted_meta = node.encrypted_meta.as_deref().map(encode_hex);
+    }
     tx.commit().await.map_err(ApiError::internal)?;
     Ok(Json(response))
 }

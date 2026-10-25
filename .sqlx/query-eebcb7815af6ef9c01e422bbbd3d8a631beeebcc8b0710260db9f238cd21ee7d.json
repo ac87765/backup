@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT wrapped_key, encrypted_meta\n            FROM nodes\n            WHERE id = $1 AND user_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "wrapped_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "encrypted_meta",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "eebcb7815af6ef9c01e422bbbd3d8a631beeebcc8b0710260db9f238cd21ee7d"
+}
