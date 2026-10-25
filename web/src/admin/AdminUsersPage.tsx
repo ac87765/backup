@@ -12,6 +12,7 @@ import {
 
 import { errorMessage } from '../auth/errors'
 import { formatBytes } from '../files/format'
+import { VirtualList } from '../files/VirtualList'
 import {
   Button,
   cx,
@@ -19,6 +20,7 @@ import {
   ProgressBar,
   Spinner,
   TextField,
+  useMediaQuery,
   useToast,
 } from '../ui'
 import {
@@ -159,6 +161,83 @@ export function AdminUsersPage() {
   }
 
   const pendingCount = overview?.status_counts.pending ?? 0
+  const isDesktop = useMediaQuery('(min-width: 768px)')
+
+  const renderUserRow = (user: AdminUserSummary) => (
+    <div
+      data-testid="admin-user-row"
+      data-user-id={user.id}
+      className="grid cursor-pointer gap-2 px-4 py-3 hover:bg-canvas md:grid-cols-[minmax(0,2.4fr)_100px_150px_150px_minmax(0,1.2fr)_150px] md:items-center md:gap-3"
+      onClick={() => setSelectedId(user.id)}
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-ink-900">
+          {user.email}
+        </p>
+        <p className="mt-0.5 text-xs text-ink-500">
+          {user.file_count} 个文件 · {user.folder_count} 个文件夹 ·{' '}
+          {user.version_count} 个版本
+          {user.is_admin ? ' · 管理员' : ''}
+        </p>
+      </div>
+      <div className="flex items-center gap-2 md:block">
+        <StatusBadge status={user.status} />
+      </div>
+      <p className="text-xs text-ink-600">{formatDateTime(user.created_at)}</p>
+      <p className="text-xs text-ink-600">
+        {formatDateTime(user.last_active_at)}
+      </p>
+      <div>
+        <p className="text-xs text-ink-600">
+          {formatBytes(user.used_bytes)} / {formatBytes(user.quota_bytes)}
+        </p>
+        <ProgressBar
+          value={
+            user.quota_bytes > 0
+              ? (user.used_bytes / user.quota_bytes) * 100
+              : 0
+          }
+          tone={user.used_bytes >= user.quota_bytes ? 'danger' : 'brand'}
+          label="用户存储用量"
+          heightClassName="mt-1.5 h-1.5"
+        />
+      </div>
+      <div
+        className="flex flex-wrap items-center gap-1.5 md:justify-end"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {user.status === 'pending' && (
+          <>
+            <Button
+              size="sm"
+              variant="primary"
+              data-testid="admin-user-approve"
+              onClick={() => setApproveTarget(user)}
+            >
+              批准
+            </Button>
+            <Button
+              size="sm"
+              variant="dangerGhost"
+              data-testid="admin-user-reject"
+              onClick={() => setDanger({ kind: 'reject', user })}
+            >
+              拒绝
+            </Button>
+          </>
+        )}
+        <button
+          type="button"
+          aria-label={`查看 ${user.email}`}
+          className="flex h-8 items-center gap-1 rounded-control px-2 text-xs font-medium text-ink-600 hover:bg-canvas-strong hover:text-ink-900"
+          onClick={() => setSelectedId(user.id)}
+        >
+          详情
+          <ChevronRight size={15} aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  )
 
   if (isReauth(error)) {
     return <AdminReauthNotice />
@@ -240,90 +319,26 @@ export function AdminUsersPage() {
           <p className="px-4 py-16 text-center text-sm text-ink-600">
             没有符合条件的用户。
           </p>
+        ) : isDesktop ? (
+          <VirtualList
+            items={users}
+            getKey={(user) => user.id}
+            renderItem={renderUserRow}
+            height={560}
+            rowHeight={76}
+            testId="admin-user-virtual-list"
+            onEndReached={
+              cursor
+                ? () => {
+                    void loadMore()
+                  }
+                : undefined
+            }
+          />
         ) : (
           <ul>
             {users.map((user) => (
-              <li
-                key={user.id}
-                data-testid="admin-user-row"
-                data-user-id={user.id}
-                className="cursor-pointer border-b border-line last:border-b-0 hover:bg-canvas"
-                onClick={() => setSelectedId(user.id)}
-              >
-                <div className="grid gap-2 px-4 py-3 md:grid-cols-[minmax(0,2.4fr)_100px_150px_150px_minmax(0,1.2fr)_150px] md:items-center md:gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-ink-900">
-                      {user.email}
-                    </p>
-                    <p className="mt-0.5 text-xs text-ink-500">
-                      {user.file_count} 个文件 · {user.folder_count} 个文件夹 ·{' '}
-                      {user.version_count} 个版本
-                      {user.is_admin ? ' · 管理员' : ''}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 md:block">
-                    <StatusBadge status={user.status} />
-                  </div>
-                  <p className="text-xs text-ink-600">
-                    {formatDateTime(user.created_at)}
-                  </p>
-                  <p className="text-xs text-ink-600">
-                    {formatDateTime(user.last_active_at)}
-                  </p>
-                  <div>
-                    <p className="text-xs text-ink-600">
-                      {formatBytes(user.used_bytes)} /{' '}
-                      {formatBytes(user.quota_bytes)}
-                    </p>
-                    <ProgressBar
-                      value={
-                        user.quota_bytes > 0
-                          ? (user.used_bytes / user.quota_bytes) * 100
-                          : 0
-                      }
-                      tone={
-                        user.used_bytes >= user.quota_bytes ? 'danger' : 'brand'
-                      }
-                      label="用户存储用量"
-                      heightClassName="mt-1.5 h-1.5"
-                    />
-                  </div>
-                  <div
-                    className="flex flex-wrap items-center gap-1.5 md:justify-end"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    {user.status === 'pending' && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          data-testid="admin-user-approve"
-                          onClick={() => setApproveTarget(user)}
-                        >
-                          批准
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="dangerGhost"
-                          data-testid="admin-user-reject"
-                          onClick={() => setDanger({ kind: 'reject', user })}
-                        >
-                          拒绝
-                        </Button>
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      aria-label={`查看 ${user.email}`}
-                      className="flex h-8 items-center gap-1 rounded-control px-2 text-xs font-medium text-ink-600 hover:bg-canvas-strong hover:text-ink-900"
-                      onClick={() => setSelectedId(user.id)}
-                    >
-                      详情
-                      <ChevronRight size={15} aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-              </li>
+              <li key={user.id}>{renderUserRow(user)}</li>
             ))}
           </ul>
         )}
