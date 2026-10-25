@@ -100,6 +100,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/recovery-prelogin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 恢复重置前置查询。
+         * @description `recovery_wrapped_mk` 是密文，但忘记密码的用户在认证前就需要它；
+         *     对不存在邮箱返回结构相同的伪造帧，避免泄露邮箱是否注册。
+         */
+        post: operations["recovery_prelogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/register": {
         parameters: {
             query?: never;
@@ -329,6 +350,13 @@ export interface components {
             new_kdf_params: components["schemas"]["KdfParams"];
             new_kdf_salt: string;
             new_wrapped_mk: string;
+        };
+        /** @description 恢复重置前置查询：只返回恢复包裹后的 MK（密文）。 */
+        RecoveryPreloginRequest: {
+            email: string;
+        };
+        RecoveryPreloginResponse: {
+            recovery_wrapped_mk: string;
         };
         /** @description 注册请求：只包含客户端派生的材料，绝不包含密码。 */
         RegisterRequest: {
@@ -649,6 +677,53 @@ export interface operations {
                 };
             };
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    recovery_prelogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecoveryPreloginRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryPreloginResponse"];
+                };
+            };
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

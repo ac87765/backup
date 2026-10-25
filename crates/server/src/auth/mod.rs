@@ -112,6 +112,25 @@ impl AuthContext {
         Ok(salt)
     }
 
+    /// 对不存在邮箱生成确定性的伪造恢复包裹材料。
+    ///
+    /// 结构与真实 `recovery_wrapped_mk` 完全一致（版本字节 + 73 字节帧），
+    /// 使用独立的 fake-salt 密钥派生，避免恢复前置查询泄露邮箱是否注册。
+    pub fn fake_recovery_wrapped_mk(&self, normalized_email: &str) -> Result<Vec<u8>, ApiError> {
+        let mut output = Vec::with_capacity(crypto_core::FRAME_OVERHEAD + crypto_core::KEY_LEN);
+        output.push(crypto_core::CIPHERTEXT_FORMAT_VERSION);
+        for counter in 0..3 {
+            let message = format!("fake-recovery|{normalized_email}|{counter}");
+            let digest = hmac_sha256(
+                self.config.fake_salt_key.expose().as_bytes(),
+                message.as_bytes(),
+            )?;
+            output.extend_from_slice(&digest);
+        }
+        output.truncate(crypto_core::FRAME_OVERHEAD + crypto_core::KEY_LEN);
+        Ok(output)
+    }
+
     /// 检查并消耗该 IP 的一次认证类请求配额。
     pub fn check_ip(&self, ip: IpAddr) -> Result<(), ApiError> {
         self.limiter.check(ip).map_err(ApiError::too_many_requests)

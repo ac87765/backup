@@ -529,6 +529,49 @@ async fn prelogin_for_unknown_email_is_stable_and_matches_shape() {
     assert_eq!(first_keys, real_keys);
 }
 
+#[tokio::test]
+async fn recovery_prelogin_is_stable_for_unknown_and_matches_real_material() {
+    let app = setup().await;
+    let request = |email: &str| {
+        send(
+            &app.app,
+            Method::POST,
+            "/api/v1/auth/recovery-prelogin",
+            Some(json!({ "email": email })),
+            None,
+            true,
+            &[],
+            None,
+        )
+    };
+
+    let (first_status, _headers, first) = read(request("missing@example.com").await).await;
+    let (second_status, _headers, second) = read(request("missing@example.com").await).await;
+    assert_eq!(first_status, StatusCode::OK);
+    assert_eq!(second_status, StatusCode::OK);
+    assert_eq!(first, second, "不存在邮箱的恢复前置响应必须确定");
+    let fake = first["recovery_wrapped_mk"].as_str().expect("伪造材料");
+    assert_eq!(
+        fake.len(),
+        (crypto_core::FRAME_OVERHEAD + crypto_core::KEY_LEN) * 2
+    );
+    assert_eq!(
+        u8::from_str_radix(&fake[..2], 16).expect("版本字节"),
+        crypto_core::CIPHERTEXT_FORMAT_VERSION
+    );
+
+    register(
+        &app,
+        "recovery-prelogin@example.com",
+        auth_key(0x10),
+        recovery_key(0x20),
+    )
+    .await;
+    let (status, _headers, real) = read(request("recovery-prelogin@example.com").await).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(real["recovery_wrapped_mk"], json!(wrapped(0x33)));
+}
+
 // ---------------------------------------------------------------------------
 // 邮箱验证与重发
 // ---------------------------------------------------------------------------

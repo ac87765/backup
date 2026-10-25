@@ -9,8 +9,9 @@ use crate::api::error::ErrorBody;
 use crate::api::health::{HealthResponse, ReadyChecks, ReadyResponse};
 use crate::auth::routes::{
     ChangePasswordRequest, KdfParams, LoginRequest, LoginResponse, MeResponse, OkResponse,
-    PreloginRequest, PreloginResponse, RecoverRequest, RegisterRequest, ResendVerificationRequest,
-    RotateRecoveryKeyRequest, SessionSummary, SessionsResponse, VerifyEmailRequest,
+    PreloginRequest, PreloginResponse, RecoverRequest, RecoveryPreloginRequest,
+    RecoveryPreloginResponse, RegisterRequest, ResendVerificationRequest, RotateRecoveryKeyRequest,
+    SessionSummary, SessionsResponse, VerifyEmailRequest,
 };
 
 /// 服务端 API 文档。
@@ -25,6 +26,7 @@ use crate::auth::routes::{
         crate::api::health::healthz,
         crate::api::health::readyz,
         crate::auth::routes::prelogin,
+        crate::auth::routes::recovery_prelogin,
         crate::auth::routes::register,
         crate::auth::routes::verify_email,
         crate::auth::routes::resend_verification,
@@ -45,6 +47,8 @@ use crate::auth::routes::{
         KdfParams,
         PreloginRequest,
         PreloginResponse,
+        RecoveryPreloginRequest,
+        RecoveryPreloginResponse,
         RegisterRequest,
         OkResponse,
         LoginRequest,

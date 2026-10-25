@@ -72,6 +72,10 @@ pub fn build_router_with(state: AppState, extra: Router<AppState>) -> Router {
 
     let api = Router::new()
         .route("/v1/auth/prelogin", post(crate::auth::routes::prelogin))
+        .route(
+            "/v1/auth/recovery-prelogin",
+            post(crate::auth::routes::recovery_prelogin),
+        )
         .route("/v1/auth/register", post(crate::auth::routes::register))
         .route(
             "/v1/auth/verify-email",

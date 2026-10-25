@@ -93,6 +93,18 @@ pub struct PreloginResponse {
     pub kdf_salt: String,
 }
 
+/// 恢复重置前置查询：只返回恢复包裹后的 MK（密文）。
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RecoveryPreloginRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RecoveryPreloginResponse {
+    pub recovery_wrapped_mk: String,
+}
+
 /// 注册请求：只包含客户端派生的材料，绝不包含密码。
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -327,6 +339,48 @@ pub async fn prelogin(
         },
     };
     Ok(Json(response))
+}
+
+/// 恢复重置前置查询。
+///
+/// `recovery_wrapped_mk` 是密文，但忘记密码的用户在认证前就需要它；
+/// 对不存在邮箱返回结构相同的伪造帧，避免泄露邮箱是否注册。
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/recovery-prelogin",
+    tag = "auth",
+    request_body = RecoveryPreloginRequest,
+    responses(
+        (status = 200, body = RecoveryPreloginResponse),
+        (status = 400, body = ErrorBody),
+        (status = 429, body = ErrorBody),
+        (status = 500, body = ErrorBody)
+    )
+)]
+pub async fn recovery_prelogin(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    payload: Result<Json<RecoveryPreloginRequest>, JsonRejection>,
+) -> Result<Json<RecoveryPreloginResponse>, ApiError> {
+    state.auth.check_ip(ip)?;
+    let request = parse_body(payload)?;
+    let email = normalize_email(&request.email).ok_or_else(ApiError::invalid_request)?;
+
+    let row = sqlx::query!(
+        "SELECT recovery_wrapped_mk FROM users WHERE email = $1::text::citext",
+        email,
+    )
+    .fetch_optional(state.database.pool())
+    .await
+    .map_err(ApiError::internal)?;
+
+    let recovery_wrapped_mk = match row {
+        Some(row) => row.recovery_wrapped_mk,
+        None => state.auth.fake_recovery_wrapped_mk(&email)?,
+    };
+    Ok(Json(RecoveryPreloginResponse {
+        recovery_wrapped_mk: encode_hex(&recovery_wrapped_mk),
+    }))
 }
 
 // ---------------------------------------------------------------------------
