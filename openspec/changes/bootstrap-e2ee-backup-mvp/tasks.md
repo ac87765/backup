@@ -91,7 +91,7 @@
 ## 9. 部署与端到端验证
 
 - [x] 9.1 编写多阶段 Dockerfile（cargo-chef、wasm-pack、vite、非 root slim 运行时），验证镜像启动后 `/readyz` 就绪且能访问前端
-- [ ] 9.2 在 `deploy/` 提供 OSS RAM 最小权限策略、CORS 配置、SSE 设置说明与生产环境变量清单，并按清单在测试 bucket 上配置一遍验证
+- [x] 9.2 在 `deploy/` 提供 OSS RAM 最小权限策略、CORS 配置、SSE 设置说明与生产环境变量清单，并按清单在测试 bucket 上配置一遍验证
 - [x] 9.3 建立对真实 OSS 测试 bucket 的夜间冒烟测试（上传→下载→删除→确认对象被清理），验证一次通过
 - [x] 9.4 编写“安全与隐私”页面（服务端可见信息清单、Web E2EE 局限、丢失密码+恢复密钥的后果），Playwright 验证页面可访问
 - [x] 9.5 全链路验收：在 docker-compose 环境用 Playwright 跑完整用户旅程，并执行日志敏感信息扫描（无令牌/密钥/预签名签名），全部通过
