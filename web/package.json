@@ -19,14 +19,17 @@
     "test": "vitest run",
     "pretest": "npm run ensure:wasm",
     "test:watch": "vitest",
-    "e2e:preview": "npm run build && vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "e2e:serve": "npm run build && node e2e/serve.mjs",
     "test:e2e": "playwright test",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@zxcvbn-ts/core": "^3.0.4",
+    "@zxcvbn-ts/language-common": "^3.0.4",
     "comlink": "^4.4.2",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

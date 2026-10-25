@@ -3,11 +3,15 @@ import { describe, expect, it } from 'vitest'
 import App from './App'
 
 describe('App', () => {
-  it('渲染应用外壳', () => {
+  it('渲染应用外壳与登录页', async () => {
     render(<App />)
 
     expect(
-      screen.getByRole('heading', { level: 1, name: '端对端加密备份' }),
+      await screen.findByRole('heading', {
+        level: 1,
+        name: '端对端加密备份',
+      }),
     ).toBeInTheDocument()
+    expect(screen.getByTestId('login-email')).toBeInTheDocument()
   })
 })
