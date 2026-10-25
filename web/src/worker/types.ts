@@ -170,6 +170,7 @@ export interface UploadResultView {
 /** 刷新后可继续的上传会话元数据（不含密钥/明文/密文）。 */
 export interface PendingUploadView {
   sessionId: string
+  userId: string | null
   mode: 'new_file' | 'new_version'
   parentId: string | null
   nodeId: string

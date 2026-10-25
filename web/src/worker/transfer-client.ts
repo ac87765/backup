@@ -151,6 +151,7 @@ export class TransferClient implements TransferWorkerApi {
   private readonly fileClient: FileClient
   private readonly store: UploadStore
   private readonly fetchImpl: typeof fetch
+  private readonly getUserId: () => string | null
   private readonly controls = new Map<string, Control>()
 
   constructor(
@@ -159,6 +160,7 @@ export class TransferClient implements TransferWorkerApi {
     options: {
       store?: UploadStore
       fetchImpl?: typeof fetch
+      getUserId?: () => string | null
     } = {},
   ) {
     this.backend = backend
@@ -166,6 +168,7 @@ export class TransferClient implements TransferWorkerApi {
     this.store = options.store ?? createUploadStore()
     this.fetchImpl =
       options.fetchImpl ?? ((input, init) => fetch(input, init))
+    this.getUserId = options.getUserId ?? (() => null)
   }
 
   async uploadFile(
@@ -231,6 +234,7 @@ export class TransferClient implements TransferWorkerApi {
     const records = await this.store.list()
     return records.map((record) => ({
       sessionId: record.sessionId,
+      userId: record.userId,
       mode: record.mode,
       parentId: record.parentId,
       nodeId: record.nodeId,
@@ -241,6 +245,32 @@ export class TransferClient implements TransferWorkerApi {
       lastModified: record.lastModified,
       status: record.status,
     }))
+  }
+
+  /**
+   * 退出登录时清理该用户的续传记录：先尽力中止服务端会话，再删除本地记录，
+   * 并取消该用户正在进行的传输。其他用户的记录保持不变。
+   */
+  async clearPendingUploads(userId: string): Promise<void> {
+    for (const control of this.controls.values()) {
+      control.cancelled = true
+      this.wake(control)
+    }
+    const records = await this.store.list()
+    for (const record of records) {
+      if (record.userId !== userId) {
+        continue
+      }
+      try {
+        await this.request(
+          `/api/v1/upload-sessions/${encodeURIComponent(record.sessionId)}/abort`,
+          { method: 'POST' },
+        )
+      } catch {
+        // 会话可能已关闭或网络不可用；本地记录仍必须清理，服务端会按过期清理。
+      }
+      await this.store.delete(record.sessionId)
+    }
   }
 
   async pauseUpload(sessionId: string): Promise<void> {
@@ -550,6 +580,7 @@ export class TransferClient implements TransferWorkerApi {
     })
     const record: UploadRecord = {
       sessionId: session.id,
+      userId: this.getUserId(),
       mode: 'new_file',
       parentId,
       nodeId,
@@ -617,6 +648,7 @@ export class TransferClient implements TransferWorkerApi {
     })
     const record: UploadRecord = {
       sessionId: session.id,
+      userId: this.getUserId(),
       mode: 'new_version',
       parentId: null,
       nodeId,

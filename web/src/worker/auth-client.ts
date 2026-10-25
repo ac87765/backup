@@ -438,6 +438,11 @@ export class AuthClient implements AuthWorkerApi {
     }))
   }
 
+  /** 当前已登录用户 ID；未登录时为 null（用于清理该用户的续传记录）。 */
+  currentUserId(): string | null {
+    return this.profile?.user.userId ?? null
+  }
+
   async revokeSession(sessionId: string): Promise<void> {
     await this.request(
       `/api/v1/auth/sessions/${encodeURIComponent(sessionId)}`,

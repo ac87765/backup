@@ -460,6 +460,7 @@ describe('TransferClient', () => {
       'sessionId',
       'size',
       'status',
+      'userId',
       'versionId',
     ])
     for (const value of Object.values(record)) {

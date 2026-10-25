@@ -15,6 +15,8 @@ export type UploadRecordStatus = 'uploading' | 'paused' | 'failed'
 /** 仅元数据；字段与保存的内容不可包含密钥/明文/密文。 */
 export interface UploadRecord {
   sessionId: string
+  /** 记录所属用户；用于退出登录时只清理该用户的续传记录。 */
+  userId: string | null
   mode: UploadMode
   parentId: string | null
   nodeId: string

@@ -5,7 +5,7 @@
  * 因此主线程 bundle 里不会有 WASM 或密钥代码。Worker 抛出的 `{ code, message }`
  * 载荷会在这里还原成 `CryptoApiError`。
  */
-import { wrap, type Remote } from 'comlink'
+import { proxy, wrap, type Remote } from 'comlink'
 
 import { CryptoApiError, isCryptoErrorPayload } from './crypto-api'
 import type { WorkerApi } from './types'
@@ -31,9 +31,12 @@ export function getCryptoWorker(): WorkerApi {
 /**
  * 把 Comlink 远程对象包装成普通方法：
  * - 每次调用都返回 Promise；
+ * - 函数参数（进度回调）用 `Comlink.proxy()` 标记，否则 postMessage 无法克隆；
  * - Worker 抛出的错误载荷还原为 `CryptoApiError`（带稳定 code）。
+ *
+ * 导出供 Comlink 真实边界契约测试使用。
  */
-function wrapApi(remote: Remote<WorkerApi>): WorkerApi {
+export function wrapApi(remote: Remote<WorkerApi>): WorkerApi {
   const target = remote as unknown as WorkerApi
 
   return new Proxy(target, {
@@ -44,11 +47,16 @@ function wrapApi(remote: Remote<WorkerApi>): WorkerApi {
       }
 
       return async (...args: unknown[]) => {
+        const proxiedArgs = args.map((argument) =>
+          typeof argument === 'function'
+            ? proxy(argument as (...parameters: unknown[]) => unknown)
+            : argument,
+        )
         try {
           return await Reflect.apply(
             value as (...parameters: unknown[]) => Promise<unknown>,
             inner,
-            args,
+            proxiedArgs,
           )
         } catch (error) {
           if (isCryptoErrorPayload(error)) {

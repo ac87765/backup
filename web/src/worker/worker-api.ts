@@ -4,6 +4,8 @@
  * 认证方法内部复用同一个 KeyStore（`CryptoApi` 与 `AuthClient` 共享同一个后端 Promise），
  * 因此 prepare/commit 的状态变化对两侧一致。
  */
+import { releaseProxy } from 'comlink'
+
 import { AuthClient } from './auth-client'
 import { CryptoApi } from './crypto-api'
 import { FileClient } from './file-client'
@@ -59,6 +61,20 @@ async function runApi<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
+/** 释放主线程通过 Comlink.proxy() 传入的回调端点。 */
+function releaseCallback(callback: unknown): void {
+  if (typeof callback === 'function') {
+    const releasable = callback as {
+      [releaseProxy]?: () => void
+    }
+    try {
+      releasable[releaseProxy]?.()
+    } catch {
+      // 已经释放（或不是 Comlink 代理）时忽略。
+    }
+  }
+}
+
 export class WorkerApi
   extends CryptoApi
   implements AuthWorkerApi, FileWorkerApi, TransferWorkerApi
@@ -72,7 +88,9 @@ export class WorkerApi
     super(promise)
     this.auth = new AuthClient(promise)
     this.file = new FileClient(promise)
-    this.transfer = new TransferClient(promise, this.file)
+    this.transfer = new TransferClient(promise, this.file, {
+      getUserId: () => this.auth.currentUserId(),
+    })
   }
 
   register(
@@ -135,7 +153,17 @@ export class WorkerApi
   }
 
   logout(): Promise<void> {
-    return runApi(() => this.auth.logout())
+    const userId = this.auth.currentUserId()
+    return runApi(async () => {
+      if (userId) {
+        try {
+          await this.transfer.clearPendingUploads(userId)
+        } catch {
+          // 清理续传记录失败不应阻止退出登录。
+        }
+      }
+      await this.auth.logout()
+    })
   }
 
   verifyEmail(token: string): Promise<void> {
@@ -221,7 +249,9 @@ export class WorkerApi
     file: File,
     onProgress?: (progress: TransferProgressView) => void,
   ): Promise<UploadResultView> {
-    return runApi(() => this.transfer.uploadFile(parentId, file, onProgress))
+    return runApi(() =>
+      this.transfer.uploadFile(parentId, file, onProgress),
+    ).finally(() => releaseCallback(onProgress))
   }
 
   uploadNewVersion(
@@ -231,7 +261,7 @@ export class WorkerApi
   ): Promise<UploadResultView> {
     return runApi(() =>
       this.transfer.uploadNewVersion(nodeId, file, onProgress),
-    )
+    ).finally(() => releaseCallback(onProgress))
   }
 
   resumePendingUpload(
@@ -241,7 +271,7 @@ export class WorkerApi
   ): Promise<UploadResultView> {
     return runApi(() =>
       this.transfer.resumePendingUpload(sessionId, file, onProgress),
-    )
+    ).finally(() => releaseCallback(onProgress))
   }
 
   listPendingUploads(): Promise<PendingUploadView[]> {
@@ -277,7 +307,7 @@ export class WorkerApi
         target,
         onProgress,
       ),
-    )
+    ).finally(() => releaseCallback(onProgress))
   }
 
   pauseDownload(downloadId: string): Promise<void> {

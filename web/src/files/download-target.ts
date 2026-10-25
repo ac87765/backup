@@ -40,6 +40,9 @@ export async function selectDownloadTarget(
   if (forced === 'blob') {
     return selectBlob(size)
   }
+  if (forced === 'service-worker') {
+    return selectServiceWorker(fileName, mime)
+  }
 
   const picker = (window as PickerWindow).showSaveFilePicker
   if (typeof picker === 'function') {
@@ -48,12 +51,24 @@ export async function selectDownloadTarget(
   }
 
   if ('serviceWorker' in navigator) {
-    const downloadId = crypto.randomUUID()
-    const cleanup = await prepareServiceWorkerDownload(downloadId, fileName, mime)
-    return { target: { kind: 'service-worker', downloadId }, cleanup }
+    return selectServiceWorker(fileName, mime)
   }
 
   return selectBlob(size)
+}
+
+async function selectServiceWorker(
+  fileName: string,
+  mime: string,
+): Promise<DownloadSelection> {
+  if (!('serviceWorker' in navigator)) {
+    throw Object.assign(new Error('当前浏览器不支持 Service Worker 下载'), {
+      code: 'service_worker_unavailable',
+    })
+  }
+  const downloadId = crypto.randomUUID()
+  const cleanup = await prepareServiceWorkerDownload(downloadId, fileName, mime)
+  return { target: { kind: 'service-worker', downloadId }, cleanup }
 }
 
 function selectBlob(size: number): DownloadSelection {
@@ -85,6 +100,20 @@ async function prepareServiceWorkerDownload(
 ): Promise<() => void> {
   const registration = await navigator.serviceWorker.register('/download-sw.js')
   await navigator.serviceWorker.ready
+  // 首次注册时页面可能还没有被 SW 控制；clients.claim 后会触发 controllerchange。
+  if (!navigator.serviceWorker.controller) {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 3_000)
+      navigator.serviceWorker.addEventListener(
+        'controllerchange',
+        () => {
+          clearTimeout(timer)
+          resolve()
+        },
+        { once: true },
+      )
+    })
+  }
   const worker = registration.active ?? navigator.serviceWorker.controller
   if (!worker) {
     throw Object.assign(new Error('下载 Service Worker 尚未就绪'), {
