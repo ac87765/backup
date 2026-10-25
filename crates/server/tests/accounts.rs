@@ -757,6 +757,12 @@ async fn login_sets_host_cookie_and_returns_wrapped_mk() {
     assert_eq!(body["wrapped_mk"], json!(wrapped(0x22)));
     assert_eq!(body["kdf_salt"], json!(hex(&[0x11; 16])));
     assert_eq!(body["kdf_params"], recommended_params());
+    let root_node_id: Uuid = sqlx::query_scalar("SELECT root_node_id FROM users WHERE id = $1")
+        .bind(user.id)
+        .fetch_one(app.database.pool())
+        .await
+        .expect("读取根节点");
+    assert_eq!(body["root_node_id"], json!(root_node_id));
 
     let token = session_cookie(&headers);
     let body_text = body.to_string();
@@ -785,6 +791,7 @@ async fn login_sets_host_cookie_and_returns_wrapped_mk() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(me["wrapped_mk"], json!(wrapped(0x22)));
     assert_eq!(me["user_id"], json!(user.id));
+    assert_eq!(me["root_node_id"], json!(root_node_id));
 }
 
 #[tokio::test]

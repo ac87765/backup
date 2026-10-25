@@ -538,6 +538,11 @@ export interface components {
             kdf_params: components["schemas"]["KdfParams"];
             kdf_salt: string;
             wrapped_mk: string;
+            /**
+             * Format: uuid
+             * @description 当前用户的根文件夹 ID（非密钥；供文件浏览器导航使用）。
+             */
+            root_node_id: string;
         };
         /** @description 刷新页面后解锁所需的数据。 */
         MeResponse: {
@@ -548,6 +553,11 @@ export interface components {
             kdf_params: components["schemas"]["KdfParams"];
             kdf_salt: string;
             wrapped_mk: string;
+            /**
+             * Format: uuid
+             * @description 当前用户的根文件夹 ID（非密钥；供文件浏览器导航使用）。
+             */
+            root_node_id: string;
         };
         /** @description 移动请求。名称令牌必须由客户端针对新父节点重新计算。 */
         MoveNodeRequest: {

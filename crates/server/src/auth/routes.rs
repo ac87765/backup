@@ -144,6 +144,8 @@ pub struct LoginResponse {
     pub kdf_params: KdfParams,
     pub kdf_salt: String,
     pub wrapped_mk: String,
+    /// 当前用户的根文件夹 ID（非密钥；供文件浏览器导航使用）。
+    pub root_node_id: Uuid,
 }
 
 /// 刷新页面后解锁所需的数据。
@@ -155,6 +157,8 @@ pub struct MeResponse {
     pub kdf_params: KdfParams,
     pub kdf_salt: String,
     pub wrapped_mk: String,
+    /// 当前用户的根文件夹 ID（非密钥；供文件浏览器导航使用）。
+    pub root_node_id: Uuid,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -715,7 +719,8 @@ pub async fn login(
         Some(email) => sqlx::query!(
             r#"
             SELECT id, email::text AS "email!", email_verified_at, kdf_params, kdf_salt,
-                   auth_hash, pepper_version, wrapped_mk, failed_logins, locked_until
+                   auth_hash, pepper_version, wrapped_mk, failed_logins, locked_until,
+                   root_node_id
             FROM users
             WHERE email = $1::text::citext
             "#,
@@ -834,6 +839,7 @@ pub async fn login(
         kdf_params: KdfParams::from_stored(&user.kdf_params)?,
         kdf_salt: encode_hex(&user.kdf_salt),
         wrapped_mk: encode_hex(&user.wrapped_mk),
+        root_node_id: user.root_node_id,
     };
     Ok((session_cookie_header(&token)?, Json(response)))
 }
@@ -861,7 +867,8 @@ pub async fn me(
 ) -> Result<Json<MeResponse>, ApiError> {
     let row = sqlx::query!(
         r#"
-        SELECT id, email::text AS "email!", email_verified_at, kdf_params, kdf_salt, wrapped_mk
+        SELECT id, email::text AS "email!", email_verified_at, kdf_params, kdf_salt, wrapped_mk,
+               root_node_id
         FROM users
         WHERE id = $1
         "#,
@@ -881,6 +888,7 @@ pub async fn me(
         kdf_params: KdfParams::from_stored(&row.kdf_params)?,
         kdf_salt: encode_hex(&row.kdf_salt),
         wrapped_mk: encode_hex(&row.wrapped_mk),
+        root_node_id: row.root_node_id,
     }))
 }
 
