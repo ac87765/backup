@@ -48,6 +48,8 @@ interface MenuSurfaceProps {
   label: string
   items: MenuItem[]
   point: Point
+  /** 菜单顶部的非交互内容（如账号信息）。 */
+  header?: ReactNode
   /** 点击这些元素内部不算“点击外部”。 */
   ignoreRef?: RefObject<HTMLElement | null>
   onClose: () => void
@@ -58,6 +60,7 @@ function MenuSurface({
   label,
   items,
   point,
+  header,
   ignoreRef,
   onClose,
 }: MenuSurfaceProps) {
@@ -139,6 +142,7 @@ function MenuSurface({
       }}
       className="z-50 overflow-hidden rounded-card border border-line bg-white p-1.5 shadow-pop"
     >
+      {header && <div className="border-b border-line px-2.5 pb-2.5 pt-1.5">{header}</div>}
       {items.map((item) => (
         <Fragment key={item.id ?? item.label}>
           {item.separatorBefore && (
@@ -188,6 +192,8 @@ export interface MenuProps {
   trigger: ReactElement
   align?: 'start' | 'end'
   disabled?: boolean
+  /** 菜单顶部的非交互内容（如账号信息）。 */
+  header?: ReactNode
 }
 
 /** 下拉菜单：Enter/Space/ArrowDown 打开，方向键导航，Esc / 外部点击关闭。 */
@@ -197,6 +203,7 @@ export function Menu({
   trigger,
   align = 'end',
   disabled = false,
+  header,
 }: MenuProps) {
   const [point, setPoint] = useState<Point | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -264,6 +271,7 @@ export function Menu({
           label={label}
           items={items}
           point={point}
+          header={header}
           ignoreRef={triggerRef}
           onClose={close}
         />

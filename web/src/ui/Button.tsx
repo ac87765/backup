@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
 
 import { cx } from './cx'
 
@@ -19,7 +19,7 @@ const SIZES: Record<ButtonSize, string> = {
 }
 
 const BASE =
-  'inline-flex select-none items-center justify-center whitespace-nowrap rounded-control font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50'
+  'inline-flex select-none items-center whitespace-nowrap rounded-control font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50'
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
@@ -27,6 +27,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** 按钮文字前的图标（纯装饰，自动 aria-hidden）。 */
   icon?: ReactNode
   block?: boolean
+  justify?: 'center' | 'between'
+  ref?: Ref<HTMLButtonElement>
 }
 
 export function Button({
@@ -34,6 +36,7 @@ export function Button({
   size = 'md',
   icon,
   block = false,
+  justify = 'center',
   className,
   children,
   type = 'button',
@@ -46,6 +49,7 @@ export function Button({
         BASE,
         VARIANTS[variant],
         SIZES[size],
+        justify === 'between' ? 'justify-between' : 'justify-center',
         block && 'w-full',
         className,
       )}

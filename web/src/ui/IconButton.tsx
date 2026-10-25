@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
 
 import { cx } from './cx'
 
@@ -24,6 +24,7 @@ export interface IconButtonProps
   variant?: IconButtonVariant
   size?: IconButtonSize
   children: ReactNode
+  ref?: Ref<HTMLButtonElement>
 }
 
 export function IconButton({

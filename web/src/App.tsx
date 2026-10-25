@@ -11,17 +11,16 @@ import {
 import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/context'
 import { PageShell } from './components/PageShell'
-import { ChangePasswordPage } from './pages/ChangePasswordPage'
 import { FilesPage } from './pages/FilesPage'
-import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ResetPage } from './pages/ResetPage'
-import { RotateRecoveryPage } from './pages/RotateRecoveryPage'
 import { SecurityPage } from './pages/SecurityPage'
-import { SessionsPage } from './pages/SessionsPage'
+import { SettingsPage } from './pages/SettingsPage'
+import { TrashPage } from './pages/TrashPage'
 import { UnlockPage } from './pages/UnlockPage'
 import { VerifyEmailPage } from './pages/VerifyEmailPage'
+import { ToastProvider } from './ui'
 
 function RequireSession({ children }: { children: ReactNode }) {
   const { user, loading, unlocked } = useAuth()
@@ -30,7 +29,7 @@ function RequireSession({ children }: { children: ReactNode }) {
   if (loading) {
     return (
       <PageShell title="加载中" subtitle="正在检查会话…">
-        <p role="status" className="text-sm text-slate-600">
+        <p role="status" className="text-sm text-ink-600">
           加载中…
         </p>
       </PageShell>
@@ -99,14 +98,8 @@ function AppRoutes() {
       <Route path="/reset" element={<ResetPage />} />
       <Route path="/security" element={<SecurityPage />} />
       <Route path="/unlock" element={<UnlockPage />} />
-      <Route
-        path="/"
-        element={
-          <RequireSession>
-            <HomePage />
-          </RequireSession>
-        }
-      />
+
+      <Route path="/" element={<Navigate to="/files" replace />} />
       <Route
         path="/files"
         element={
@@ -116,18 +109,28 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/sessions"
+        path="/trash"
         element={
           <RequireSession>
-            <SessionsPage />
+            <TrashPage />
           </RequireSession>
         }
       />
       <Route
+        path="/settings"
+        element={
+          <RequireSession>
+            <SettingsPage />
+          </RequireSession>
+        }
+      />
+
+      {/* 旧地址兼容：重定向到账号设置对应分区。 */}
+      <Route
         path="/change-password"
         element={
           <RequireSession>
-            <ChangePasswordPage />
+            <Navigate to="/settings#password" replace />
           </RequireSession>
         }
       />
@@ -135,11 +138,20 @@ function AppRoutes() {
         path="/rotate-recovery-key"
         element={
           <RequireSession>
-            <RotateRecoveryPage />
+            <Navigate to="/settings#recovery" replace />
           </RequireSession>
         }
       />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route
+        path="/sessions"
+        element={
+          <RequireSession>
+            <Navigate to="/settings#sessions" replace />
+          </RequireSession>
+        }
+      />
+
+      <Route path="*" element={<Navigate to="/files" replace />} />
     </Routes>
   )
 }
@@ -148,7 +160,9 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <ToastProvider>
+          <AppRoutes />
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   )

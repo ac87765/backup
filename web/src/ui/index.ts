@@ -3,6 +3,7 @@ export { cx } from './cx'
 export { Dialog, type DialogProps, type DialogSize } from './Dialog'
 export { EmptyState, type EmptyStateProps } from './EmptyState'
 export { FileIcon, type FileIconProps } from './FileIcon'
+export { FormError, FormNotice } from './FormMessage'
 export {
   FILE_VISUAL_META,
   fileVisualKind,
