@@ -1,0 +1,34 @@
+# 构建上下文只需要源码、Cargo 锁文件、迁移与前端构建输入。
+# 排除本地构建产物与大目录，避免把 target/ 和 node_modules/ 送进 daemon。
+.git
+.gitignore
+.github
+.agents
+.claude
+.idea
+.vscode
+.env
+.env.*
+!.env.example
+
+**/target
+target
+web/node_modules
+web/dist
+web/dist-ssr
+web/coverage
+web/src/generated
+web/test-results
+web/playwright-report
+web/blob-report
+web/e2e-tmp
+crates/crypto-wasm/pkg
+
+deploy/e2e-out
+*.log
+*.tmp
+
+# 文档、规范与测试数据不参与镜像构建；testdata 仅在 crypto 测试中使用。
+openspec
+docs
+testdata

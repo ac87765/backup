@@ -1,0 +1,33 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "oss:PutObject",
+        "oss:GetObject",
+        "oss:GetObjectMeta",
+        "oss:DeleteObject"
+      ],
+      "Resource": [
+        "acs:oss:*:<ACCOUNT_ID>:<BUCKET_NAME>/v1/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "oss:ListObjects"
+      ],
+      "Resource": [
+        "acs:oss:*:<ACCOUNT_ID>:<BUCKET_NAME>"
+      ],
+      "Condition": {
+        "StringLike": {
+          "oss:Prefix": [
+            "v1/*"
+          ]
+        }
+      }
+    }
+  ]
+}

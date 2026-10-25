@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  OSS 生命周期规则：清理未完成的分片上传（卫生项，design D15 / task 9.2）。
+
+  - 应用从不使用 OSS 的 Multipart Upload 完成上传：每个 4 MiB 块是一个独立对象，
+    由前端直接 PUT。这里只防御异常客户端/中断请求留下的未完成分片。
+  - 只处理 v1/ 前缀，不影响 bucket 中其他数据。
+  - 不配置版本过期/删除规则：bucket 不开启版本控制，对象生命周期由应用管理。
+
+  注意：OSS 的生命周期配置是“整体替换”语义。如果 bucket 已有其他规则，
+  请把本 Rule 合并进现有配置后再提交，不要直接覆盖。
+-->
+<LifecycleConfiguration>
+  <Rule>
+    <ID>abort-incomplete-multipart-v1</ID>
+    <Prefix>v1/</Prefix>
+    <Status>Enabled</Status>
+    <AbortMultipartUpload>
+      <Days>1</Days>
+    </AbortMultipartUpload>
+  </Rule>
+</LifecycleConfiguration>

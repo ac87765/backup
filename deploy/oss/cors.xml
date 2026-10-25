@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  阿里云 OSS bucket CORS 规则（design D15 / task 9.2）。
+
+  只允许正式前端源访问；方法仅 PUT/GET/HEAD；暴露 ETag。
+  部署前把 https://backup.example.com 替换成实际正式源（协议 + 域名 + 端口必须完全一致）。
+  不要使用 "*"：否则任意站点都能借助用户浏览器读取/写入预签名对象。
+-->
+<CORSConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <CORSRule>
+    <AllowedOrigin>https://backup.example.com</AllowedOrigin>
+    <AllowedMethod>PUT</AllowedMethod>
+    <AllowedMethod>GET</AllowedMethod>
+    <AllowedMethod>HEAD</AllowedMethod>
+    <!-- 预签名 PUT 由浏览器直接发出；当前前端不设置自定义请求头，
+         保留 * 只为兼容预检请求。若后续增加自定义头，请改为精确列表。 -->
+    <AllowedHeader>*</AllowedHeader>
+    <ExposeHeader>ETag</ExposeHeader>
+    <MaxAgeSeconds>600</MaxAgeSeconds>
+  </CORSRule>
+</CORSConfiguration>

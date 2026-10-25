@@ -1,0 +1,90 @@
+name: OSS smoke (real Aliyun OSS)
+
+# 夜间对真实阿里云 OSS 测试 bucket 跑一次预签名上传 → 下载比对 → 删除 → 确认不存在。
+# 只在仓库 Secrets 已配置时运行；未配置时以“跳过”结束（不是失败），并在日志与
+# job summary 中列出需要配置的 Secrets。
+on:
+  schedule:
+    # 每天 18:17 UTC（北京时间次日 02:17），避开整点。
+    - cron: "17 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oss-smoke
+  cancel-in-progress: false
+
+jobs:
+  oss-smoke:
+    name: Real OSS smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # SQLx 查询宏使用仓库中提交的离线缓存，不连接数据库。
+      SQLX_OFFLINE: "true"
+      OSS_SMOKE_BUCKET: ${{ secrets.OSS_SMOKE_BUCKET }}
+      OSS_SMOKE_REGION: ${{ secrets.OSS_SMOKE_REGION }}
+      OSS_SMOKE_PUBLIC_ENDPOINT: ${{ secrets.OSS_SMOKE_PUBLIC_ENDPOINT }}
+      OSS_SMOKE_INTERNAL_ENDPOINT: ${{ secrets.OSS_SMOKE_INTERNAL_ENDPOINT }}
+      OSS_SMOKE_ACCESS_KEY_ID: ${{ secrets.OSS_SMOKE_ACCESS_KEY_ID }}
+      OSS_SMOKE_SECRET_ACCESS_KEY: ${{ secrets.OSS_SMOKE_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # secrets 不能直接用于 job/step 的 if 条件；先检查并写入 step output。
+      - name: 检查 Secrets 是否已配置
+        id: check
+        shell: bash
+        run: |
+          missing=()
+          for name in OSS_SMOKE_BUCKET OSS_SMOKE_REGION OSS_SMOKE_PUBLIC_ENDPOINT \
+                      OSS_SMOKE_ACCESS_KEY_ID OSS_SMOKE_SECRET_ACCESS_KEY; do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::未配置以下 Secrets，跳过真实 OSS 冒烟测试：${missing[*]}"
+            {
+              echo "### OSS 冒烟测试已跳过"
+              echo ""
+              echo "未配置的 GitHub Actions Secrets："
+              echo ""
+              for name in "${missing[@]}"; do echo "- \`$name\`"; done
+              echo ""
+              echo "配置方式：仓库 Settings → Secrets and variables → Actions → New repository secret。"
+              echo '`OSS_SMOKE_INTERNAL_ENDPOINT` 可选；GitHub runner 无 VPC 时留空即用公网 endpoint。'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Secrets 已配置，将运行真实 OSS 冒烟测试（不会打印任何凭据值）"
+          fi
+
+      - name: 未配置 Secrets，跳过
+        if: steps.check.outputs.skip == 'true'
+        run: |
+          echo "跳过真实 OSS 冒烟测试。需要在仓库 Secrets 中配置："
+          echo "  OSS_SMOKE_BUCKET"
+          echo "  OSS_SMOKE_REGION"
+          echo "  OSS_SMOKE_PUBLIC_ENDPOINT"
+          echo "  OSS_SMOKE_ACCESS_KEY_ID"
+          echo "  OSS_SMOKE_SECRET_ACCESS_KEY"
+          echo "  OSS_SMOKE_INTERNAL_ENDPOINT（可选；无 VPC 时留空）"
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        if: steps.check.outputs.skip == 'false'
+
+      - name: 运行真实 OSS 冒烟测试
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          cargo test -p server --test oss_smoke -- --ignored --nocapture
+
+      - name: 清理失败摘要
+        if: failure()
+        run: |
+          echo "### 真实 OSS 冒烟测试失败" >> "$GITHUB_STEP_SUMMARY"
+          echo "请检查 bucket 地域/endpoint 是否匹配、RAM 策略是否允许 v1/* 前缀的 Put/Get/Delete/List。" >> "$GITHUB_STEP_SUMMARY"
+          echo "测试日志中没有输出任何 AccessKey 值。" >> "$GITHUB_STEP_SUMMARY"
