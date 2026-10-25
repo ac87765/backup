@@ -13,6 +13,15 @@ use crate::auth::routes::{
     RecoveryPreloginResponse, RegisterRequest, ResendVerificationRequest, RotateRecoveryKeyRequest,
     SessionSummary, SessionsResponse, VerifyEmailRequest,
 };
+use crate::files::nodes::{
+    ChildrenResponse, CreateFolderRequest, ListChildrenQuery, MoveNodeRequest, RenameNodeRequest,
+};
+use crate::files::trash::{
+    PermanentDeleteResponse, RestoreNodeRequest, TrashEntryResponse, TrashQuery, TrashResponse,
+};
+use crate::files::usage::UsageResponse;
+use crate::files::versions::{RestoreVersionRequest, VersionQuery, VersionsResponse};
+use crate::files::{NodeSummary, VersionSummary};
 
 /// 服务端 API 文档。
 #[derive(OpenApi)]
@@ -37,7 +46,18 @@ use crate::auth::routes::{
         crate::auth::routes::revoke_session,
         crate::auth::routes::change_password,
         crate::auth::routes::recover,
-        crate::auth::routes::rotate_recovery_key
+        crate::auth::routes::rotate_recovery_key,
+        crate::files::nodes::list_children,
+        crate::files::nodes::create_folder,
+        crate::files::nodes::rename_node,
+        crate::files::nodes::move_node,
+        crate::files::trash::delete_node,
+        crate::files::trash::list_trash,
+        crate::files::trash::restore_node,
+        crate::files::trash::permanently_delete_node,
+        crate::files::versions::list_versions,
+        crate::files::versions::restore_version,
+        crate::files::usage::get_usage
     ),
     components(schemas(
         ErrorBody,
@@ -60,7 +80,23 @@ use crate::auth::routes::{
         RecoverRequest,
         RotateRecoveryKeyRequest,
         SessionSummary,
-        SessionsResponse
+        SessionsResponse,
+        NodeSummary,
+        VersionSummary,
+        ChildrenResponse,
+        ListChildrenQuery,
+        CreateFolderRequest,
+        RenameNodeRequest,
+        MoveNodeRequest,
+        TrashQuery,
+        TrashResponse,
+        TrashEntryResponse,
+        RestoreNodeRequest,
+        PermanentDeleteResponse,
+        VersionQuery,
+        VersionsResponse,
+        RestoreVersionRequest,
+        UsageResponse
     ))
 )]
 pub struct ApiDoc;

@@ -20,7 +20,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::{Config, Database, Storage, metrics};
@@ -102,6 +102,42 @@ pub fn build_router_with(state: AppState, extra: Router<AppState>) -> Router {
             "/v1/auth/rotate-recovery-key",
             post(crate::auth::routes::rotate_recovery_key),
         )
+        // 文件管理（第 7 组）
+        .route(
+            "/v1/nodes/{node_id}/children",
+            get(crate::files::nodes::list_children),
+        )
+        .route("/v1/folders", post(crate::files::nodes::create_folder))
+        .route(
+            "/v1/nodes/{node_id}/rename",
+            patch(crate::files::nodes::rename_node),
+        )
+        .route(
+            "/v1/nodes/{node_id}/move",
+            patch(crate::files::nodes::move_node),
+        )
+        .route(
+            "/v1/nodes/{node_id}",
+            delete(crate::files::trash::delete_node),
+        )
+        .route("/v1/trash", get(crate::files::trash::list_trash))
+        .route(
+            "/v1/trash/{node_id}/restore",
+            post(crate::files::trash::restore_node),
+        )
+        .route(
+            "/v1/trash/{node_id}",
+            delete(crate::files::trash::permanently_delete_node),
+        )
+        .route(
+            "/v1/nodes/{node_id}/versions",
+            get(crate::files::versions::list_versions),
+        )
+        .route(
+            "/v1/nodes/{node_id}/versions/restore",
+            post(crate::files::versions::restore_version),
+        )
+        .route("/v1/me/usage", get(crate::files::usage::get_usage))
         .layer(from_fn(csrf::require_custom_header))
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_method_not_allowed);

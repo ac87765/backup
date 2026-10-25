@@ -11,6 +11,7 @@
 //! 收到取消信号后不再领取新工作，当前批次要么在统一停机期限内完成，要么被放弃
 //! （队列型任务由租约过期兜底）。
 
+pub mod content;
 pub mod deletion;
 pub mod email;
 pub mod metrics;
@@ -118,8 +119,13 @@ pub fn start(
         public_app_url,
         token.clone(),
     )));
-    // 扫描型任务：第 6 组起注册过期会话/邮件令牌清理。
-    let scan_jobs: Vec<Arc<dyn scan::ScanJob>> = vec![Arc::new(scan::ExpiredTokenCleanup)];
+    // 扫描型任务：第 6 组起注册过期会话/邮件令牌清理；第 7 组加入文件清理与配额对账。
+    let scan_jobs: Vec<Arc<dyn scan::ScanJob>> = vec![
+        Arc::new(scan::ExpiredTokenCleanup),
+        Arc::new(content::VersionRetentionCleanup),
+        Arc::new(content::TrashCleanup),
+        Arc::new(content::QuotaReconciliation),
+    ];
     drop(shutdown.spawn(scan::run_loop(database.clone(), scan_jobs, token.clone())));
     drop(shutdown.spawn(metrics::sampler_loop(database, token)));
     tracing::info!("后台任务已启动");

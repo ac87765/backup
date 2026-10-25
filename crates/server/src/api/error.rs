@@ -78,6 +78,44 @@ impl ApiError {
         Self::new(StatusCode::BAD_REQUEST, "invalid_request", "请求参数无效")
     }
 
+    /// 分页游标格式非法（只编码排序键，服务端不会用游标绕过 user_id 过滤）。
+    pub fn invalid_cursor() -> Self {
+        Self::new(StatusCode::BAD_REQUEST, "invalid_cursor", "分页游标无效")
+    }
+
+    /// 乐观锁版本号不匹配：客户端应刷新后重试。
+    pub fn conflict() -> Self {
+        Self::new(
+            StatusCode::CONFLICT,
+            "conflict",
+            "资源已被修改，请刷新后重试",
+        )
+    }
+
+    /// 同一目录内已存在相同名称令牌（服务端看不到明文名称）。
+    pub fn name_conflict() -> Self {
+        Self::new(StatusCode::CONFLICT, "name_conflict", "同名节点已存在")
+    }
+
+    /// 目标父文件夹不存在、已删除或不可作为父节点。
+    pub fn target_unavailable() -> Self {
+        Self::new(StatusCode::CONFLICT, "target_unavailable", "目标位置不可用")
+    }
+
+    /// 把文件夹移动到自身或其后代。
+    pub fn invalid_move() -> Self {
+        Self::new(StatusCode::CONFLICT, "invalid_move", "不能移动到自身或后代")
+    }
+
+    /// 对根文件夹或非法的节点类型执行了不允许的操作。
+    pub fn operation_not_allowed() -> Self {
+        Self::new(
+            StatusCode::BAD_REQUEST,
+            "operation_not_allowed",
+            "当前资源不允许该操作",
+        )
+    }
+
     /// KDF 参数缺失、算法未知或超出允许范围。
     pub fn invalid_kdf_params() -> Self {
         Self::new(
