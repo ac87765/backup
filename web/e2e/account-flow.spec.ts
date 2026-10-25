@@ -25,26 +25,67 @@ async function fillRecoveryConfirmation(page: Page): Promise<void> {
 test('注册 → 验证 → 登录 → 刷新解锁 → 改密 → 恢复重置 → 轮换恢复密钥', async ({
   page,
 }) => {
-  // Comlink 边界探针：记录主线程 → Worker 的消息，最后断言没有 32 字节 Uint8Array。
+  // Comlink 边界探针：记录 Worker → 主线程的消息，检查返回方向是否泄漏密钥。
   await page.addInitScript(() => {
-    const messages: unknown[] = []
+    const replies: unknown[] = []
     const violations: string[] = []
-    ;(window as unknown as { __workerMessages: unknown[] }).__workerMessages =
-      messages
+    ;(window as unknown as { __workerReplies: unknown[] }).__workerReplies =
+      replies
     ;(window as unknown as { __cspViolations: string[] }).__cspViolations =
       violations
     document.addEventListener('securitypolicyviolation', (event) => {
       violations.push(`${event.violatedDirective} ${event.blockedURI}`)
     })
-    // eslint-disable-next-line @typescript-eslint/unbound-method
-    const original = Worker.prototype.postMessage
-    Worker.prototype.postMessage = function postMessage(
+
+    // 同一检查函数既用于出方向消息，也用于反向自检。
+    const findKeyLeaks = (roots: unknown[]): string[] => {
+      const leaks: string[] = []
+      const visit = (value: unknown, path: string): void => {
+        if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
+          if (value.byteLength === 32) {
+            leaks.push(path)
+          }
+          return
+        }
+        if (typeof value === 'string') {
+          if (/^[0-9a-fA-F]{64}$/.test(value)) {
+            leaks.push(`${path}:hex64`)
+          }
+          return
+        }
+        if (Array.isArray(value)) {
+          value.forEach((item, index) => visit(item, `${path}[${index}]`))
+          return
+        }
+        if (typeof value === 'object' && value !== null) {
+          for (const [key, nested] of Object.entries(value)) {
+            visit(nested, `${path}.${key}`)
+          }
+        }
+      }
+      roots.forEach((root, index) => visit(root, `message[${index}]`))
+      return leaks
+    }
+    ;(window as unknown as {
+      __findKeyLeaks: (roots: unknown[]) => string[]
+    }).__findKeyLeaks = findKeyLeaks
+
+    const NativeWorker = window.Worker
+    const RecordingWorker = function (
       this: Worker,
       ...args: unknown[]
     ) {
-      messages.push(args[0])
-      Reflect.apply(original, this, args)
-    }
+      const worker = new NativeWorker(
+        ...(args as ConstructorParameters<typeof Worker>),
+      )
+      worker.addEventListener('message', (event) => {
+        replies.push(event.data)
+      })
+      return worker
+    } as unknown as typeof Worker
+    RecordingWorker.prototype = NativeWorker.prototype
+    ;(window as unknown as { Worker: typeof Worker }).Worker =
+      RecordingWorker
   })
 
   const email = `e2e-${Date.now()}-${randomUUID()}@example.com`
@@ -153,31 +194,45 @@ test('注册 → 验证 → 登录 → 刷新解锁 → 改密 → 恢复重置 
   await page.getByRole('button', { name: '确认并轮换' }).click()
   await expect(page.getByRole('status')).toContainText('恢复密钥已轮换')
 
+  const replyCount = await page.evaluate(
+    () => (window as unknown as { __workerReplies: unknown[] }).__workerReplies
+      .length,
+  )
+  expect(replyCount).toBeGreaterThan(0)
+
   const keyLeaks = await page.evaluate(() => {
-    const leaks: string[] = []
-    const visit = (value: unknown, path: string): void => {
-      if (value instanceof Uint8Array) {
-        if (value.length === 32) {
-          leaks.push(path)
-        }
-        return
-      }
-      if (Array.isArray(value)) {
-        value.forEach((item, index) => visit(item, `${path}[${index}]`))
-        return
-      }
-      if (typeof value === 'object' && value !== null) {
-        for (const [key, nested] of Object.entries(value)) {
-          visit(nested, `${path}.${key}`)
-        }
-      }
+    const probe = window as unknown as {
+      __workerReplies: unknown[]
+      __findKeyLeaks: (roots: unknown[]) => string[]
     }
-    const messages = (window as unknown as { __workerMessages: unknown[] })
-      .__workerMessages
-    messages.forEach((message, index) => visit(message, `message[${index}]`))
-    return leaks
+    return probe.__findKeyLeaks(probe.__workerReplies)
   })
   expect(keyLeaks).toEqual([])
+
+  // 反向自检：同一个检查函数必须能识别 32B Uint8Array 与 64 位 hex 字符串。
+  const fakeUint8Leaks = await page.evaluate(() => {
+    const probe = window as unknown as {
+      __findKeyLeaks: (roots: unknown[]) => string[]
+    }
+    return probe.__findKeyLeaks([{ fake: new Uint8Array(32) }])
+  })
+  expect(fakeUint8Leaks.length).toBeGreaterThan(0)
+
+  const fakeArrayBufferLeaks = await page.evaluate(() => {
+    const probe = window as unknown as {
+      __findKeyLeaks: (roots: unknown[]) => string[]
+    }
+    return probe.__findKeyLeaks([{ fake: new ArrayBuffer(32) }])
+  })
+  expect(fakeArrayBufferLeaks.length).toBeGreaterThan(0)
+
+  const fakeHexLeaks = await page.evaluate(() => {
+    const probe = window as unknown as {
+      __findKeyLeaks: (roots: unknown[]) => string[]
+    }
+    return probe.__findKeyLeaks([{ fake: 'ab'.repeat(32) }])
+  })
+  expect(fakeHexLeaks.length).toBeGreaterThan(0)
 
   const cspViolations = await page.evaluate(
     () => (window as unknown as { __cspViolations: string[] }).__cspViolations,
