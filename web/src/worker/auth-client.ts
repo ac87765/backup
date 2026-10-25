@@ -183,7 +183,12 @@ export class AuthClient implements AuthWorkerApi {
     }
 
     const wrappedMk = hexToBytes(response.wrapped_mk)
-    backend.unlockWithPassword(wrappedMk)
+    try {
+      backend.unlockWithPassword(wrappedMk)
+    } catch (error) {
+      backend.lock()
+      throw error
+    }
     this.setProfile({
       user: {
         userId: response.user_id,
