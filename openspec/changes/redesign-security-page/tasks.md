@@ -2,13 +2,13 @@
 
 ## 1. 插图组件
 
-- [ ] 1.1 首屏原理图组件（design D1.1 / D2）：内联 SVG、CSS keyframes 循环动画、`role="img"` 与完整 `aria-label`、reduced motion 静帧；组件测试覆盖 aria 与 reduced motion 下无动画 class
-- [ ] 1.2 小插图：能看到/看不到两列图标、三张局限卡片图标、两把钥匙状态图（完整/丢失）、保管清单图标；全部用 D2 令牌着色
+- [x] 1.1 首屏原理图组件（design D1.1 / D2）：内联 SVG、CSS keyframes 循环动画、`role="img"` 与完整 `aria-label`、reduced motion 静帧；组件测试覆盖 aria 与 reduced motion 下无动画 class
+- [x] 1.2 小插图：能看到/看不到两列图标、三张局限卡片图标、两把钥匙状态图（完整/丢失）、保管清单图标；全部用 D2 令牌着色
 
 ## 2. 页面重写
 
-- [ ] 2.1 按 design D1 重写 `SecurityPage.tsx`：首屏、能看到/看不到、局限卡片、三格对照、保管清单、`<details>` 完整说明；保留现有 5 个 `data-testid`
-- [ ] 2.2 区块进入视口淡入（IntersectionObserver 切 class，不支持时直接显示）；悬停上浮；reduced motion 全部关闭
+- [x] 2.1 按 design D1 重写 `SecurityPage.tsx`：首屏、能看到/看不到、局限卡片、三格对照、保管清单、`<details>` 完整说明；保留现有 5 个 `data-testid`
+- [x] 2.2 区块进入视口淡入（IntersectionObserver 切 class，不支持时直接显示）；悬停上浮；reduced motion 全部关闭
 - [ ] 2.3 文案按 design D3 控制长度；完整原文逐字迁移到“详细说明”；登录页与侧边栏入口不变；手机端（390px）布局无横向滚动
 
 ## 3. 测试

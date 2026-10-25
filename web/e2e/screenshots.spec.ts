@@ -153,6 +153,18 @@ test('桌面与手机两种视口截图', async ({ page }) => {
   await page.goto('/register')
   await capture(page, 'register-mobile')
 
+  // 安全与隐私页（桌面与手机）。
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/security')
+  await expect(
+    page.getByRole('heading', { name: '安全与隐私' }),
+  ).toBeVisible()
+  await capture(page, 'security-desktop')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.reload()
+  await expect(page.getByTestId('security-hero')).toBeVisible()
+  await capture(page, 'security-mobile')
+
   // 注册并登录（桌面视口），先截空文件夹。
   await page.setViewportSize({ width: 1440, height: 900 })
   await registerVerifyAndLogin(page, email)
