@@ -8,14 +8,24 @@
 import { wrap, type Remote } from 'comlink'
 
 import { CryptoApiError, isCryptoErrorPayload } from './crypto-api'
-import type { CryptoWorkerApi } from './types'
+import type { WorkerApi } from './types'
+
+let sharedWorker: WorkerApi | undefined
 
 /** 创建 Crypto Worker，返回类型安全的 Comlink 代理。 */
-export function createCryptoWorker(): CryptoWorkerApi {
+export function createCryptoWorker(): WorkerApi {
   const worker = new Worker(new URL('./crypto.worker.ts', import.meta.url), {
     type: 'module',
   })
-  return wrapApi(wrap<CryptoWorkerApi>(worker))
+  return wrapApi(wrap<WorkerApi>(worker))
+}
+
+/** 应用内共享的 Worker 实例（避免 React StrictMode 重复创建）。 */
+export function getCryptoWorker(): WorkerApi {
+  if (!sharedWorker) {
+    sharedWorker = createCryptoWorker()
+  }
+  return sharedWorker
 }
 
 /**
@@ -23,8 +33,8 @@ export function createCryptoWorker(): CryptoWorkerApi {
  * - 每次调用都返回 Promise；
  * - Worker 抛出的错误载荷还原为 `CryptoApiError`（带稳定 code）。
  */
-function wrapApi(remote: Remote<CryptoWorkerApi>): CryptoWorkerApi {
-  const target = remote as unknown as CryptoWorkerApi
+function wrapApi(remote: Remote<WorkerApi>): WorkerApi {
+  const target = remote as unknown as WorkerApi
 
   return new Proxy(target, {
     get(inner, property, receiver) {
@@ -42,7 +52,11 @@ function wrapApi(remote: Remote<CryptoWorkerApi>): CryptoWorkerApi {
           )
         } catch (error) {
           if (isCryptoErrorPayload(error)) {
-            throw new CryptoApiError(error.code, error.message)
+            throw new CryptoApiError(
+              error.code,
+              error.message,
+              error.retryAfter,
+            )
           }
           throw error
         }

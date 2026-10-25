@@ -11,9 +11,9 @@
 import { expose } from 'comlink'
 
 import { initCryptoWasm, WasmCryptoBackend } from './crypto-backend'
-import { createCryptoApi } from './crypto-api'
+import { WorkerApi } from './worker-api'
 
 const backend = initCryptoWasm().then(() => new WasmCryptoBackend())
-expose(createCryptoApi(backend))
+expose(new WorkerApi(backend))
 
 

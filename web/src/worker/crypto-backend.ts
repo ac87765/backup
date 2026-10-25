@@ -7,7 +7,14 @@
 import init, { KeyStore as WasmKeyStore } from '../generated/crypto-wasm/crypto_wasm.js'
 import wasmUrl from '../generated/crypto-wasm/crypto_wasm_bg.wasm?url'
 
-import type { CryptoBackend, RecoveryMaterialView, VersionMetadataView } from './types'
+import type {
+  CryptoBackend,
+  PreparedPasswordChangeView,
+  PreparedRecoveryResetView,
+  PreparedRecoveryRotationView,
+  PreparedRegistrationView,
+  VersionMetadataView,
+} from './types'
 
 let initialized: Promise<void> | undefined
 
@@ -43,13 +50,103 @@ export class WasmCryptoBackend implements CryptoBackend {
     this.store.unlock_with_recovery(recoveryKey, wrappedMkRecovery)
   }
 
-  createRecoveryKey(): RecoveryMaterialView {
-    const material = this.store.create_recovery_key()
+  validateRecoveryKey(display: string): void {
+    this.store.validate_recovery_key(display)
+  }
+
+  prepareRegistration(
+    password: string,
+    kdfParamsJson: string,
+    salt: Uint8Array,
+  ): PreparedRegistrationView {
+    const prepared = this.store.prepare_registration(password, kdfParamsJson, salt)
     return {
-      display: material.display,
-      wrappedMkRecovery: Uint8Array.from(material.wrapped_mk_recovery),
-      rkAuth: Uint8Array.from(material.rk_auth),
+      display: prepared.display,
+      wrappedMk: prepared.wrapped_mk,
+      authKey: prepared.auth_key,
+      recoveryWrappedMk: prepared.recovery_wrapped_mk,
+      recoveryAuthKey: prepared.recovery_auth_key,
+      kdfParamsJson: prepared.kdf_params_json,
+      kdfSalt: prepared.kdf_salt,
     }
+  }
+
+  preparePasswordChange(
+    oldPassword: string,
+    currentKdfParamsJson: string,
+    currentSalt: Uint8Array,
+    newPassword: string,
+  ): PreparedPasswordChangeView {
+    const prepared = this.store.prepare_password_change(
+      oldPassword,
+      currentKdfParamsJson,
+      currentSalt,
+      newPassword,
+    )
+    return {
+      oldAuthKey: prepared.old_auth_key,
+      newAuthKey: prepared.new_auth_key,
+      newKdfParamsJson: prepared.new_kdf_params_json,
+      newKdfSalt: prepared.new_kdf_salt,
+      newWrappedMk: prepared.new_wrapped_mk,
+    }
+  }
+
+  prepareRecoveryReset(
+    recoveryKey: string,
+    recoveryWrappedMk: Uint8Array,
+    newPassword: string,
+  ): PreparedRecoveryResetView {
+    const prepared = this.store.prepare_recovery_reset(
+      recoveryKey,
+      recoveryWrappedMk,
+      newPassword,
+    )
+    return {
+      recoveryAuthKey: prepared.recovery_auth_key,
+      newAuthKey: prepared.new_auth_key,
+      newKdfParamsJson: prepared.new_kdf_params_json,
+      newKdfSalt: prepared.new_kdf_salt,
+      newWrappedMk: prepared.new_wrapped_mk,
+    }
+  }
+
+  prepareRecoveryRotation(
+    currentPassword: string,
+    currentKdfParamsJson: string,
+    currentSalt: Uint8Array,
+  ): PreparedRecoveryRotationView {
+    const prepared = this.store.prepare_recovery_rotation(
+      currentPassword,
+      currentKdfParamsJson,
+      currentSalt,
+    )
+    return {
+      currentAuthKey: prepared.current_auth_key,
+      recoveryWrappedMk: prepared.recovery_wrapped_mk,
+      recoveryAuthKey: prepared.recovery_auth_key,
+      display: prepared.display,
+    }
+  }
+
+  commitRegistration(): void {
+    this.store.commit_registration()
+  }
+
+  commitPasswordChange(): void {
+    this.store.commit_password_change()
+  }
+
+  commitRecoveryReset(): void {
+    this.store.commit_recovery_reset()
+  }
+
+  commitRecoveryRotation(): void {
+    this.store.commit_recovery_rotation()
+  }
+
+  discardPending(): void {
+    this.store.discard_pending()
   }
 
   lock(): void {

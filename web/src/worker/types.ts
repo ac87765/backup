@@ -25,11 +25,66 @@ export interface WrappedMasterKey {
   wrappedMk: Uint8Array
 }
 
-/** 恢复密钥材料（仅 Worker 内部使用；`rkAuth` 不经过 Comlink）。 */
-export interface RecoveryMaterialView {
+/** 注册 prepare 结果（仅 WASM → Worker；绝不经过 Comlink）。 */
+export interface PreparedRegistrationView {
   display: string
-  wrappedMkRecovery: Uint8Array
-  rkAuth: Uint8Array
+  wrappedMk: Uint8Array
+  authKey: Uint8Array
+  recoveryWrappedMk: Uint8Array
+  recoveryAuthKey: Uint8Array
+  kdfParamsJson: string
+  kdfSalt: Uint8Array
+}
+
+/** 修改密码 prepare 结果（仅 WASM → Worker）。 */
+export interface PreparedPasswordChangeView {
+  oldAuthKey: Uint8Array
+  newAuthKey: Uint8Array
+  newKdfParamsJson: string
+  newKdfSalt: Uint8Array
+  newWrappedMk: Uint8Array
+}
+
+/** 恢复重置 prepare 结果（仅 WASM → Worker）。 */
+export interface PreparedRecoveryResetView {
+  recoveryAuthKey: Uint8Array
+  newAuthKey: Uint8Array
+  newKdfParamsJson: string
+  newKdfSalt: Uint8Array
+  newWrappedMk: Uint8Array
+}
+
+/** 轮换恢复密钥 prepare 结果（仅 WASM → Worker）。 */
+export interface PreparedRecoveryRotationView {
+  currentAuthKey: Uint8Array
+  recoveryWrappedMk: Uint8Array
+  recoveryAuthKey: Uint8Array
+  display: string
+}
+
+/** 主线程可见的当前用户；不含任何密钥或包裹材料。 */
+export interface CurrentUser {
+  userId: string
+  email: string
+  emailVerified: boolean
+}
+
+/** 会话列表项（主线程可见，不含令牌）。 */
+export interface SessionSummaryView {
+  id: string
+  createdAt: string
+  lastSeenAt: string
+  expiresAt: string
+  ip: string
+  userAgent: string | null
+  current: boolean
+}
+
+/** 认证请求的错误载荷；`retryAfter` 来自 429 的 Retry-After。 */
+export interface AuthErrorPayload {
+  code: string
+  message: string
+  retryAfter?: number
 }
 
 /**
@@ -42,7 +97,33 @@ export interface CryptoBackend {
   createMasterKey(): Uint8Array
   unlockWithPassword(wrappedMk: Uint8Array): void
   unlockWithRecovery(recoveryKey: string, wrappedMkRecovery: Uint8Array): void
-  createRecoveryKey(): RecoveryMaterialView
+  validateRecoveryKey(display: string): void
+  prepareRegistration(
+    password: string,
+    kdfParamsJson: string,
+    salt: Uint8Array,
+  ): PreparedRegistrationView
+  preparePasswordChange(
+    oldPassword: string,
+    currentKdfParamsJson: string,
+    currentSalt: Uint8Array,
+    newPassword: string,
+  ): PreparedPasswordChangeView
+  prepareRecoveryReset(
+    recoveryKey: string,
+    recoveryWrappedMk: Uint8Array,
+    newPassword: string,
+  ): PreparedRecoveryResetView
+  prepareRecoveryRotation(
+    currentPassword: string,
+    currentKdfParamsJson: string,
+    currentSalt: Uint8Array,
+  ): PreparedRecoveryRotationView
+  commitRegistration(): void
+  commitPasswordChange(): void
+  commitRecoveryReset(): void
+  commitRecoveryRotation(): void
+  discardPending(): void
   lock(): void
   isLocked(): boolean
   createNodeKey(nodeId: string): Uint8Array
@@ -146,3 +227,40 @@ export interface CryptoWorkerApi {
   ): Promise<Uint8Array>
   verifyPlaintextSize(expected: number, actual: number): Promise<void>
 }
+
+/**
+ * Comlink 暴露的认证高层 API。
+ *
+ * 所有请求在 Worker 内用同源 fetch 发出；主线程只接收用户信息、恢复密钥展示串
+ * 与稳定错误码。唯一允许跨 Comlink 的密钥类数据是 `recoveryDisplay`。
+ */
+export interface AuthWorkerApi {
+  /** 准备注册材料并返回恢复密钥展示串；此时不发送注册请求。 */
+  register(email: string, password: string): Promise<{ recoveryDisplay: string }>
+  /** 用户回填确认后提交注册；成功才 commit KeyStore。 */
+  confirmRegistration(): Promise<void>
+  /** 取消注册 prepare 并清零待提交对象。 */
+  discardRegistration(): Promise<void>
+  /** 本地校验恢复密钥（校验位/字符集），不发送 HTTP 请求。 */
+  validateRecoveryKey(display: string): Promise<void>
+  login(email: string, password: string): Promise<CurrentUser>
+  refreshSession(): Promise<CurrentUser | null>
+  unlock(password: string): Promise<void>
+  changePassword(oldPassword: string, newPassword: string): Promise<void>
+  resetWithRecovery(
+    email: string,
+    recoveryKey: string,
+    newPassword: string,
+  ): Promise<void>
+  prepareRecoveryRotation(currentPassword: string): Promise<{ recoveryDisplay: string }>
+  confirmRecoveryRotation(): Promise<void>
+  discardRecoveryRotation(): Promise<void>
+  logout(): Promise<void>
+  verifyEmail(token: string): Promise<void>
+  resendVerification(email: string): Promise<void>
+  getSessions(): Promise<SessionSummaryView[]>
+  revokeSession(sessionId: string): Promise<void>
+}
+
+/** Worker 暴露的完整 API。 */
+export type WorkerApi = CryptoWorkerApi & AuthWorkerApi

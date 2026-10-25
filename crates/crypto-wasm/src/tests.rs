@@ -516,10 +516,13 @@ fn key_store_roundtrip_through_high_level_api() {
     );
 
     // 恢复密钥：展示串可解析，且不返回恢复密钥本身。
-    let recovery = reloaded.create_recovery_key().unwrap().to_rust().unwrap();
-    assert!(recovery.display.contains('-'));
-    assert_eq!(recovery.rk_auth.len(), 32);
-    parse_recovery_key(&recovery.display).unwrap();
+    let recovery = reloaded
+        .prepare_recovery_rotation("correct horse battery staple", DEFAULT_KDF_PARAMS, &salt)
+        .unwrap();
+    assert!(recovery.display().contains('-'));
+    assert_eq!(recovery.recovery_auth_key().len(), 32);
+    parse_recovery_key(&recovery.display()).unwrap();
+    reloaded.discard_pending();
 }
 
 #[wasm_bindgen_test]
@@ -637,28 +640,180 @@ fn swapped_node_key_returns_integrity_error() {
 #[wasm_bindgen_test]
 fn wrong_recovery_key_returns_invalid_recovery_key() {
     let mut owner = unlocked_store();
-    let material = owner.create_recovery_key().unwrap().to_rust().unwrap();
+    let material = owner
+        .prepare_recovery_rotation(
+            "correct horse battery staple",
+            DEFAULT_KDF_PARAMS,
+            &[0x42u8; 16],
+        )
+        .unwrap();
+    let display = material.display();
+    let wrapped_mk_recovery = material.recovery_wrapped_mk();
 
     // 正确的恢复密钥可以解锁。
     let mut unlocked = KeyStore::new();
     unlocked
-        .unlock_with_recovery(&material.display, &material.wrapped_mk_recovery)
+        .unlock_with_recovery(&display, &wrapped_mk_recovery)
         .unwrap();
     assert!(!unlocked.is_locked());
 
     // 另一把格式合法的恢复密钥无法解包 → invalid_recovery_key。
     let mut other = unlocked_store();
-    let other_material = other.create_recovery_key().unwrap().to_rust().unwrap();
+    let other_material = other
+        .prepare_recovery_rotation(
+            "correct horse battery staple",
+            DEFAULT_KDF_PARAMS,
+            &[0x42u8; 16],
+        )
+        .unwrap();
+    let other_display = other_material.display();
     let mut store = KeyStore::new();
     let error = store
-        .unlock_with_recovery(&other_material.display, &material.wrapped_mk_recovery)
+        .unlock_with_recovery(&other_display, &wrapped_mk_recovery)
         .unwrap_err();
     assert_eq!(error_code(&error), "invalid_recovery_key");
 
     // 抄写错误（编码非法）同样映射为 invalid_recovery_key。
     let mut store = KeyStore::new();
     let error = store
-        .unlock_with_recovery("not-a-recovery-key", &material.wrapped_mk_recovery)
+        .unlock_with_recovery("not-a-recovery-key", &wrapped_mk_recovery)
+        .unwrap_err();
+    assert_eq!(error_code(&error), "invalid_recovery_key");
+
+    owner.discard_pending();
+    other.discard_pending();
+}
+
+#[wasm_bindgen_test]
+fn prepared_registration_unlocks_only_after_commit() {
+    let salt = [0x11u8; 16];
+    let mut store = KeyStore::new();
+    let prepared = store
+        .prepare_registration("registration password", DEFAULT_KDF_PARAMS, &salt)
+        .unwrap();
+    assert!(store.is_locked(), "prepare 不得修改 KeyStore 状态");
+    assert_eq!(prepared.auth_key().len(), 32);
+    assert_eq!(prepared.recovery_auth_key().len(), 32);
+    assert_eq!(
+        prepared.wrapped_mk().len(),
+        crypto_core::FRAME_OVERHEAD + crypto_core::KEY_LEN
+    );
+    parse_recovery_key(&prepared.display()).unwrap();
+
+    store.commit_registration().unwrap();
+    assert!(!store.is_locked());
+    assert!(!store.generate_node_key(NODE_ID).unwrap().is_empty());
+}
+
+#[wasm_bindgen_test]
+fn password_change_prepare_keeps_old_key_usable_until_commit() {
+    let salt = [0x42u8; 16];
+    let old_password = "correct horse battery staple";
+    let new_password = "new correct horse battery staple";
+
+    let mut store = KeyStore::new();
+    store
+        .derive_password_keys(old_password, DEFAULT_KDF_PARAMS, &salt)
+        .unwrap();
+    let old_wrapped_mk = store.create_master_key().unwrap();
+
+    // prepare 后服务端拒绝：discard 不改变旧 pwd_wrap。
+    store
+        .prepare_password_change(old_password, DEFAULT_KDF_PARAMS, &salt, new_password)
+        .unwrap();
+    assert!(!store.is_locked());
+    store.discard_pending();
+    store.lock();
+    store
+        .derive_password_keys(old_password, DEFAULT_KDF_PARAMS, &salt)
+        .unwrap();
+    store.unlock_with_password(&old_wrapped_mk).unwrap();
+
+    // 服务端成功：commit 后旧包裹材料失效，新密码材料可用。
+    let prepared = store
+        .prepare_password_change(old_password, DEFAULT_KDF_PARAMS, &salt, new_password)
+        .unwrap();
+    let new_params = prepared.new_kdf_params_json();
+    let new_salt = prepared.new_kdf_salt();
+    let new_wrapped_mk = prepared.new_wrapped_mk();
+    store.commit_password_change().unwrap();
+
+    // commit 后 KeyStore 持有新 pwd_wrap；旧 wrapped_mk 无法再用它解包。
+    let error = store.unlock_with_password(&old_wrapped_mk).unwrap_err();
+    assert_eq!(error_code(&error), "invalid_credentials");
+
+    store.lock();
+    store
+        .derive_password_keys(new_password, &new_params, &new_salt)
+        .unwrap();
+    store.unlock_with_password(&new_wrapped_mk).unwrap();
+    assert!(!store.is_locked());
+}
+
+#[wasm_bindgen_test]
+fn recovery_reset_stays_locked_and_recovers_mk_for_new_password() {
+    let salt = [0x42u8; 16];
+    let owner_password = "correct horse battery staple";
+    let new_password = "reset horse battery staple";
+    let mut owner = KeyStore::new();
+    owner
+        .derive_password_keys(owner_password, DEFAULT_KDF_PARAMS, &salt)
+        .unwrap();
+    owner.create_master_key().unwrap();
+    let rotation = owner
+        .prepare_recovery_rotation(owner_password, DEFAULT_KDF_PARAMS, &salt)
+        .unwrap();
+    let recovery_display = rotation.display();
+    let recovery_wrapped_mk = rotation.recovery_wrapped_mk();
+    owner.discard_pending();
+
+    let mut reset = KeyStore::new();
+    let prepared = reset
+        .prepare_recovery_reset(&recovery_display, &recovery_wrapped_mk, new_password)
+        .unwrap();
+    assert!(reset.is_locked(), "恢复重置 prepare 不得进入解锁状态");
+    let new_params = prepared.new_kdf_params_json();
+    let new_salt = prepared.new_kdf_salt();
+    let new_wrapped_mk = prepared.new_wrapped_mk();
+    reset.commit_recovery_reset().unwrap();
+    assert!(reset.is_locked(), "commit 后仍需用新密码重新登录");
+
+    let mut login = KeyStore::new();
+    login
+        .derive_password_keys(new_password, &new_params, &new_salt)
+        .unwrap();
+    login.unlock_with_password(&new_wrapped_mk).unwrap();
+    assert!(!login.is_locked());
+}
+
+#[wasm_bindgen_test]
+fn lock_and_discard_clear_pending_objects() {
+    let salt = [0x11u8; 16];
+    let mut store = KeyStore::new();
+    store
+        .prepare_registration("registration password", DEFAULT_KDF_PARAMS, &salt)
+        .unwrap();
+    store.lock();
+
+    let error = store.commit_registration().unwrap_err();
+    assert_eq!(error_code(&error), "pending_missing");
+    let error = store.create_master_key().unwrap_err();
+    assert_eq!(error_code(&error), "not_initialized");
+
+    // 新的 prepare 会替换旧对象；discard 后再 commit 也应为 pending_missing。
+    store
+        .prepare_registration("registration password", DEFAULT_KDF_PARAMS, &salt)
+        .unwrap();
+    store.discard_pending();
+    let error = store.commit_registration().unwrap_err();
+    assert_eq!(error_code(&error), "pending_missing");
+}
+
+#[wasm_bindgen_test]
+fn recovery_key_validation_does_not_require_unlock() {
+    let store = KeyStore::new();
+    let error = store
+        .validate_recovery_key("not-a-recovery-key")
         .unwrap_err();
     assert_eq!(error_code(&error), "invalid_recovery_key");
 }

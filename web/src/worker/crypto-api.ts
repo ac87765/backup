@@ -21,6 +21,7 @@ import type {
 export interface CryptoErrorPayload {
   code: string
   message: string
+  retryAfter?: number
 }
 
 /** 判断一个值是否为 Worker 抛出的错误载荷。 */
@@ -41,10 +42,13 @@ export function isCryptoErrorPayload(value: unknown): value is CryptoErrorPayloa
 export class CryptoApiError extends Error {
   /** 稳定错误码，例如 `locked`、`invalid_credentials`。 */
   readonly code: string
+  /** 429 响应携带的重试等待秒数。 */
+  readonly retryAfter?: number
 
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, retryAfter?: number) {
     super(message)
     this.code = code
+    this.retryAfter = retryAfter
     this.name = 'CryptoApiError'
   }
 }
@@ -53,7 +57,11 @@ function toErrorPayload(error: unknown): CryptoErrorPayload {
   if (isCryptoErrorPayload(error)) {
     return error
   }
-  const candidate = error as { code?: unknown; message?: unknown } | null
+  const candidate = error as {
+    code?: unknown
+    message?: unknown
+    retryAfter?: unknown
+  } | null
   return {
     code:
       candidate && typeof candidate.code === 'string'
@@ -63,6 +71,9 @@ function toErrorPayload(error: unknown): CryptoErrorPayload {
       candidate && typeof candidate.message === 'string'
         ? candidate.message
         : '加密操作失败',
+    ...(candidate && typeof candidate.retryAfter === 'number'
+      ? { retryAfter: candidate.retryAfter }
+      : {}),
   }
 }
 
