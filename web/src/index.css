@@ -203,6 +203,10 @@
     transition-duration: var(--duration-slow);
   }
 
+  .motion-ease {
+    transition-timing-function: var(--ease-out);
+  }
+
   .animate-menu-in {
     animation: ui-pop-in var(--duration-fast) var(--ease-out) both;
     transform-origin: top;
@@ -295,6 +299,36 @@
     );
     animation: ui-shimmer 1.4s linear infinite;
   }
+
+  /* 区块进入视口时的一次性淡入上移；reduced motion 下不挂这个 class。 */
+  .motion-reveal {
+    transition-property: opacity, transform, translate;
+    transition-duration: var(--duration-base);
+    transition-timing-function: var(--ease-out);
+  }
+}
+
+/* 原生 details 的高度过渡；不支持时退化为直接展开，不影响可读性。 */
+@supports (interpolate-size: allow-keywords) {
+  .security-details {
+    interpolate-size: allow-keywords;
+  }
+
+  .security-details::details-content {
+    block-size: 0;
+    overflow: hidden;
+    transition:
+      block-size var(--duration-base) var(--ease-out),
+      content-visibility var(--duration-base) allow-discrete;
+  }
+
+  .security-details[open]::details-content {
+    block-size: auto;
+  }
+}
+
+.security-details[open] .security-details-body {
+  animation: ui-fade-in var(--duration-base) var(--ease-out) both;
 }
 
 @media (prefers-reduced-motion: reduce) {

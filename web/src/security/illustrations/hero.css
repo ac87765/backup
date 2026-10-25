@@ -1,0 +1,128 @@
+/*
+ * 安全页首屏原理图（design D1.1 / D2）。
+ * 只用 CSS keyframes；6 秒一轮，只改 opacity / transform / stroke-dashoffset。
+ */
+.security-hero :where(rect, path, circle, line, ellipse) {
+  vector-effect: non-scaling-stroke;
+}
+
+.security-hero .hero-file,
+.security-hero .hero-lock,
+.security-hero .hero-travel,
+.security-hero .hero-pile-new {
+  opacity: 0;
+}
+
+.security-hero .hero-file,
+.security-hero .hero-lock {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.security-hero[data-motion='static'] .hero-pile-new {
+  opacity: 1;
+}
+
+.security-hero[data-motion='animated'] .hero-file {
+  animation: security-hero-file-cycle 6s var(--ease-out) infinite;
+}
+
+.security-hero[data-motion='animated'] .hero-lock {
+  animation: security-hero-lock-cycle 6s var(--ease-out) infinite;
+}
+
+.security-hero[data-motion='animated'] .hero-travel {
+  animation: security-hero-travel-cycle 6s var(--ease-out) infinite;
+}
+
+.security-hero[data-motion='animated'] .hero-pile-new {
+  animation: security-hero-pile-cycle 6s var(--ease-out) infinite;
+}
+
+.security-hero[data-motion='animated'] .hero-dash {
+  animation: security-hero-dash-cycle 6s linear infinite;
+}
+
+@keyframes security-hero-file-cycle {
+  0%,
+  4% {
+    opacity: 0;
+    transform: translate(-10px, 8px) scale(0.94);
+  }
+  10%,
+  20% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  25%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes security-hero-lock-cycle {
+  0%,
+  18% {
+    opacity: 0;
+    transform: scale(0.6) rotate(-18deg);
+  }
+  24%,
+  32% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+  36%,
+  100% {
+    opacity: 0;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes security-hero-travel-cycle {
+  0%,
+  30% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  34%,
+  52% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  55% {
+    opacity: 1;
+    transform: translateX(380px);
+  }
+  58%,
+  100% {
+    opacity: 0;
+    transform: translateX(380px);
+  }
+}
+
+@keyframes security-hero-pile-cycle {
+  0%,
+  55% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  58% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  64%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes security-hero-dash-cycle {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -48;
+  }
+}
