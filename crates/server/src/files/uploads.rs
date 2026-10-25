@@ -851,6 +851,11 @@ pub async fn presign_chunks(
     if request.indices.is_empty() || request.indices.len() > MAX_BATCH_CHUNKS {
         return Err(ApiError::invalid_request());
     }
+    // 同一块在一次批量 presign 中出现两次会让前一个 URL 立即失效。
+    let mut seen = std::collections::HashSet::with_capacity(request.indices.len());
+    if !request.indices.iter().all(|idx| seen.insert(*idx)) {
+        return Err(ApiError::invalid_request());
+    }
 
     // 先确认会话归属与 open/未过期；逐块错误在 items 中返回。
     let row = load_open_session(&state, session.user_id, session_id).await?;

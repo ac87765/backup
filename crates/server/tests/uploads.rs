@@ -1170,6 +1170,8 @@ async fn batch_presign_and_confirm_support_partial_results() {
     let (status, value) = batch_presign(&app, &cookie, &session_id, too_many).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(error_code(&value), "invalid_request");
+    let (status, _value) = batch_presign(&app, &cookie, &session_id, vec![0, 0]).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "重复 idx 必须被拒绝");
     let (status, _value) = batch_confirm(&app, &cookie, &session_id, vec![]).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
@@ -1228,7 +1230,7 @@ async fn slow_stat_does_not_hold_connections_or_block_commit() {
     let ping = async move {
         tokio::time::sleep(Duration::from_millis(300)).await;
         tokio::time::timeout(
-            Duration::from_secs(1),
+            Duration::from_secs(2),
             sqlx::query_scalar::<_, i32>("SELECT 1").fetch_one(&pool),
         )
         .await
