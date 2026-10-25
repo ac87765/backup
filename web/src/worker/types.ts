@@ -20,11 +20,6 @@ export interface VersionMetadataView {
   mime: string
 }
 
-/** 注册/首次解锁时返回的包裹后的主密钥（密文，允许跨线程）。 */
-export interface WrappedMasterKey {
-  wrappedMk: Uint8Array
-}
-
 /** 注册 prepare 结果（仅 WASM → Worker；绝不经过 Comlink）。 */
 export interface PreparedRegistrationView {
   display: string
@@ -94,7 +89,6 @@ export interface AuthErrorPayload {
  */
 export interface CryptoBackend {
   derivePasswordKeys(password: string, kdfParamsJson: string, salt: Uint8Array): Uint8Array
-  createMasterKey(): Uint8Array
   unlockWithPassword(wrappedMk: Uint8Array): void
   unlockWithRecovery(recoveryKey: string, wrappedMkRecovery: Uint8Array): void
   validateRecoveryKey(display: string): void
@@ -171,19 +165,6 @@ export interface CryptoBackend {
  * 约定：**任何方法的入参与返回值都不包含密钥字节**；密钥只存在于 Worker 内的 WASM 线性内存。
  */
 export interface CryptoWorkerApi {
-  /** 派生密码密钥并生成新的 MK；只返回包裹后的 MK（密文）。 */
-  createMasterKey(
-    password: string,
-    kdfParamsJson: string,
-    salt: Uint8Array,
-  ): Promise<WrappedMasterKey>
-  /** 用密码解锁（派生 + 解包 MK）。 */
-  unlock(
-    password: string,
-    kdfParamsJson: string,
-    salt: Uint8Array,
-    wrappedMk: Uint8Array,
-  ): Promise<void>
   /** 清零并释放 WASM 内的所有密钥。 */
   lock(): Promise<void>
   isLocked(): Promise<boolean>

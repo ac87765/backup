@@ -14,7 +14,6 @@ import type {
   CryptoBackend,
   CryptoWorkerApi,
   VersionMetadataView,
-  WrappedMasterKey,
 } from './types'
 
 /** 跨 Comlink 传输的错误载荷。 */
@@ -95,29 +94,6 @@ export class CryptoApi implements CryptoWorkerApi {
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw toErrorPayload(error)
     }
-  }
-
-  createMasterKey(
-    password: string,
-    kdfParamsJson: string,
-    salt: Uint8Array,
-  ): Promise<WrappedMasterKey> {
-    return this.run((backend) => {
-      backend.derivePasswordKeys(password, kdfParamsJson, salt)
-      return { wrappedMk: backend.createMasterKey() }
-    })
-  }
-
-  unlock(
-    password: string,
-    kdfParamsJson: string,
-    salt: Uint8Array,
-    wrappedMk: Uint8Array,
-  ): Promise<void> {
-    return this.run((backend) => {
-      backend.derivePasswordKeys(password, kdfParamsJson, salt)
-      backend.unlockWithPassword(wrappedMk)
-    })
   }
 
   lock(): Promise<void> {

@@ -38,10 +38,6 @@ export class WasmCryptoBackend implements CryptoBackend {
     return this.store.derive_password_keys(password, kdfParamsJson, salt)
   }
 
-  createMasterKey(): Uint8Array {
-    return this.store.create_master_key()
-  }
-
   unlockWithPassword(wrappedMk: Uint8Array): void {
     this.store.unlock_with_password(wrappedMk)
   }

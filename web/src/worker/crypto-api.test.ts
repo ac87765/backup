@@ -22,16 +22,13 @@ const PARENT_ID = '550e8400-e29b-41d4-a716-44665544000a'
 const VERSION_ID = '6ba7b810-9dad-41d1-80b4-00c04fd430c8'
 const CONTENT_ID = '6ba7b811-9dad-41d1-80b4-00c04fd430c8'
 
-function makeApi(): CryptoApi {
+/** 用注册 prepare/commit 进入解锁状态（旧 createMasterKey 入口已删除）。 */
+function unlockedApi(): CryptoApi {
   ensureWasmForTests()
-  return new CryptoApi(new WasmCryptoBackend())
-}
-
-async function unlockedApi(): Promise<CryptoApi> {
-  const api = makeApi()
-  await api.createMasterKey(PASSWORD, KDF_PARAMS, SALT)
-  await api.createNodeKey(NODE_ID)
-  return api
+  const backend = new WasmCryptoBackend()
+  backend.prepareRegistration(PASSWORD, KDF_PARAMS, SALT)
+  backend.commitRegistration()
+  return new CryptoApi(backend)
 }
 
 /** 校验一个值是“帧格式密文”：0x01 版本 + 明文长度 + 41 字节开销。 */
@@ -80,8 +77,6 @@ function assertNoKeyMaterial(value: unknown): void {
  * `Record<keyof CryptoWorkerApi, true>` 让 TypeScript 在新增 API 方法而忘记测试时直接报错。
  */
 const METHOD_MANIFEST: Record<keyof CryptoWorkerApi, true> = {
-  createMasterKey: true,
-  unlock: true,
   lock: true,
   isLocked: true,
   createNodeKey: true,
@@ -106,25 +101,11 @@ describe('Crypto Worker API 契约', () => {
   })
 
   it('每个导出方法都只返回密文/明文/令牌/布尔值', async () => {
-    const api = makeApi()
-
-    // createMasterKey：返回包裹后的 MK（密文），不是密钥本身。
-    const { wrappedMk } = await api.createMasterKey(PASSWORD, KDF_PARAMS, SALT)
-    expectCiphertext(wrappedMk, 32)
-    assertNoKeyMaterial({ wrappedMk })
+    const api = unlockedApi()
 
     // isLocked：布尔值。
     expect(await api.isLocked()).toBe(false)
     assertNoKeyMaterial(await api.isLocked())
-
-    // lock：无返回值。
-    await expect(api.lock()).resolves.toBeUndefined()
-    expect(await api.isLocked()).toBe(true)
-
-    // unlock：无返回值。
-    await expect(
-      api.unlock(PASSWORD, KDF_PARAMS, SALT, wrappedMk),
-    ).resolves.toBeUndefined()
 
     // createNodeKey：返回包裹后的节点密钥（密文）。
     const wrappedNodeKey = await api.createNodeKey(NODE_ID)
@@ -209,11 +190,14 @@ describe('Crypto Worker API 契约', () => {
     await expect(api.verifyPlaintextSize(3, 2)).rejects.toMatchObject({
       code: 'plaintext_size_mismatch',
     })
+
+    // lock：无返回值，之后 isLocked 为 true。
+    await expect(api.lock()).resolves.toBeUndefined()
+    expect(await api.isLocked()).toBe(true)
   })
 
   it('认证失败按操作区分错误码', async () => {
-    const api = makeApi()
-    const { wrappedMk } = await api.createMasterKey(PASSWORD, KDF_PARAMS, SALT)
+    const api = unlockedApi()
     await api.createNodeKey(NODE_ID)
 
     // 篡改块 → integrity_error（不能伪装成凭据错误）。
@@ -245,17 +229,10 @@ describe('Crypto Worker API 契约', () => {
     await expect(
       api.loadNodeKey(OTHER_NODE_ID, wrappedNodeKey),
     ).rejects.toMatchObject({ code: 'integrity_error' })
-
-    // 密码错误仍然只返回 invalid_credentials。
-    await api.lock()
-    await expect(
-      api.unlock('wrong password', KDF_PARAMS, SALT, wrappedMk),
-    ).rejects.toMatchObject({ code: 'invalid_credentials' })
   })
 
   it('lock 之后需要密钥的调用返回 locked', async () => {
-    const api = makeApi()
-    const { wrappedMk } = await api.createMasterKey(PASSWORD, KDF_PARAMS, SALT)
+    const api = unlockedApi()
     await api.lock()
 
     await expect(api.createNodeKey(NODE_ID)).rejects.toMatchObject({
@@ -268,10 +245,12 @@ describe('Crypto Worker API 契约', () => {
       api.encryptChunk(NODE_ID, CONTENT_ID, 0, 1, true, new Uint8Array([1])),
     ).rejects.toMatchObject({ code: 'locked' })
 
-    // 重新解锁后恢复可用。
-    await api.unlock(PASSWORD, KDF_PARAMS, SALT, wrappedMk)
-    expect(await api.isLocked()).toBe(false)
-    await expect(api.createNodeKey(NODE_ID)).resolves.toBeInstanceOf(Uint8Array)
+    // 新的 Worker/KeyStore 重新注册后可恢复可用。
+    const fresh = unlockedApi()
+    expect(await fresh.isLocked()).toBe(false)
+    await expect(fresh.createNodeKey(NODE_ID)).resolves.toBeInstanceOf(
+      Uint8Array,
+    )
   })
 
   it('不写入 localStorage、sessionStorage、IndexedDB 或 Cookie', async () => {
@@ -294,7 +273,8 @@ describe('Crypto Worker API 契约', () => {
 
     try {
       // 解锁、加解密、加锁全过程都不应持久化任何东西。
-      const api = await unlockedApi()
+      const api = unlockedApi()
+      await api.createNodeKey(NODE_ID)
       const plaintext = new TextEncoder().encode('persist me not')
       const ciphertext = await api.encryptChunk(
         NODE_ID,
