@@ -68,6 +68,9 @@ export function HomePage() {
           <Link className="underline" to="/rotate-recovery-key">
             轮换恢复密钥
           </Link>
+          <Link className="underline" to="/security">
+            安全与隐私
+          </Link>
         </nav>
         <button
           type="button"

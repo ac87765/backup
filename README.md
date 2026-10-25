@@ -3,7 +3,7 @@
 浏览器内完成加密与解密的个人文件备份服务：文件以密文形式存放在阿里云 OSS，
 服务端只保存账号、树结构与配额等元数据，看不到文件名、文件内容或任何密钥。
 
-当前仓库处于 **第 4 组：服务端基础设施**。密码学核心、HTTP API、上传/下载管线等按
+当前仓库处于 **第 9 组：部署与端到端验证**。密码学核心、HTTP API、上传/下载管线等按
 `openspec/changes/bootstrap-e2ee-backup-mvp/tasks.md` 的分组逐步实现。
 
 ## 设计与契约
@@ -40,7 +40,7 @@ crates/crypto-core/     # 纯 Rust 加密与格式，无 IO；测试向量在 te
 crates/crypto-wasm/     # wasm-bindgen 绑定，供 Web Worker 加载
 crates/server/          # Axum 服务（第 4 组起实现）
 web/                    # Vite + React + TypeScript 前端
-deploy/                 # docker-compose.dev.yml、MinIO 初始化脚本、后续的 Dockerfile 与 OSS 配置
+deploy/                 # Dockerfile 构建上下文、dev/容器化 compose、OSS 配置与日志扫描
 openspec/               # 行为契约与任务（不要修改 spec/design）
 ```
 
@@ -185,8 +185,9 @@ npm run generate:api   # 需要 Rust；等价于 cargo run -p server -- openapi 
 wasm-pack build crates/crypto-wasm --target web --release --no-opt
 ```
 
-`--no-opt` 跳过 binaryen（`wasm-opt`）下载，用于本地与 CI 的功能验证；
-带 `wasm-opt` 的发布构建在镜像构建阶段执行（第 9 组）。产物在
+`--no-opt` 跳过 binaryen（`wasm-opt`）下载。本地、CI 与 `Dockerfile` 的镜像构建
+使用同一组 wasm-pack 参数（版本固定为 0.15.0），保证产物一致、构建可复现；
+需要进一步压缩体积时可单独增加带 `wasm-opt` 的发布步骤。产物在
 `crates/crypto-wasm/pkg/`，已被 `.gitignore` 忽略。
 
 浏览器内测试（需要本机 Chrome；ChromeDriver 与 Chrome 大版本必须一致，
@@ -196,7 +197,7 @@ wasm-pack build crates/crypto-wasm --target web --release --no-opt
 wasm-pack test --headless --chrome --release crates/crypto-wasm
 ```
 
-### 5. 端到端测试（CSP）
+### 5. 端到端测试
 
 ```bash
 cd web
@@ -204,9 +205,52 @@ npx playwright install chromium   # 首次
 npm run test:e2e
 ```
 
-Playwright 会以 `VITE_SELFTEST=1` 构建生产产物，并用 `vite preview` 加
-`script-src 'self' 'wasm-unsafe-eval'` 的 CSP 响应头，然后验证一次完整的
-Worker 加解密往返与锁定错误码。
+Playwright 会构建生产前端，并用真实 `server` 二进制托管 `web/dist` 与 API；
+PostgreSQL/MinIO 由 `deploy/docker-compose.dev.yml` 提供。邮件使用 file 模式写入
+`web/e2e-tmp/mail`，测试从 `.eml` 解码一次性令牌。
+
+容器化全链路验收（9.5）使用 9.1 的镜像，见下方“Docker 镜像与容器化验收”。
+
+### 6. Docker 镜像与容器化验收
+
+```bash
+# 只构建（不推送）；基础镜像按 digest 固定
+docker build -t backup-server:local .
+
+# 容器化全链路：PostgreSQL + MinIO + 镜像内 server（先 migrate 再 serve）
+docker compose -f deploy/docker-compose.e2e.yml up -d --build
+curl -fsS http://127.0.0.1:8080/readyz
+curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="root">'
+
+# Playwright 完整用户旅程（注册 → 验证 → 登录 → 文件夹 → 上传下载 → 版本 → 回收站 → 改密 → 恢复密钥重置）
+cd web
+E2E_BASE_URL=http://127.0.0.1:8080 \
+E2E_MAIL_CONTAINER_SERVICE=server \
+E2E_COMPOSE_FILE=../deploy/docker-compose.e2e.yml \
+E2E_SENSITIVE_VALUES=./e2e-tmp/container-sensitive.json \
+  npx playwright test --config playwright.container.config.ts
+cd ..
+
+# 收集 server 容器全部日志并扫描敏感信息（不打印匹配值）
+mkdir -p deploy/e2e-out
+docker compose -f deploy/docker-compose.e2e.yml logs --no-color server > deploy/e2e-out/server.log
+node deploy/scan-logs.mjs \
+  --logs deploy/e2e-out/server.log \
+  --manifest web/e2e-tmp/container-sensitive.json
+
+docker compose -f deploy/docker-compose.e2e.yml down -v
+```
+
+生产 OSS / RAM / CORS / SSE / 环境变量与上线 runbook 见
+[`deploy/oss/README.md`](deploy/oss/README.md)。真实 OSS 冒烟测试默认 `#[ignore]`，
+需要用户本人提供测试 bucket 与 AccessKey：
+
+```bash
+SQLX_OFFLINE=true cargo test -p server --test oss_smoke -- --ignored --nocapture
+```
+
+凭据缺失时该测试会明确打印“跳过”原因并成功结束；GitHub Actions 夜间 workflow
+`.github/workflows/oss-smoke.yml` 在 Secrets 未配置时同样以“跳过”结束。
 
 ## 检查命令
 
@@ -239,7 +283,7 @@ openspec validate bootstrap-e2ee-backup-mvp --strict
 
 ## CI
 
-[.github/workflows/ci.yml](.github/workflows/ci.yml) 包含五个并行任务：
+[.github/workflows/ci.yml](.github/workflows/ci.yml) 包含以下任务：
 
 - `Rust`：fmt、clippy（`-D warnings`）、`cargo sqlx prepare --check`（离线查询缓存）、
   test（testcontainers 启动真实 PostgreSQL/MinIO）、符号泄漏检查、cargo deny、
@@ -247,10 +291,16 @@ openspec validate bootstrap-e2ee-backup-mvp --strict
   `openapi.json`，用 artifact 传给后续 job
 - `Web`：下载 WASM 与 OpenAPI artifact（不安装 Rust/wasm-pack），typecheck、lint、
   test、build，并用 artifact 规范重新生成 OpenAPI 类型后检查无漂移
-- `E2E`：下载 WASM artifact，Playwright 在生产构建 + 严格 CSP 下跑 WASM 冒烟用例
+- `E2E`：下载 WASM artifact，Playwright 在生产构建 + 严格 CSP 下跑真实后端用例
+- `Docker image`：只构建 9.1 多阶段镜像，不推送，使用 BuildKit GHA 缓存
+- `Container E2E`：复用镜像缓存，用 `deploy/docker-compose.e2e.yml` 跑完整用户旅程，
+  收集 server 容器日志并执行 `deploy/scan-logs.mjs` 敏感信息扫描
 - `OpenSpec`：固定 CLI 版本执行 `validate --strict`
 - `Dev stack`：实际启动 `deploy/docker-compose.dev.yml`，等待 PostgreSQL/MinIO 健康，
   并执行 `minio-init` 验证 bucket 与 CORS 配置
+
+另有夜间 workflow `.github/workflows/oss-smoke.yml`：Secrets 未配置时跳过，
+配置后对真实 OSS 测试 bucket 运行预签名上传/下载/删除冒烟测试。
 
 ## 环境变量（dev compose 可覆盖）
 
@@ -272,9 +322,10 @@ dev 服务全部有默认值，通常不需要设置；需要覆盖时在仓库�
   Bitnami 的归档镜像 `bitnamilegacy/minio` / `bitnamilegacy/minio-client`。
   它们只用于本地开发，不承载真实数据；生产使用阿里云 OSS。可用 `MINIO_IMAGE`、
   `MINIO_CLIENT_IMAGE` 切换到内部镜像仓库。
-- Web 版 E2EE 依赖服务端下发的 JS 未被篡改（这是 Web 平台的固有限制），
-  隐私说明页面在第 9 组实现。
-- 没有 Docker 的环境无法运行 dev compose；CI 的 `Dev stack` 任务会做实际验证。
+- Web 版 E2EE 依赖服务端下发的 JS 未被篡改（这是 Web 平台的固有限制）；隐私说明页面
+  已实现于 `/security`。
+- 没有 Docker 的环境无法运行 dev compose 或容器化全链路验收；CI 的 `Dev stack` 与
+  `Container E2E` 任务会做实际验证。
 
 ## 提交规范
 

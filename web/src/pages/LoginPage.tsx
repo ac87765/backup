@@ -101,6 +101,11 @@ export function LoginPage() {
           忘记密码 / 恢复密钥重置
         </Link>
       </div>
+      <p className="mt-3 text-sm text-slate-600">
+        <Link className="underline" to="/security">
+          了解端对端加密与服务端可见信息
+        </Link>
+      </p>
     </PageShell>
   )
 }

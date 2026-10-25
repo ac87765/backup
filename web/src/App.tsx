@@ -18,6 +18,7 @@ import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ResetPage } from './pages/ResetPage'
 import { RotateRecoveryPage } from './pages/RotateRecoveryPage'
+import { SecurityPage } from './pages/SecurityPage'
 import { SessionsPage } from './pages/SessionsPage'
 import { UnlockPage } from './pages/UnlockPage'
 import { VerifyEmailPage } from './pages/VerifyEmailPage'
@@ -96,6 +97,7 @@ function AppRoutes() {
         }
       />
       <Route path="/reset" element={<ResetPage />} />
+      <Route path="/security" element={<SecurityPage />} />
       <Route path="/unlock" element={<UnlockPage />} />
       <Route
         path="/"
