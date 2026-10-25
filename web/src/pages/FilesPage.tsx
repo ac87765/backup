@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/context'
 import { errorCode, errorMessage } from '../auth/errors'
 import { FormError, FormSuccess } from '../components/PageShell'
+import { saveBlob, selectDownloadTarget } from '../files/download-target'
 import { FolderPicker } from '../files/FolderPicker'
+import { TransferQueue, type TransferItemView } from '../files/TransferQueue'
 import { VirtualList } from '../files/VirtualList'
 import {
   formatBytes,
@@ -15,6 +17,7 @@ import {
 import { validateName } from '../files/name-validation'
 import type {
   FileNodeView,
+  TransferProgressView,
   TrashNodeView,
   UsageView,
   VersionView,
@@ -67,6 +70,12 @@ export function FilesPage() {
   const [versions, setVersions] = useState<VersionView[]>([])
   const [versionsError, setVersionsError] = useState<string | null>(null)
 
+  const [transfers, setTransfers] = useState<TransferItemView[]>([])
+  const uploadInputRef = useRef<HTMLInputElement>(null)
+  const versionInputRef = useRef<HTMLInputElement>(null)
+  const versionTargetRef = useRef<FileNodeView | null>(null)
+  const pendingUploadsLoaded = useRef(false)
+
   const current = path[path.length - 1]
   const currentId = current?.id ?? null
 
@@ -74,6 +83,406 @@ export function FilesPage() {
     setLoading(true)
     setReloadToken((value) => value + 1)
   }, [])
+
+  const patchTransfer = useCallback(
+    (localId: string, patch: Partial<TransferItemView>) => {
+      setTransfers((previous) =>
+        previous.map((item) =>
+          item.localId === localId ? { ...item, ...patch } : item,
+        ),
+      )
+    },
+    [],
+  )
+
+  const onTransferProgress = useCallback(
+    (localId: string, progress: TransferProgressView) => {
+      setTransfers((previous) =>
+        previous.map((item) =>
+          item.localId === localId
+            ? {
+                ...item,
+                status: progress.status,
+                completedChunks: progress.completedChunks,
+                totalChunks: progress.totalChunks,
+                completedBytes: progress.completedBytes,
+                totalBytes: progress.totalBytes,
+                sessionId:
+                  item.direction === 'upload'
+                    ? progress.transferId
+                    : item.sessionId,
+                downloadId:
+                  item.direction === 'download'
+                    ? progress.transferId
+                    : item.downloadId,
+                errorCode: progress.errorCode,
+                errorMessage: progress.errorMessage,
+              }
+            : item,
+        ),
+      )
+    },
+    [],
+  )
+
+  const startUpload = useCallback(
+    async (file: File, parentId: string, versionNodeId?: string) => {
+      if (!api) {
+        return
+      }
+      const localId = crypto.randomUUID()
+      const item: TransferItemView = {
+        localId,
+        direction: 'upload',
+        fileName: file.name,
+        status: 'pending',
+        completedChunks: 0,
+        totalChunks: 0,
+        completedBytes: 0,
+        totalBytes: file.size,
+        file,
+        parentId,
+        ...(versionNodeId ? { nodeId: versionNodeId } : {}),
+      }
+      setTransfers((previous) => [...previous, item])
+      try {
+        const progress = (event: TransferProgressView) =>
+          onTransferProgress(localId, event)
+        if (versionNodeId) {
+          await api.uploadNewVersion(versionNodeId, file, progress)
+        } else {
+          await api.uploadFile(parentId, file, progress)
+        }
+        patchTransfer(localId, {
+          status: 'completed',
+          completedBytes: file.size,
+          totalBytes: file.size,
+          file: undefined,
+        })
+        setNotice(`“${file.name}”上传完成`)
+        refresh()
+      } catch (caught) {
+        const code = errorCode(caught) ?? undefined
+        patchTransfer(localId, {
+          status: code === 'cancelled' ? 'cancelled' : 'failed',
+          errorCode: code,
+          errorMessage: errorMessage(caught),
+        })
+      }
+    },
+    [api, onTransferProgress, patchTransfer, refresh],
+  )
+
+  const startDownload = useCallback(
+    async (
+      nodeId: string,
+      versionId: string,
+      fileName: string,
+      mime: string,
+      size: number,
+    ) => {
+      if (!api) {
+        return
+      }
+      const localId = crypto.randomUUID()
+      const item: TransferItemView = {
+        localId,
+        direction: 'download',
+        fileName,
+        status: 'pending',
+        completedChunks: 0,
+        totalChunks: 0,
+        completedBytes: 0,
+        totalBytes: size,
+        nodeId,
+        versionId,
+        mime,
+        size,
+      }
+      setTransfers((previous) => [...previous, item])
+      let cleanup: () => void = () => undefined
+      try {
+        const selection = await selectDownloadTarget(fileName, mime, size)
+        cleanup = selection.cleanup
+        const downloadId =
+          selection.target.kind === 'service-worker'
+            ? selection.target.downloadId
+            : crypto.randomUUID()
+        patchTransfer(localId, { downloadId })
+        const result = await api.downloadVersion(
+          nodeId,
+          versionId,
+          downloadId,
+          fileName,
+          selection.target,
+          (event) => onTransferProgress(localId, event),
+        )
+        if (result.blob) {
+          saveBlob(result.blob, fileName)
+        }
+        patchTransfer(localId, {
+          status: 'completed',
+          completedBytes: size,
+          totalBytes: size,
+        })
+        setNotice(`“${fileName}”下载完成`)
+      } catch (caught) {
+        const code =
+          errorCode(caught) ??
+          (caught instanceof DOMException && caught.name === 'AbortError'
+            ? 'cancelled'
+            : undefined)
+        patchTransfer(localId, {
+          status: code === 'cancelled' ? 'cancelled' : 'failed',
+          errorCode: code,
+          errorMessage: errorMessage(caught),
+        })
+      } finally {
+        cleanup()
+      }
+    },
+    [api, onTransferProgress, patchTransfer],
+  )
+
+  const pauseTransfer = useCallback(
+    async (item: TransferItemView) => {
+      if (!api) {
+        return
+      }
+      try {
+        if (item.direction === 'upload' && item.sessionId) {
+          await api.pauseUpload(item.sessionId)
+        } else if (item.direction === 'download' && item.downloadId) {
+          await api.pauseDownload(item.downloadId)
+        }
+        patchTransfer(item.localId, { status: 'paused' })
+      } catch (caught) {
+        patchTransfer(item.localId, { errorMessage: errorMessage(caught) })
+      }
+    },
+    [api, patchTransfer],
+  )
+
+  const resumeTransfer = useCallback(
+    async (item: TransferItemView) => {
+      if (!api) {
+        return
+      }
+      try {
+        if (item.direction === 'upload' && item.sessionId) {
+          await api.resumeUpload(item.sessionId)
+        } else if (item.direction === 'download' && item.downloadId) {
+          await api.resumeDownload(item.downloadId)
+        }
+        patchTransfer(item.localId, {
+          status: item.direction === 'upload' ? 'uploading' : 'downloading',
+        })
+      } catch (caught) {
+        patchTransfer(item.localId, { errorMessage: errorMessage(caught) })
+      }
+    },
+    [api, patchTransfer],
+  )
+
+  const cancelTransfer = useCallback(
+    async (item: TransferItemView) => {
+      if (!api) {
+        return
+      }
+      try {
+        if (item.direction === 'upload' && item.sessionId) {
+          await api.cancelUpload(item.sessionId)
+          refresh()
+        } else if (item.direction === 'download' && item.downloadId) {
+          await api.cancelDownload(item.downloadId)
+        }
+        patchTransfer(item.localId, {
+          status: 'cancelled',
+          file: undefined,
+          pendingResume: false,
+        })
+      } catch (caught) {
+        patchTransfer(item.localId, {
+          status: 'failed',
+          errorMessage: errorMessage(caught),
+        })
+      }
+    },
+    [api, patchTransfer, refresh],
+  )
+
+  const retryTransfer = useCallback(
+    (item: TransferItemView) => {
+      if (item.direction === 'download' && item.nodeId && item.versionId) {
+        setTransfers((previous) =>
+          previous.filter((entry) => entry.localId !== item.localId),
+        )
+        void startDownload(
+          item.nodeId,
+          item.versionId,
+          item.fileName,
+          item.mime ?? 'application/octet-stream',
+          item.size ?? item.totalBytes,
+        )
+        return
+      }
+      if (item.direction === 'upload' && item.sessionId && item.file) {
+        patchTransfer(item.localId, {
+          status: 'uploading',
+          errorCode: undefined,
+          errorMessage: undefined,
+        })
+        void api
+          ?.resumePendingUpload(
+            item.sessionId,
+            item.file,
+            (event) => onTransferProgress(item.localId, event),
+          )
+          .then(() => {
+            patchTransfer(item.localId, {
+              status: 'completed',
+              completedBytes: item.totalBytes,
+              file: undefined,
+            })
+            refresh()
+          })
+          .catch((caught: unknown) => {
+            patchTransfer(item.localId, {
+              status: 'failed',
+              errorCode: errorCode(caught) ?? undefined,
+              errorMessage: errorMessage(caught),
+            })
+          })
+        return
+      }
+      if (item.direction === 'upload' && item.file) {
+        // 会话尚未创建成功（例如创建请求网络失败）：重新开始一次上传。
+        setTransfers((previous) =>
+          previous.filter((entry) => entry.localId !== item.localId),
+        )
+        void startUpload(
+          item.file,
+          item.parentId ?? rootId,
+          item.nodeId,
+        )
+      }
+    },
+    [
+      api,
+      onTransferProgress,
+      patchTransfer,
+      refresh,
+      startDownload,
+      startUpload,
+      rootId,
+    ],
+  )
+
+  const resumeUploadFile = useCallback(
+    async (item: TransferItemView, file: File) => {
+      if (!api || !item.sessionId) {
+        return
+      }
+      patchTransfer(item.localId, {
+        status: 'uploading',
+        file,
+        pendingResume: false,
+        errorCode: undefined,
+        errorMessage: undefined,
+      })
+      try {
+        await api.resumePendingUpload(
+          item.sessionId,
+          file,
+          (event) => onTransferProgress(item.localId, event),
+        )
+        patchTransfer(item.localId, {
+          status: 'completed',
+          completedBytes: file.size,
+          totalBytes: file.size,
+          file: undefined,
+        })
+        setNotice(`“${file.name}”上传完成`)
+        refresh()
+      } catch (caught) {
+        const code = errorCode(caught)
+        patchTransfer(item.localId, {
+          status: code === 'cancelled' ? 'cancelled' : 'failed',
+          pendingResume: code === 'fingerprint_mismatch',
+          errorCode: code ?? undefined,
+          errorMessage: errorMessage(caught),
+        })
+      }
+    },
+    [api, onTransferProgress, patchTransfer, refresh],
+  )
+
+  const dismissTransfer = useCallback((item: TransferItemView) => {
+    setTransfers((previous) =>
+      previous.filter((entry) => entry.localId !== item.localId),
+    )
+  }, [])
+
+  const handleUploadInput = (files: FileList | null) => {
+    if (!files || !current) {
+      return
+    }
+    for (const file of Array.from(files)) {
+      void startUpload(file, current.id)
+    }
+  }
+
+  const handleVersionInput = (files: FileList | null) => {
+    const file = files?.[0]
+    const target = versionTargetRef.current
+    versionTargetRef.current = null
+    if (!file || !target) {
+      return
+    }
+    void startUpload(file, target.parentId ?? rootId, target.id)
+  }
+
+  const handleDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault()
+    if (!current) {
+      return
+    }
+    for (const file of Array.from(event.dataTransfer.files)) {
+      void startUpload(file, current.id)
+    }
+  }
+
+  const startVersionUpload = (node: FileNodeView) => {
+    versionTargetRef.current = node
+    versionInputRef.current?.click()
+  }
+
+  const downloadCurrentVersion = (node: FileNodeView) => {
+    if (!node.currentVersionId) {
+      setError('该文件没有可下载的版本')
+      return
+    }
+    void startDownload(
+      node.id,
+      node.currentVersionId,
+      node.name,
+      node.mime ?? 'application/octet-stream',
+      node.size ?? 0,
+    )
+  }
+
+  const downloadVersion = (version: VersionView) => {
+    if (!versionsTarget) {
+      return
+    }
+    void startDownload(
+      versionsTarget.id,
+      version.id,
+      versionsTarget.name,
+      versionsTarget.mime ?? 'application/octet-stream',
+      version.size,
+    )
+  }
 
   useEffect(() => {
     if (!api || !currentId) {
@@ -141,8 +550,37 @@ export function FilesPage() {
     }
   }, [api, reloadToken])
 
-  const loadTrash = useCallback(async () => {
-    if (!api) {
+  useEffect(() => {
+    if (!api || pendingUploadsLoaded.current) {
+      return
+    }
+    pendingUploadsLoaded.current = true
+    void (async () => {
+      try {
+        const pending = await api.listPendingUploads()
+        setTransfers((previous) => [
+          ...previous,
+          ...pending.map<TransferItemView>((entry) => ({
+            localId: `pending-${entry.sessionId}`,
+            direction: 'upload',
+            fileName: entry.name,
+            status: 'paused',
+            completedChunks: 0,
+            totalChunks: 0,
+            completedBytes: 0,
+            totalBytes: entry.size,
+            sessionId: entry.sessionId,
+            nodeId: entry.nodeId,
+            pendingResume: true,
+          })),
+        ])
+      } catch {
+        // 读取 IndexedDB 失败不阻塞文件浏览。
+      }
+    })()
+  }, [api])
+
+  const loadTrash = useCallback(async () => {    if (!api) {
       return
     }
     try {
@@ -377,7 +815,33 @@ export function FilesPage() {
         </nav>
       </header>
 
-      <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section
+        className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+        data-testid="file-drop-zone"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={handleDrop}
+      >
+        <input
+          ref={uploadInputRef}
+          type="file"
+          multiple
+          data-testid="upload-input"
+          className="hidden"
+          onChange={(event) => {
+            handleUploadInput(event.target.files)
+            event.target.value = ''
+          }}
+        />
+        <input
+          ref={versionInputRef}
+          type="file"
+          data-testid="version-input"
+          className="hidden"
+          onChange={(event) => {
+            handleVersionInput(event.target.files)
+            event.target.value = ''
+          }}
+        />
         <div className="flex flex-wrap items-center justify-between gap-2">
           <nav
             data-testid="breadcrumb"
@@ -401,6 +865,14 @@ export function FilesPage() {
             ))}
           </nav>
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              data-testid="upload-file"
+              className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white"
+              onClick={() => uploadInputRef.current?.click()}
+            >
+              上传文件
+            </button>
             <button
               type="button"
               data-testid="new-folder"
@@ -513,6 +985,29 @@ export function FilesPage() {
                       版本
                     </button>
                   )}
+                  {item.kind === 'file' && (
+                    <button
+                      type="button"
+                      aria-label={`上传新版本 ${item.name}`}
+                      disabled={busy !== null}
+                      className="rounded border border-slate-300 px-2 py-1"
+                      onClick={() => startVersionUpload(item)}
+                    >
+                      新版本
+                    </button>
+                  )}
+                  {item.kind === 'file' && (
+                    <button
+                      type="button"
+                      data-testid={`download-${item.id}`}
+                      aria-label={`下载 ${item.name}`}
+                      disabled={busy !== null || !item.currentVersionId}
+                      className="rounded border border-slate-300 px-2 py-1"
+                      onClick={() => downloadCurrentVersion(item)}
+                    >
+                      下载
+                    </button>
+                  )}
                   <button
                     type="button"
                     aria-label={`删除 ${item.name}`}
@@ -533,6 +1028,16 @@ export function FilesPage() {
           </p>
         )}
       </section>
+
+      <TransferQueue
+        items={transfers}
+        onPause={(item) => void pauseTransfer(item)}
+        onResume={(item) => void resumeTransfer(item)}
+        onCancel={(item) => void cancelTransfer(item)}
+        onRetry={retryTransfer}
+        onResumeFile={(item, file) => void resumeUploadFile(item, file)}
+        onDismiss={dismissTransfer}
+      />
 
       {trashOpen && (
         <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -751,18 +1256,30 @@ export function FilesPage() {
                         {formatBytes(version.size)} · {version.mime || '未知类型'}
                       </p>
                     </div>
-                    {!version.isCurrent && (
+                    <div className="flex gap-2">
                       <button
                         type="button"
-                        data-testid={`restore-version-${index}`}
-                        aria-label={`恢复版本 ${version.id}`}
+                        data-testid={`download-version-${index}`}
+                        aria-label={`下载版本 ${version.id}`}
                         disabled={busy !== null}
                         className="rounded border border-slate-300 px-2 py-1 text-xs"
-                        onClick={() => void restoreVersion(version)}
+                        onClick={() => downloadVersion(version)}
                       >
-                        恢复此版本
+                        下载
                       </button>
-                    )}
+                      {!version.isCurrent && (
+                        <button
+                          type="button"
+                          data-testid={`restore-version-${index}`}
+                          aria-label={`恢复版本 ${version.id}`}
+                          disabled={busy !== null}
+                          className="rounded border border-slate-300 px-2 py-1 text-xs"
+                          onClick={() => void restoreVersion(version)}
+                        >
+                          恢复此版本
+                        </button>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>

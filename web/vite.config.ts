@@ -48,5 +48,7 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     restoreMocks: true,
+    // KDF 与 4 MiB 块加解密测试在慢机器上可能超过 Vitest 默认的 5 秒。
+    testTimeout: 30_000,
   },
 })

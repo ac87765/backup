@@ -128,6 +128,83 @@ export interface UsageView {
   quotaBytes: number
 }
 
+/** 传输方向。 */
+export type TransferDirection = 'upload' | 'download'
+
+/** 传输状态。 */
+export type TransferStatus =
+  | 'pending'
+  | 'uploading'
+  | 'downloading'
+  | 'paused'
+  | 'retrying'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+/**
+ * 传输进度。跨 Comlink 只传计数与状态，不含文件内容、密钥或预签名 URL。
+ */
+export interface TransferProgressView {
+  transferId: string
+  direction: TransferDirection
+  fileName: string
+  status: TransferStatus
+  completedChunks: number
+  totalChunks: number
+  completedBytes: number
+  totalBytes: number
+  errorCode?: string
+  errorMessage?: string
+}
+
+/** 上传完成结果（主线程可见，不含密钥）。 */
+export interface UploadResultView {
+  nodeId: string
+  versionId: string
+  contentId: string
+  name: string
+  size: number
+}
+
+/** 刷新后可继续的上传会话元数据（不含密钥/明文/密文）。 */
+export interface PendingUploadView {
+  sessionId: string
+  mode: 'new_file' | 'new_version'
+  parentId: string | null
+  nodeId: string
+  contentId: string
+  versionId: string
+  name: string
+  size: number
+  lastModified: number
+  status: 'uploading' | 'paused' | 'failed'
+}
+
+/** File System Access API 的可写流（只暴露 Worker 需要的方法）。 */
+export interface FileSystemWritableLike {
+  write(data: BufferSource | Blob | string): Promise<void>
+  close(): Promise<void>
+  abort(): Promise<void>
+}
+
+/** File System Access API 的文件句柄。 */
+export interface FileSystemFileHandleLike {
+  name?: string
+  createWritable(): Promise<FileSystemWritableLike>
+}
+
+/** 下载目标：文件流、Service Worker 流式下载或内存 Blob 降级。 */
+export type DownloadTargetView =
+  | { kind: 'file-system'; handle: FileSystemFileHandleLike }
+  | { kind: 'service-worker'; downloadId: string }
+  | { kind: 'blob' }
+
+/** 下载结果：仅 blob 目标返回 Blob；文件流/Service Worker 返回 null。 */
+export interface DownloadResultView {
+  blob: Blob | null
+}
+
 /** 软删除/永久删除结果。 */
 export interface DeleteResultView {
   deletedNodes: number
@@ -306,7 +383,56 @@ export interface AuthWorkerApi {
 }
 
 /** Worker 暴露的完整 API。 */
-export type WorkerApi = CryptoWorkerApi & AuthWorkerApi & FileWorkerApi
+export type WorkerApi = CryptoWorkerApi &
+  AuthWorkerApi &
+  FileWorkerApi &
+  TransferWorkerApi
+
+/**
+ * Comlink 暴露的文件传输高层 API（task 8.7–8.8）。
+ *
+ * File 由主线程交给 Worker；密钥、明文与密文都只在 Worker 内处理。
+ * 进度回调只包含计数/状态。下载的明文只写入文件流或 Service Worker；
+ * Blob 目标是显式降级路径。
+ */
+export interface TransferWorkerApi {
+  /** 上传新文件；按文件指纹自动续传同一父目录下未完成的会话。 */
+  uploadFile(
+    parentId: string,
+    file: File,
+    onProgress?: (progress: TransferProgressView) => void,
+  ): Promise<UploadResultView>
+  /** 为已有文件上传新版本；节点密钥必须已在 Worker 内缓存或可从会话恢复。 */
+  uploadNewVersion(
+    nodeId: string,
+    file: File,
+    onProgress?: (progress: TransferProgressView) => void,
+  ): Promise<UploadResultView>
+  /** 按会话 ID 继续上传；指纹不符时返回 `fingerprint_mismatch`。 */
+  resumePendingUpload(
+    sessionId: string,
+    file: File,
+    onProgress?: (progress: TransferProgressView) => void,
+  ): Promise<UploadResultView>
+  /** 列出刷新后仍可继续的上传会话（只有元数据）。 */
+  listPendingUploads(): Promise<PendingUploadView[]>
+  pauseUpload(sessionId: string): Promise<void>
+  resumeUpload(sessionId: string): Promise<void>
+  cancelUpload(sessionId: string): Promise<void>
+
+  /** 下载任意保留版本到指定目标。 */
+  downloadVersion(
+    nodeId: string,
+    versionId: string,
+    downloadId: string,
+    fileName: string,
+    target: DownloadTargetView,
+    onProgress?: (progress: TransferProgressView) => void,
+  ): Promise<DownloadResultView>
+  pauseDownload(downloadId: string): Promise<void>
+  resumeDownload(downloadId: string): Promise<void>
+  cancelDownload(downloadId: string): Promise<void>
+}
 
 /**
  * Comlink 暴露的文件管理高层 API。

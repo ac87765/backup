@@ -7,17 +7,24 @@
 import { AuthClient } from './auth-client'
 import { CryptoApi } from './crypto-api'
 import { FileClient } from './file-client'
+import { TransferClient } from './transfer-client'
 import type {
   AuthErrorPayload,
   AuthWorkerApi,
   CryptoBackend,
   CurrentUser,
   DeleteResultView,
+  DownloadResultView,
+  DownloadTargetView,
   FileNodeView,
   FileWorkerApi,
   FolderPageView,
+  PendingUploadView,
   SessionSummaryView,
+  TransferProgressView,
+  TransferWorkerApi,
   TrashNodeView,
+  UploadResultView,
   UsageView,
   VersionView,
 } from './types'
@@ -52,15 +59,20 @@ async function runApi<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-export class WorkerApi extends CryptoApi implements AuthWorkerApi, FileWorkerApi {
+export class WorkerApi
+  extends CryptoApi
+  implements AuthWorkerApi, FileWorkerApi, TransferWorkerApi
+{
   private readonly auth: AuthClient
   private readonly file: FileClient
+  private readonly transfer: TransferClient
 
   constructor(backend: CryptoBackend | Promise<CryptoBackend>) {
     const promise = Promise.resolve(backend)
     super(promise)
     this.auth = new AuthClient(promise)
     this.file = new FileClient(promise)
+    this.transfer = new TransferClient(promise, this.file)
   }
 
   register(
@@ -202,5 +214,81 @@ export class WorkerApi extends CryptoApi implements AuthWorkerApi, FileWorkerApi
 
   getUsage(): Promise<UsageView> {
     return runApi(() => this.file.getUsage())
+  }
+
+  uploadFile(
+    parentId: string,
+    file: File,
+    onProgress?: (progress: TransferProgressView) => void,
+  ): Promise<UploadResultView> {
+    return runApi(() => this.transfer.uploadFile(parentId, file, onProgress))
+  }
+
+  uploadNewVersion(
+    nodeId: string,
+    file: File,
+    onProgress?: (progress: TransferProgressView) => void,
+  ): Promise<UploadResultView> {
+    return runApi(() =>
+      this.transfer.uploadNewVersion(nodeId, file, onProgress),
+    )
+  }
+
+  resumePendingUpload(
+    sessionId: string,
+    file: File,
+    onProgress?: (progress: TransferProgressView) => void,
+  ): Promise<UploadResultView> {
+    return runApi(() =>
+      this.transfer.resumePendingUpload(sessionId, file, onProgress),
+    )
+  }
+
+  listPendingUploads(): Promise<PendingUploadView[]> {
+    return runApi(() => this.transfer.listPendingUploads())
+  }
+
+  pauseUpload(sessionId: string): Promise<void> {
+    return runApi(() => this.transfer.pauseUpload(sessionId))
+  }
+
+  resumeUpload(sessionId: string): Promise<void> {
+    return runApi(() => this.transfer.resumeUpload(sessionId))
+  }
+
+  cancelUpload(sessionId: string): Promise<void> {
+    return runApi(() => this.transfer.cancelUpload(sessionId))
+  }
+
+  downloadVersion(
+    nodeId: string,
+    versionId: string,
+    downloadId: string,
+    fileName: string,
+    target: DownloadTargetView,
+    onProgress?: (progress: TransferProgressView) => void,
+  ): Promise<DownloadResultView> {
+    return runApi(() =>
+      this.transfer.downloadVersion(
+        nodeId,
+        versionId,
+        downloadId,
+        fileName,
+        target,
+        onProgress,
+      ),
+    )
+  }
+
+  pauseDownload(downloadId: string): Promise<void> {
+    return runApi(() => this.transfer.pauseDownload(downloadId))
+  }
+
+  resumeDownload(downloadId: string): Promise<void> {
+    return runApi(() => this.transfer.resumeDownload(downloadId))
+  }
+
+  cancelDownload(downloadId: string): Promise<void> {
+    return runApi(() => this.transfer.cancelDownload(downloadId))
   }
 }

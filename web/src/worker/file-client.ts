@@ -300,6 +300,20 @@ export class FileClient implements FileWorkerApi {
     }
   }
 
+  /**
+   * Worker 内部使用：返回已缓存的包裹节点密钥（不经过 Comlink）。
+   * 只供传输管线在新版本上传/续传时解包节点密钥。
+   */
+  wrappedKeyFor(nodeId: string): Uint8Array | undefined {
+    const cached = this.wrappedKeys.get(nodeId)
+    return cached ? cached.wrapped.slice() : undefined
+  }
+
+  /** Worker 内部使用：缓存新生成或从会话恢复的包裹节点密钥。 */
+  rememberWrappedKey(nodeId: string, wrapped: Uint8Array): void {
+    this.wrappedKeys.set(nodeId, { wrapped: wrapped.slice() })
+  }
+
   private async unlockedBackend(): Promise<CryptoBackend> {
     const backend = await this.backend
     if (backend.isLocked()) {

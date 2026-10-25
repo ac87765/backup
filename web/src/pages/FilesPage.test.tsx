@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -103,5 +104,80 @@ describe('文件浏览器页面', () => {
     fireEvent.click(screen.getByTestId('create-folder-submit'))
     expect(await screen.findByRole('alert')).toHaveTextContent('名称不能为空')
     expect(createFolder).not.toHaveBeenCalled()
+  })
+
+  it('选择文件后进入传输队列并显示完成进度', async () => {
+    const listFolder = vi.fn().mockResolvedValue({
+      items: [],
+      nextCursor: null,
+    })
+    const getUsage = vi.fn().mockResolvedValue({
+      usedBytes: 0,
+      reservedBytes: 0,
+      quotaBytes: 1024 * 1024,
+    })
+    const uploadFile = vi.fn(
+      (
+        parentId: string,
+        file: File,
+        onProgress?: (progress: {
+          transferId: string
+          direction: 'upload'
+          fileName: string
+          status: 'uploading' | 'completed'
+          completedChunks: number
+          totalChunks: number
+          completedBytes: number
+          totalBytes: number
+        }) => void,
+      ) => {
+        expect(parentId).toBe(USER.rootNodeId)
+        onProgress?.({
+          transferId: 'session-1',
+          direction: 'upload',
+          fileName: file.name,
+          status: 'uploading',
+          completedChunks: 0,
+          totalChunks: 1,
+          completedBytes: 0,
+          totalBytes: file.size,
+        })
+        onProgress?.({
+          transferId: 'session-1',
+          direction: 'upload',
+          fileName: file.name,
+          status: 'completed',
+          completedChunks: 1,
+          totalChunks: 1,
+          completedBytes: file.size,
+          totalBytes: file.size,
+        })
+        return Promise.resolve({
+          nodeId: 'node-1',
+          versionId: 'version-1',
+          contentId: 'content-1',
+          name: file.name,
+          size: file.size,
+        })
+      },
+    )
+    renderPage({
+      listFolder,
+      getUsage,
+      uploadFile,
+      listPendingUploads: vi.fn().mockResolvedValue([]),
+    })
+
+    const file = new File([new Uint8Array(4)], '上传.txt', {
+      type: 'text/plain',
+    })
+    await userEvent.upload(screen.getByTestId('upload-input'), file)
+    await waitFor(() => {
+      expect(screen.getByTestId('transfer-item')).toHaveAttribute(
+        'data-status',
+        'completed',
+      )
+    })
+    expect(uploadFile).toHaveBeenCalledTimes(1)
   })
 })
