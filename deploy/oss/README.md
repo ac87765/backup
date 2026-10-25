@@ -166,6 +166,8 @@ bucket/CORS/SSE/生命周期建议使用控制台配置；不同版本的 `ossut
 | `BACKUP_TRUSTED_PROXIES` | 可信代理 CIDR，逗号分隔 | 否（默认不信任任何代理） | `10.0.0.0/8,172.16.0.0/12` | 否 |
 | `BACKUP_AUTH_RATE_LIMIT_PER_MINUTE` | 每 IP 每分钟认证请求上限 | 否（默认 60） | `60` | 否 |
 | `BACKUP_USER_WRITE_RATE_LIMIT_PER_MINUTE` | 每用户每分钟写接口上限 | 否（默认 240） | `240` | 否 |
+| `BACKUP_DEFAULT_QUOTA_BYTES` | 新用户默认额度（字节） | 否（默认 10 GiB；首次设置前作为回退） | `10737418240` | 否 |
+| `BACKUP_MAX_QUOTA_BYTES` | 单用户额度上限（字节） | 否（默认 10 TiB） | `10995116277760` | 否 |
 
 密钥类配置在 `Debug` 输出中固定为 `[REDACTED]`；缺失/非法时进程只输出配置项名称并以
 非零码退出。
@@ -265,6 +267,28 @@ docker run --rm --env-file /etc/backup/backup.env backup-server:<tag> migrate
 `migrate` 只读取 `BACKUP_DATABASE_URL`，不需要 OSS/SMTP 配置；失败时进程非零退出。
 迁移完成后再部署新版本 `serve`（可 ≥2 实例，置于负载均衡后）。
 
+迁移 0006 会把迁移前已存在的账号全部设为 `active`，并默认启用“需要审批”注册模式。
+
+### 步骤 5.5：授予管理员（只能通过命令行）
+
+管理员身份**没有任何 HTTP 提权路径**，必须在服务器上执行命令行：
+
+```bash
+# 方式 A：在运行中的容器内（compose 部署）
+docker compose exec server /usr/local/bin/server admin grant tlj978626571@gmail.com
+
+# 方式 B：直接运行镜像（镜像默认非 root）
+docker run --rm --env-file /etc/backup/backup.env backup-server:<tag> \
+  admin grant tlj978626571@gmail.com
+
+# 查看/撤销
+docker compose exec server /usr/local/bin/server admin list
+docker compose exec server /usr/local/bin/server admin revoke tlj978626571@gmail.com
+```
+
+`admin` 子命令只连接数据库，不需要 OSS/SMTP 配置；授予/撤销会写入 `admin_audit_log`
+（来源 `cli`）。管理员重新登录后，账号菜单中会出现“管理后台”。
+
 ### 步骤 6：启动服务并验证
 
 ```bash
@@ -299,7 +323,9 @@ curl -fsSI https://<正式域名>/assets/<某个带哈希的 js>
 
 ### 步骤 8：上线后检查
 
-- 注册一个测试账号，完成验证邮件、登录、上传/下载/删除。
+- 注册一个测试账号，完成验证邮件；在“管理后台 → 用户”中批准（默认注册模式为需要审批），
+  再登录、上传/下载/删除。
+- 检查“审计日志”是否记录了批准、额度修改等操作，且不包含任何文件名或加密元数据。
 - 确认 OSS 对象键为 `v1/{uuid}/{uuid}`，bucket 中看不到文件名。
 - 确认服务端日志没有 `Authorization`、Cookie、预签名查询串或请求体。
 - 观察 `/metrics` 的 `backup_object_deletion_queue_*` 等指标。
