@@ -21,6 +21,7 @@
     "test:watch": "vitest",
     "e2e:serve": "npm run build && node e2e/serve.mjs",
     "test:e2e": "playwright test",
+    "test:e2e:container": "playwright test --config playwright.container.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {

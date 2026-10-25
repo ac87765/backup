@@ -19,6 +19,9 @@
 # CI / 本地生成的 OpenAPI 规范（由 rust job 生成并作为 artifact 传递）
 /openapi.json
 
+# 容器化全链路验收收集的日志与敏感值清单
+/deploy/e2e-out/
+
 # 环境与密钥
 .env
 .env.*

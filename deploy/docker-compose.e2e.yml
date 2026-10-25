@@ -1,0 +1,133 @@
+# 容器化全链路验收（task 9.5）：
+#   PostgreSQL + MinIO + 用仓库根目录 Dockerfile（9.1）构建的 server 镜像。
+#
+# server 容器先执行 `server migrate`，成功后 `exec server serve`。
+# 邮件用 file 模式写入 named volume（测试通过 docker compose exec 读取）。
+#
+# 审查者在 WSL 中运行（仓库根目录）：
+#   docker compose -f deploy/docker-compose.e2e.yml up -d --build
+#   curl -fsS http://127.0.0.1:8080/readyz
+#   cd web
+#   E2E_BASE_URL=http://127.0.0.1:8080 \
+#   E2E_MAIL_CONTAINER_SERVICE=server \
+#   E2E_COMPOSE_FILE=../deploy/docker-compose.e2e.yml \
+#   E2E_SENSITIVE_VALUES=./e2e-tmp/container-sensitive.json \
+#     npx playwright test --config playwright.container.config.ts
+#   cd ..
+#   mkdir -p deploy/e2e-out
+#   docker compose -f deploy/docker-compose.e2e.yml logs --no-color server > deploy/e2e-out/server.log
+#   node deploy/scan-logs.mjs --logs deploy/e2e-out/server.log \
+#     --manifest web/e2e-tmp/container-sensitive.json
+#   docker compose -f deploy/docker-compose.e2e.yml down -v
+#
+# 这些账号口令只用于本地/CI 测试，禁止用于生产。
+
+name: backup-e2e
+
+services:
+  postgres:
+    image: postgres:${POSTGRES_VERSION:-16.15-alpine}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-backup}
+      POSTGRES_USER: ${POSTGRES_USER:-backup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-backup-dev-password}
+    ports:
+      - "127.0.0.1:${E2E_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  minio:
+    # 与 dev compose 相同：Bitnami 归档镜像，按 digest 固定。
+    image: ${MINIO_IMAGE:-bitnamilegacy/minio@sha256:451fe6858cb770cc9d0e77ba811ce287420f781c7c1b806a386f6896471a349c}
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-backup}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-backup-dev-secret}
+      MINIO_BROWSER: "off"
+      # 浏览器源是 server 容器托管的前端（宿主端口）。
+      MINIO_API_CORS_ALLOW_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://127.0.0.1:8080}
+    ports:
+      - "127.0.0.1:${E2E_STORAGE_PORT:-9000}:9000"
+    volumes:
+      - minio-data:/bitnami/minio/data
+    healthcheck:
+      test:
+        ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  minio-init:
+    image: ${MINIO_CLIENT_IMAGE:-bitnamilegacy/minio-client@sha256:00dcc4e58ada0df45bb7d9ee435af98295f96c27c3c68292ce78ec700a87b511}
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-backup}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-backup-dev-secret}
+      MINIO_BUCKET: ${MINIO_BUCKET:-backup}
+      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://127.0.0.1:8080}
+      HOME: /tmp
+    volumes:
+      - ./minio/init-bucket.sh:/opt/init/init-bucket.sh:ro
+    entrypoint: ["/bin/sh", "/opt/init/init-bucket.sh"]
+    restart: "no"
+
+  server:
+    image: ${BACKUP_E2E_IMAGE:-backup-server:e2e}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    # 先迁移再启动；迁移失败时 serve 不会启动，容器立即退出。
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["/usr/local/bin/server migrate && exec /usr/local/bin/server serve"]
+    environment:
+      BACKUP_BIND_ADDR: 0.0.0.0:8080
+      BACKUP_METRICS_ADDR: 0.0.0.0:9091
+      BACKUP_STATIC_DIR: /app/web/dist
+      BACKUP_DATABASE_URL: postgres://backup:backup-dev-password@postgres:5432/backup
+      BACKUP_STORAGE_KIND: s3
+      BACKUP_STORAGE_BUCKET: backup
+      BACKUP_STORAGE_REGION: us-east-1
+      # 服务端数据面走 compose 内网；预签名 URL 使用宿主机可达地址。
+      BACKUP_STORAGE_INTERNAL_ENDPOINT: http://minio:9000
+      BACKUP_STORAGE_PUBLIC_ENDPOINT: http://127.0.0.1:${E2E_STORAGE_PORT:-9000}
+      BACKUP_STORAGE_ACCESS_KEY_ID: backup
+      BACKUP_STORAGE_SECRET_ACCESS_KEY: backup-dev-secret
+      BACKUP_STORAGE_ALLOW_HTTP: "true"
+      BACKUP_JOBS_ENABLED: "true"
+      BACKUP_MAIL_MODE: file
+      BACKUP_MAIL_DIR: /var/lib/backup/mail
+      BACKUP_PUBLIC_APP_URL: http://127.0.0.1:${E2E_HTTP_PORT:-8080}
+      BACKUP_AUTH_PEPPER_VERSION: "1"
+      BACKUP_AUTH_PEPPER: e2e-pepper-value-0123456789abcdef
+      BACKUP_AUTH_FAKE_SALT_KEY: e2e-fake-salt-key-0123456789abcdef
+      BACKUP_TRUSTED_PROXIES: ""
+    ports:
+      - "127.0.0.1:${E2E_HTTP_PORT:-8080}:8080"
+    volumes:
+      # named volume 由镜像中预创建的 /var/lib/backup/mail 初始化属主（UID 10001）。
+      - mail-data:/var/lib/backup/mail
+    # 镜像内已有非 root USER；显式声明便于审查。
+    user: "10001:10001"
+    stop_grace_period: 35s
+
+volumes:
+  postgres-data:
+  minio-data:
+  mail-data:
