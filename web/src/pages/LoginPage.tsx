@@ -26,7 +26,7 @@ export function LoginPage() {
   const submit = async () => {
     setError(null)
     if (!api) {
-      setError('当前环境不支持 Worker')
+      setError('当前浏览器不支持加密功能')
       return
     }
     setBusy(true)
@@ -44,19 +44,32 @@ export function LoginPage() {
 
   return (
     <AuthLayout
-      title="端对端加密备份"
-      subtitle="使用邮箱和密码登录。主密钥只在本机 Worker 内解包，不会发送到服务端。"
+      title="登录"
+      subtitle="文件在你的浏览器里加密，只有你能打开。"
       footer={
-        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5">
-          <Link to="/register" className="font-medium text-brand-600 hover:underline">
-            注册
-          </Link>
-          <Link to="/reset" className="font-medium text-brand-600 hover:underline">
-            忘记密码 / 恢复密钥重置
-          </Link>
-          <Link to="/security" className="text-ink-600 hover:text-ink-900 hover:underline">
-            了解端对端加密与服务端可见信息
-          </Link>
+        <div className="space-y-1.5">
+          <p className="flex items-center justify-center gap-2">
+            <Link
+              to="/register"
+              className="font-medium text-brand-600 hover:underline"
+            >
+              注册
+            </Link>
+            <span aria-hidden="true" className="text-ink-400">
+              ·
+            </span>
+            <Link
+              to="/reset"
+              className="font-medium text-brand-600 hover:underline"
+            >
+              忘记密码
+            </Link>
+          </p>
+          <p>
+            <Link to="/security" className="text-brand-600 hover:underline">
+              了解加密方式
+            </Link>
+          </p>
         </div>
       }
     >

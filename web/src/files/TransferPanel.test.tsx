@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -50,7 +50,10 @@ describe('TransferPanel', () => {
     expect(screen.getAllByTestId('transfer-item')).toHaveLength(2)
 
     await user.click(screen.getByRole('button', { name: '折叠传输面板' }))
-    expect(screen.queryAllByTestId('transfer-item')).toHaveLength(0)
+    expect(screen.getByTestId('transfer-panel')).toHaveAttribute(
+      'data-collapsed',
+      'true',
+    )
     expect(screen.getByText('正在传输 2 项 · 50%')).toBeVisible()
 
     rerender(
@@ -93,7 +96,9 @@ describe('TransferPanel', () => {
     renderPanel([item({})])
 
     await user.click(screen.getByRole('button', { name: '关闭传输面板' }))
-    expect(screen.queryByTestId('transfer-panel')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByTestId('transfer-panel')).not.toBeInTheDocument(),
+    )
     await user.click(screen.getByRole('button', { name: '打开传输面板' }))
     expect(screen.getByTestId('transfer-panel')).toBeVisible()
   })

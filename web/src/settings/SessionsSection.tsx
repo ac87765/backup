@@ -55,7 +55,7 @@ export function SessionsSection() {
   return (
     <div className="space-y-4">
       <p className="text-sm leading-6 text-ink-600">
-        会话空闲 7 天或绝对存在 30 天后自动失效。
+        登录设备会在一段时间后自动失效；你也可以随时撤销其他设备。
       </p>
       <FormError message={error} />
       {sessions.length === 0 ? (

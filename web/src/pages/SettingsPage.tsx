@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { KeyRound, Monitor, ShieldCheck } from 'lucide-react'
 
 import { AppShell } from '../shell/AppShell'
+import { PageHeader } from '../shell/PageHeader'
 import { ChangePasswordSection } from '../settings/ChangePasswordSection'
 import { RotateRecoverySection } from '../settings/RotateRecoverySection'
 import { SessionsSection } from '../settings/SessionsSection'
@@ -32,22 +33,15 @@ export function SettingsPage() {
   const active = sectionFromHash(location.hash)
 
   return (
-    <AppShell
-      breadcrumb={
-        <nav aria-label="面包屑" className="flex items-center gap-1.5 text-sm">
-          <span className="font-medium text-ink-900">账号设置</span>
-        </nav>
-      }
-    >
-      <div data-testid="settings-page" className="space-y-6">
-        <header className="space-y-1.5">
-          <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
-            账号设置
-          </h1>
-          <p className="text-sm leading-6 text-ink-600">
-            管理密码、恢复密钥与登录设备；这些操作只影响账号，不会重新加密已有文件。
-          </p>
-        </header>
+    <AppShell title="账号设置">
+      <div
+        data-testid="settings-page"
+        className="mx-auto w-full max-w-[640px] space-y-6"
+      >
+        <PageHeader
+          title="账号设置"
+          subtitle="管理密码、恢复密钥与登录设备；这些操作只影响账号，不会重新加密已有文件。"
+        />
 
         <div
           role="tablist"
@@ -67,7 +61,7 @@ export function SettingsPage() {
                 aria-controls={`settings-panel-${section.id}`}
                 onClick={() => void navigate(`/settings#${section.id}`)}
                 className={cx(
-                  'inline-flex items-center gap-2 rounded-control px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
+                  'motion-fast inline-flex items-center gap-2 rounded-control px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
                   selected
                     ? 'bg-brand-50 text-brand-600'
                     : 'text-ink-600 hover:bg-canvas hover:text-ink-900',

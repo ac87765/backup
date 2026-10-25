@@ -42,7 +42,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       className={cx(
-        'inline-flex shrink-0 items-center justify-center rounded-control transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-40',
+        'inline-flex shrink-0 items-center justify-center rounded-control transition-colors motion-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-40',
         VARIANTS[variant],
         SIZES[size],
         className,

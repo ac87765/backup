@@ -23,8 +23,10 @@ export {
   type MenuItem,
   type MenuProps,
 } from './Menu'
+export { prefersReducedMotion } from './motion'
 export { ProgressBar, type ProgressBarProps, type ProgressTone } from './ProgressBar'
 export { Spinner } from './Spinner'
 export { TextField, type TextFieldProps } from './TextField'
 export { ToastProvider } from './Toast'
 export { ToastContext, useToast, type ToastTone } from './toast-context'
+export { useMediaQuery } from './useMediaQuery'

@@ -29,7 +29,7 @@ export function ResetPage() {
       return
     }
     if (!api) {
-      setError('当前环境不支持 Worker')
+      setError('当前浏览器不支持加密功能')
       return
     }
     setBusy(true)
@@ -51,7 +51,7 @@ export function ResetPage() {
   return (
     <AuthLayout
       title="使用恢复密钥重置密码"
-      subtitle="恢复密钥只在本机 Worker 内解包 MK，服务端只收到恢复认证值。"
+      subtitle="输入恢复密钥和新密码；恢复密钥只在本机校验，不会发送到服务端。"
       footer={
         <div className="space-y-1.5">
           <p>

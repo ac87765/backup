@@ -4,9 +4,11 @@ import { RotateCcw, Trash2 } from 'lucide-react'
 import { useAuth } from '../auth/context'
 import { errorCode, errorMessage } from '../auth/errors'
 import { AppShell } from '../shell/AppShell'
+import { PageHeader } from '../shell/PageHeader'
 import { useUsage } from '../shell/usage-context'
 import { Button, Dialog, EmptyState, FileIcon, FormError, useToast } from '../ui'
 import type { TrashNodeView } from '../worker/types'
+import { FileSkeleton } from './FileSkeleton'
 import { FolderPicker } from './FolderPicker'
 import { formatBytes, formatTimestamp, sortByName } from './format'
 
@@ -123,32 +125,17 @@ export function TrashView() {
   }
 
   return (
-    <AppShell
-      breadcrumb={
-        <nav aria-label="面包屑" className="flex items-center gap-1.5 text-sm">
-          <span className="font-medium text-ink-900">回收站</span>
-        </nav>
-      }
-    >
+    <AppShell title="回收站">
       <div data-testid="trash-view" className="space-y-4">
-        <header className="space-y-0.5">
-          <h1 className="text-xl font-semibold tracking-tight text-ink-900">
-            回收站
-          </h1>
-          <p className="text-sm leading-6 text-ink-600">
-            已删除的项目会保留在这里，可随时恢复或永久删除。
-          </p>
-        </header>
+        <PageHeader
+          title="回收站"
+          subtitle="已删除的项目会保留在这里，可随时恢复或永久删除。"
+        />
 
         <FormError message={error} />
 
         {loading ? (
-          <div
-            aria-live="polite"
-            className="rounded-card border border-line bg-white px-6 py-16 text-center text-sm text-ink-600"
-          >
-            加载中…
-          </div>
+          <FileSkeleton rows={4} />
         ) : trash.length === 0 ? (
           <div className="rounded-card border border-line bg-white">
             <EmptyState
@@ -286,7 +273,7 @@ export function TrashView() {
             key={`restore-${restorePicker.id}`}
             api={api}
             startId={rootId}
-            startName="我的文件"
+            startName="全部文件"
             onCancel={() => setRestorePicker(null)}
             onSelect={(folder) => void submitRestoreTo(folder)}
           />

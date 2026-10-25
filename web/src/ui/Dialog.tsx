@@ -1,7 +1,9 @@
 import {
+  useCallback,
   useEffect,
   useId,
   useRef,
+  useState,
   type ReactNode,
   type RefObject,
 } from 'react'
@@ -10,6 +12,7 @@ import { X } from 'lucide-react'
 
 import { cx } from './cx'
 import { IconButton } from './IconButton'
+import { prefersReducedMotion } from './motion'
 
 export type DialogSize = 'sm' | 'md' | 'lg'
 
@@ -53,8 +56,30 @@ export function Dialog({
 }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
+  const [closing, setClosing] = useState(false)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const titleId = useId()
   const descriptionId = useId()
+
+  const requestClose = useCallback(() => {
+    if (closing) {
+      return
+    }
+    setClosing(true)
+    const delay = prefersReducedMotion() ? 0 : 120
+    closeTimer.current = setTimeout(() => {
+      setClosing(false)
+      onClose()
+    }, delay)
+  }, [closing, onClose])
+
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) {
+        clearTimeout(closeTimer.current)
+      }
+    }
+  }, [])
 
   // 打开 / 关闭：原生弹窗、初始焦点、关闭时归还焦点。
   useEffect(() => {
@@ -105,12 +130,12 @@ export function Dialog({
       if (event.key === 'Escape') {
         event.preventDefault()
         event.stopPropagation()
-        onClose()
+        requestClose()
       }
     }
     document.addEventListener('keydown', onKeyDown, true)
     return () => document.removeEventListener('keydown', onKeyDown, true)
-  }, [onClose, open])
+  }, [open, requestClose])
 
   if (!open) {
     return null
@@ -125,21 +150,28 @@ export function Dialog({
       aria-describedby={description ? descriptionId : undefined}
       className={cx(
         'fixed inset-0 z-50 m-auto w-[calc(100%-2rem)] overflow-hidden rounded-card border border-line bg-white p-0 text-ink-900 shadow-pop backdrop:bg-ink-900/40',
+        closing
+          ? 'animate-dialog-out dialog-closing'
+          : 'animate-dialog-in dialog-surface',
         SIZES[size],
       )}
       onCancel={(event) => {
         event.preventDefault()
-        onClose()
+        requestClose()
       }}
       onClick={(event) => {
         if (event.target === event.currentTarget) {
-          onClose()
+          requestClose()
         }
       }}
     >
       <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-4">
         <div className="min-w-0 space-y-1">
-          <h2 id={titleId} className="text-base font-semibold text-ink-900">
+          <h2
+            id={titleId}
+            title={typeof title === 'string' ? title : undefined}
+            className="truncate text-base font-semibold text-ink-900"
+          >
             {title}
           </h2>
           {description && (
@@ -148,7 +180,7 @@ export function Dialog({
             </p>
           )}
         </div>
-        <IconButton label="关闭" size="sm" onClick={onClose}>
+        <IconButton label="关闭" size="sm" onClick={requestClose}>
           <X size={18} />
         </IconButton>
       </div>

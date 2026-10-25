@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MoreHorizontal } from 'lucide-react'
 import { describe, expect, it, vi } from 'vitest'
@@ -61,7 +61,9 @@ describe('Menu', () => {
 
     await user.keyboard('{ArrowDown}{ArrowUp}{Enter}')
     expect(screen.getByTestId('value')).toHaveTextContent('rename')
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+    )
     expect(trigger).toHaveFocus()
   })
 
@@ -73,7 +75,9 @@ describe('Menu', () => {
     await user.click(trigger)
     expect(screen.getByRole('menu')).toBeVisible()
     await user.keyboard('{Escape}')
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+    )
     expect(trigger).toHaveFocus()
   })
 
@@ -88,7 +92,9 @@ describe('Menu', () => {
     await user.click(screen.getByRole('button', { name: '更多 合同.pdf' }))
     expect(screen.getByRole('menu')).toBeVisible()
     await user.click(screen.getByRole('button', { name: '外部' }))
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+    )
   })
 })
 

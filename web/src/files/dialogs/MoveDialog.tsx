@@ -31,7 +31,7 @@ export function MoveDialog({
         key={`move-${node.id}`}
         api={api}
         startId={rootId}
-        startName="我的文件"
+        startName="全部文件"
         excludeId={node.id}
         onCancel={onClose}
         onSelect={onSelect}

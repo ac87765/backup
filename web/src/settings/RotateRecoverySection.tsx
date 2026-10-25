@@ -16,7 +16,7 @@ export function RotateRecoverySection() {
   const prepare = async () => {
     setError(null)
     if (!api) {
-      setError('当前环境不支持 Worker')
+      setError('当前浏览器不支持加密功能')
       return
     }
     setBusy(true)
@@ -49,7 +49,7 @@ export function RotateRecoverySection() {
           error={error}
           onConfirm={async () => {
             if (!api) {
-              throw new Error('当前环境不支持 Worker')
+              throw new Error('当前浏览器不支持加密功能')
             }
             setBusy(true)
             try {
@@ -81,7 +81,7 @@ export function RotateRecoverySection() {
       }}
     >
       <p className="text-sm leading-6 text-ink-600">
-        需要再次输入当前密码，防止遗留会话静默替换恢复材料。
+        需要再次输入当前密码，以防他人替换你的恢复密钥。
       </p>
       <TextField
         label="当前密码"

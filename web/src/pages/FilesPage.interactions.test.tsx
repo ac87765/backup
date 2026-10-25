@@ -150,7 +150,9 @@ describe('文件列表交互', () => {
       screen.getByRole('menuitem', { name: '删除 b.txt' }),
     ).toBeVisible()
     await user.keyboard('{Escape}')
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+    )
 
     const row = screen
       .getAllByTestId('file-row')
@@ -167,18 +169,36 @@ describe('文件列表交互', () => {
   it('通过更多菜单删除文件并提示已移入回收站', async () => {
     const user = userEvent.setup()
     const deleteNode = vi.fn().mockResolvedValue(undefined)
-    const listFolder = vi.fn().mockResolvedValue({
-      items: ITEMS,
-      nextCursor: null,
-    })
+    const listFolder = vi
+      .fn()
+      .mockResolvedValueOnce({ items: ITEMS, nextCursor: null })
+      .mockResolvedValue({
+        items: ITEMS.filter((entry) => entry.id !== 'b'),
+        nextCursor: null,
+      })
     renderPage(api({ deleteNode, listFolder }))
     await screen.findByText('b.txt')
+    const row = screen
+      .getAllByTestId('file-row')
+      .find((element) => element.getAttribute('data-name') === 'b.txt')
 
     await user.click(screen.getByTestId('more-b'))
     await user.click(screen.getByRole('menuitem', { name: '删除 b.txt' }))
     await waitFor(() => expect(deleteNode).toHaveBeenCalledWith('b'))
     expect(await screen.findByRole('status')).toHaveTextContent(
       '已移入回收站',
+    )
+    await waitFor(() => expect(row).toHaveAttribute('data-removing', 'true'))
+    // 淡出收起动画结束后，列表与服务端结果一致。
+    await waitFor(
+      () => {
+        const names = screen
+          .getAllByTestId('file-row')
+          .map((element) => element.getAttribute('data-name'))
+        expect(names).not.toContain('b.txt')
+        expect(names).toEqual(['文件夹', 'a.txt', 'c.txt'])
+      },
+      { timeout: 2_000 },
     )
   })
 
@@ -198,7 +218,7 @@ describe('文件列表交互', () => {
       dataTransfer: { types: ['Files'], files: [file] },
     })
     expect(screen.getByTestId('drop-overlay')).toHaveTextContent(
-      '松开以上传到“我的文件”',
+      '松开以上传到“全部文件”',
     )
 
     fireEvent.drop(window, {

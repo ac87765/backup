@@ -11,6 +11,7 @@ export interface FileGridProps {
   selectedId: string | null
   onSelect: (id: string) => void
   actions: FileActions
+  removingIds?: ReadonlySet<string>
 }
 
 export function FileGrid({
@@ -18,6 +19,7 @@ export function FileGrid({
   selectedId,
   onSelect,
   actions,
+  removingIds,
 }: FileGridProps) {
   return (
     <div
@@ -27,6 +29,7 @@ export function FileGrid({
     >
       {items.map((item) => {
         const selected = selectedId === item.id
+        const removing = removingIds?.has(item.id) ?? false
         return (
           <div
             key={item.id}
@@ -35,6 +38,7 @@ export function FileGrid({
             data-name={item.name}
             data-kind={item.kind}
             data-selected={selected ? 'true' : 'false'}
+            data-removing={removing ? 'true' : 'false'}
             onClick={() => onSelect(item.id)}
             onDoubleClick={(event: ReactMouseEvent<HTMLDivElement>) => {
               if ((event.target as HTMLElement).closest('button')) {
@@ -43,10 +47,11 @@ export function FileGrid({
               actions.onOpen(item)
             }}
             className={cx(
-              'group relative flex flex-col items-center gap-3 rounded-card border bg-white px-4 pb-4 pt-6 text-center transition-colors',
+              'animate-row-in group relative flex flex-col items-center gap-3 rounded-card border bg-white px-4 pb-4 pt-6 text-center transition-[background-color,border-color,opacity,transform] motion-base',
               selected
                 ? 'border-brand-600 bg-brand-50'
                 : 'border-line hover:border-line-strong hover:bg-canvas',
+              removing && 'pointer-events-none scale-95 opacity-0',
             )}
           >
             <FileRowActions

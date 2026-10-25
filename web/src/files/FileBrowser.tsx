@@ -4,14 +4,21 @@ import { FolderPlus, Search, Upload, UploadCloud } from 'lucide-react'
 import { useAuth } from '../auth/context'
 import { errorCode, errorMessage } from '../auth/errors'
 import { AppShell } from '../shell/AppShell'
+import { PageHeader } from '../shell/PageHeader'
 import { useUsage } from '../shell/usage-context'
-import { Button, EmptyState, FormError, useToast } from '../ui'
+import {
+  Button,
+  EmptyState,
+  FormError,
+  prefersReducedMotion,
+  useMediaQuery,
+  useToast,
+} from '../ui'
 import type {
   FileNodeView,
   TransferProgressView,
   VersionView,
 } from '../worker/types'
-import { Breadcrumbs, type Breadcrumb } from './Breadcrumbs'
 import { CreateFolderDialog } from './dialogs/CreateFolderDialog'
 import { MoveDialog } from './dialogs/MoveDialog'
 import { RenameDialog } from './dialogs/RenameDialog'
@@ -19,8 +26,9 @@ import { VersionsDialog } from './dialogs/VersionsDialog'
 import { saveBlob, selectDownloadTarget } from './download-target'
 import { FileGrid } from './FileGrid'
 import { FileList } from './FileList'
+import { FileSkeleton } from './FileSkeleton'
 import type { FileActions } from './file-actions'
-import { FileToolbar } from './FileToolbar'
+import { FileToolbar, ViewToggle } from './FileToolbar'
 import { sortByName } from './format'
 import { validateName } from './name-validation'
 import {
@@ -39,6 +47,11 @@ import {
   type ViewMode,
 } from './view-preferences'
 
+interface PathEntry {
+  id: string
+  name: string
+}
+
 type PickerState = { mode: 'move'; node: FileNodeView } | null
 
 export function FileBrowser() {
@@ -46,9 +59,10 @@ export function FileBrowser() {
   const rootId = user?.rootNodeId ?? ''
   const { refreshUsage } = useUsage()
   const { showToast } = useToast()
+  const isMobile = useMediaQuery('(max-width: 767px)')
 
-  const [path, setPath] = useState<Breadcrumb[]>(() =>
-    rootId ? [{ id: rootId, name: '我的文件' }] : [],
+  const [path, setPath] = useState<PathEntry[]>(() =>
+    rootId ? [{ id: rootId, name: '全部文件' }] : [],
   )
   const [items, setItems] = useState<FileNodeView[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
@@ -63,6 +77,9 @@ export function FileBrowser() {
   const [viewMode, setViewMode] = useState<ViewMode>(() => loadViewMode())
   const [sort, setSort] = useState(() => loadSort())
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [removingIds, setRemovingIds] = useState<Set<string>>(
+    () => new Set(),
+  )
 
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
@@ -93,6 +110,22 @@ export function FileBrowser() {
     setLoading(true)
     setReloadToken((value) => value + 1)
   }, [])
+
+  const removeWithAnimation = useCallback(
+    (id: string, after: () => void) => {
+      setRemovingIds((previous) => new Set(previous).add(id))
+      const delay = prefersReducedMotion() ? 0 : 180
+      window.setTimeout(() => {
+        setRemovingIds((previous) => {
+          const next = new Set(previous)
+          next.delete(id)
+          return next
+        })
+        after()
+      }, delay)
+    },
+    [],
+  )
 
   const patchTransfer = useCallback(
     (localId: string, patch: Partial<TransferItemView>) => {
@@ -514,6 +547,7 @@ export function FileBrowser() {
         setLoading(true)
         setFilter('')
         setSelectedId(null)
+        setRemovingIds(new Set())
         setPath((previous) => [
           ...previous,
           { id: node.id, name: node.name },
@@ -529,6 +563,7 @@ export function FileBrowser() {
     setLoading(true)
     setFilter('')
     setSelectedId(null)
+    setRemovingIds(new Set())
     setPath((previous) => previous.slice(0, index + 1))
   }, [])
 
@@ -776,8 +811,10 @@ export function FileBrowser() {
     try {
       await api.deleteNode(node.id)
       showToast(`“${node.name}”已移入回收站`)
-      refresh()
-      refreshUsage()
+      removeWithAnimation(node.id, () => {
+        refresh()
+        refreshUsage()
+      })
     } catch (caught) {
       showToast(errorMessage(caught), 'error')
     } finally {
@@ -799,8 +836,10 @@ export function FileBrowser() {
       )
       setPicker(null)
       showToast(`已移动到“${target.name}”`)
-      refresh()
-      refreshUsage()
+      removeWithAnimation(picker.node.id, () => {
+        refresh()
+        refreshUsage()
+      })
     } catch (caught) {
       showToast(errorMessage(caught), 'error')
       setPicker(null)
@@ -898,7 +937,7 @@ export function FileBrowser() {
 
   return (
     <AppShell
-      breadcrumb={<Breadcrumbs path={path} onNavigate={navigateTo} />}
+      title={current?.name ?? '全部文件'}
       toolbar={
         <FileToolbar
           filter={filter}
@@ -908,6 +947,7 @@ export function FileBrowser() {
           onRefresh={refresh}
         />
       }
+      mobileSearch={{ value: filter, onChange: setFilter }}
       onUploadRequest={() => uploadInputRef.current?.click()}
       onNewFolderRequest={openCreate}
     >
@@ -934,37 +974,45 @@ export function FileBrowser() {
           }}
         />
 
-        <header className="flex flex-wrap items-end justify-between gap-2">
-          <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold tracking-tight text-ink-900">
-              {current?.name ?? '我的文件'}
-            </h1>
-            <p className="mt-0.5 text-sm leading-6 text-ink-600">
-              {loading
-                ? '正在加载…'
-                : `${visibleItems.length} 项${filter.trim() ? '（已筛选）' : ''}`}
-            </p>
-          </div>
-          {filter.trim() && (
-            <Button size="sm" variant="ghost" onClick={() => setFilter('')}>
-              清除筛选
-            </Button>
-          )}
-        </header>
+        <PageHeader
+          ancestors={path.slice(0, -1).map((entry, index) => ({
+            id: entry.id,
+            label: entry.name,
+            onClick: () => navigateTo(index),
+          }))}
+          title={current?.name ?? '全部文件'}
+          subtitle={
+            loading
+              ? '正在加载…'
+              : `${visibleItems.length} 项${filter.trim() ? '（已筛选）' : ''}`
+          }
+          actions={
+            <div className="flex items-center gap-2">
+              {filter.trim() && (
+                <Button size="sm" variant="ghost" onClick={() => setFilter('')}>
+                  清除筛选
+                </Button>
+              )}
+              {isMobile && (
+                <ViewToggle
+                  viewMode={viewMode}
+                  onViewModeChange={changeViewMode}
+                />
+              )}
+            </div>
+          }
+        />
 
         <FormError message={error} />
 
+        <div
+          key={loading ? 'loading' : `${currentId}:${viewMode}`}
+          className="animate-content-in"
+        >
         {loading ? (
-          <div
-            aria-live="polite"
-            className="rounded-card border border-line bg-white px-6 py-16 text-center text-sm text-ink-600"
-          >
-            加载中…
-          </div>
+          <FileSkeleton />
         ) : visibleItems.length === 0 ? (
-          <div className="rounded-card border border-line bg-white">
-            {emptyState}
-          </div>
+          <div>{emptyState}</div>
         ) : viewMode === 'list' ? (
           <FileList
             items={visibleItems}
@@ -974,6 +1022,8 @@ export function FileBrowser() {
             onSelect={setSelectedId}
             actions={actions}
             onEndReached={() => void loadMore()}
+            removingIds={removingIds}
+            hasMore={nextCursor !== null}
           />
         ) : (
           <FileGrid
@@ -981,8 +1031,10 @@ export function FileBrowser() {
             selectedId={selectedId}
             onSelect={setSelectedId}
             actions={actions}
+            removingIds={removingIds}
           />
         )}
+        </div>
 
         {!loading && loadingMore && (
           <p aria-live="polite" className="text-sm text-ink-600">
@@ -992,6 +1044,7 @@ export function FileBrowser() {
       </div>
 
       <TransferPanel
+        key={transfers.length === 0 ? 'empty' : 'panel'}
         items={transfers}
         onPause={(item) => void pauseTransfer(item)}
         onResume={(item) => void resumeTransfer(item)}
@@ -1054,9 +1107,9 @@ export function FileBrowser() {
       {dragActive && current && (
         <div
           data-testid="drop-overlay"
-          className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-brand-600 p-6 backdrop-blur-sm"
+          className="animate-overlay-in pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-brand-600 p-6 backdrop-blur-sm"
         >
-          <div className="flex max-w-lg flex-col items-center gap-3 rounded-card border-2 border-dashed border-white/80 bg-white/10 px-10 py-12 text-center text-white">
+          <div className="animate-breathe flex max-w-lg flex-col items-center gap-3 rounded-card border-2 border-dashed border-white/80 bg-white/10 px-10 py-12 text-center text-white">
             <UploadCloud size={48} aria-hidden="true" />
             <p className="text-lg font-semibold">
               松开以上传到“{current.name}”

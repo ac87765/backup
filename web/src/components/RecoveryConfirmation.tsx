@@ -49,7 +49,7 @@ export function RecoveryConfirmation({
       return
     }
     if (!api) {
-      setLocalError('当前环境不支持 Worker')
+      setLocalError('当前浏览器不支持加密功能')
       return
     }
     setSubmitting(true)

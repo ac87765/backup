@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/context'
 import { ToastProvider } from '../ui'
@@ -30,13 +30,13 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
   }
 }
 
-function usage(usedBytes: number): UsageView {
-  return { usedBytes, reservedBytes: 0, quotaBytes: 100 }
+function usage(usedBytes: number, reservedBytes = 0): UsageView {
+  return { usedBytes, reservedBytes, quotaBytes: 100 }
 }
 
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <AppShell breadcrumb={<span>我的文件</span>} onUploadRequest={vi.fn()}>
+    <AppShell title="全部文件" onUploadRequest={vi.fn()}>
       {children}
     </AppShell>
   )
@@ -132,6 +132,34 @@ describe('AppShell', () => {
     expect(screen.getByTestId('usage-summary')).toHaveClass('text-danger-600')
   })
 
+  it('预留为 0 时不显示“预留”，有进行中上传时才显示', async () => {
+    const noReserve = authValue({
+      api: {
+        getUsage: vi.fn().mockResolvedValue(usage(50, 0)),
+      } as unknown as WorkerApi,
+    })
+    const first = renderShell(noReserve)
+    await waitFor(() => {
+      expect(screen.getByTestId('usage-summary')).toHaveTextContent(
+        '已用 50 B',
+      )
+    })
+    expect(screen.getByTestId('usage-summary')).not.toHaveTextContent('预留')
+    first.unmount()
+
+    const withReserve = authValue({
+      api: {
+        getUsage: vi.fn().mockResolvedValue(usage(50, 25)),
+      } as unknown as WorkerApi,
+    })
+    renderShell(withReserve)
+    await waitFor(() => {
+      expect(screen.getByTestId('usage-summary')).toHaveTextContent(
+        '预留 25 B',
+      )
+    })
+  })
+
   it('账号菜单展示邮箱、验证状态并可进入账号设置', async () => {
     const user = userEvent.setup()
     renderShell(authValue())
@@ -166,8 +194,50 @@ describe('AppShell', () => {
     await user.click(screen.getByRole('button', { name: '打开导航菜单' }))
     expect(screen.getByRole('dialog', { name: '导航菜单' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: '关闭导航菜单' }))
-    expect(
-      screen.queryByRole('dialog', { name: '导航菜单' }),
-    ).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: '导航菜单' }),
+      ).not.toBeInTheDocument(),
+    )
   })
+
+  it('移动端顶部栏显示当前名称与可展开的搜索框', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    )
+    const user = userEvent.setup()
+    const value = authValue()
+    render(
+      <MemoryRouter initialEntries={['/files']}>
+        <AuthContext.Provider value={value}>
+          <UsageProvider>
+            <ToastProvider>
+              <AppShell
+                title="全部文件"
+                mobileSearch={{ value: '', onChange: vi.fn() }}
+              >
+                <p>文件内容</p>
+              </AppShell>
+            </ToastProvider>
+          </UsageProvider>
+        </AuthContext.Provider>
+      </MemoryRouter>,
+    )
+
+    await user.click(screen.getByRole('button', { name: '搜索' }))
+    expect(screen.getByTestId('mobile-file-filter')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '关闭搜索' }))
+    expect(
+      screen.getByRole('button', { name: '搜索' }),
+    ).toBeVisible()
+  })
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })

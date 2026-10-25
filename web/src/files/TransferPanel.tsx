@@ -1,7 +1,14 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 
-import { Button, FileIcon, IconButton, ProgressBar } from '../ui'
+import {
+  Button,
+  cx,
+  FileIcon,
+  IconButton,
+  prefersReducedMotion,
+  ProgressBar,
+} from '../ui'
 import type {
   TransferDirection,
   TransferStatus,
@@ -123,6 +130,16 @@ export function TransferPanel({
 }: TransferPanelProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [closed, setClosed] = useState(false)
+  const [closing, setClosing] = useState(false)
+
+  const closePanel = () => {
+    setClosing(true)
+    const delay = prefersReducedMotion() ? 0 : 180
+    window.setTimeout(() => {
+      setClosed(true)
+      setClosing(false)
+    }, delay)
+  }
 
   if (items.length === 0) {
     return null
@@ -148,7 +165,7 @@ export function TransferPanel({
         data-testid="transfer-panel-reopen"
         aria-label="打开传输面板"
         onClick={() => setClosed(false)}
-        className="fixed bottom-4 right-4 z-40 flex h-11 items-center gap-2 rounded-full bg-brand-600 px-4 text-sm font-medium text-white shadow-pop transition-colors hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 sm:bottom-6 sm:right-6"
+        className="fixed bottom-4 right-4 z-40 flex h-11 items-center gap-2 rounded-full bg-brand-600 px-4 text-sm font-medium text-white shadow-pop transition-colors motion-fast hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 sm:bottom-6 sm:right-6"
       >
         {title}
       </button>
@@ -158,8 +175,14 @@ export function TransferPanel({
   return (
     <section
       data-testid="transfer-panel"
+      data-collapsed={collapsed ? 'true' : 'false'}
       aria-label="传输面板"
-      className="fixed inset-x-0 bottom-0 z-40 overflow-hidden border-t border-line bg-white shadow-pop sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[360px] sm:rounded-card sm:border"
+      className={cx(
+        'fixed inset-x-0 bottom-0 z-40 overflow-hidden border-t border-line bg-white shadow-pop sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[360px] sm:rounded-card sm:border',
+        closing
+          ? 'animate-panel-out pointer-events-none'
+          : 'animate-panel-in',
+      )}
     >
       <header className="flex items-center gap-1.5 px-4 py-3">
         <div className="min-w-0 flex-1">
@@ -196,13 +219,19 @@ export function TransferPanel({
           size="sm"
           label="关闭传输面板"
           data-testid="transfer-close"
-          onClick={() => setClosed(true)}
+          onClick={closePanel}
         >
           <X size={17} />
         </IconButton>
       </header>
 
-      {!collapsed && (
+      <div
+        className={cx(
+          'grid transition-[grid-template-rows] motion-base',
+          collapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
+        )}
+      >
+        <div className="overflow-hidden">
         <ul className="max-h-72 overflow-y-auto border-t border-line">
           {items.map((item) => {
             const active =
@@ -346,7 +375,8 @@ export function TransferPanel({
             )
           })}
         </ul>
-      )}
+        </div>
+      </div>
     </section>
   )
 }

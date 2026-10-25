@@ -27,7 +27,7 @@ export function RegisterPage() {
       return
     }
     if (!api) {
-      setError('当前环境不支持 Worker')
+      setError('当前浏览器不支持加密功能')
       return
     }
     setBusy(true)
@@ -55,7 +55,7 @@ export function RegisterPage() {
           confirmLabel="确认已保存并注册"
           onConfirm={async () => {
             if (!api) {
-              throw new Error('当前环境不支持 Worker')
+              throw new Error('当前浏览器不支持加密功能')
             }
             setBusy(true)
             try {
@@ -105,7 +105,7 @@ export function RegisterPage() {
   return (
     <AuthLayout
       title="创建账号"
-      subtitle="密码只在本机派生密钥，服务端永远不会收到明文密码。"
+      subtitle="注册后即可在浏览器里加密备份文件，服务端看不到文件内容。"
       footer={
         <p>
           已有账号？{' '}

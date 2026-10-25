@@ -36,7 +36,7 @@ describe('登录页', () => {
     renderLogin(login)
 
     expect(
-      screen.getByRole('heading', { name: '端对端加密备份' }),
+      screen.getByRole('heading', { name: '登录' }),
     ).toBeVisible()
     await user.type(screen.getByTestId('login-email'), 'user@example.com')
     await user.type(screen.getByTestId('login-password'), 'wrong password')

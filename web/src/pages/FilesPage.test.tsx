@@ -57,6 +57,18 @@ function renderPage(api: Partial<WorkerApi>) {
 }
 
 describe('文件浏览器页面', () => {
+  it('加载文件夹时显示骨架行而不是空白', async () => {
+    const listFolder = vi.fn().mockReturnValue(new Promise(() => undefined))
+    const getUsage = vi.fn().mockResolvedValue({
+      usedBytes: 0,
+      reservedBytes: 0,
+      quotaBytes: 1024,
+    })
+    renderPage({ listFolder, getUsage })
+
+    expect(await screen.findByTestId('file-skeleton')).toBeVisible()
+  })
+
   it('文件夹排在文件之前，并按解密名称显示与排序', async () => {
     const listFolder = vi.fn().mockResolvedValue({
       items: [

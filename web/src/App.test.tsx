@@ -9,7 +9,7 @@ describe('App', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: '端对端加密备份',
+        name: '登录',
       }),
     ).toBeInTheDocument()
     expect(screen.getByTestId('login-email')).toBeInTheDocument()

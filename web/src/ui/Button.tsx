@@ -26,7 +26,7 @@ const SIZES: Record<ButtonSize, string> = {
 }
 
 const BASE =
-  'inline-flex select-none items-center whitespace-nowrap rounded-control font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50'
+  'inline-flex select-none items-center whitespace-nowrap rounded-control font-medium transition-colors motion-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50'
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant

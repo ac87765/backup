@@ -62,7 +62,7 @@ async function selectServiceWorker(
   mime: string,
 ): Promise<DownloadSelection> {
   if (!('serviceWorker' in navigator)) {
-    throw Object.assign(new Error('当前浏览器不支持 Service Worker 下载'), {
+    throw Object.assign(new Error('当前浏览器不支持流式下载'), {
       code: 'service_worker_unavailable',
     })
   }
@@ -116,7 +116,7 @@ async function prepareServiceWorkerDownload(
   }
   const worker = registration.active ?? navigator.serviceWorker.controller
   if (!worker) {
-    throw Object.assign(new Error('下载 Service Worker 尚未就绪'), {
+    throw Object.assign(new Error('下载准备尚未完成，请重试'), {
       code: 'service_worker_unavailable',
     })
   }
@@ -125,7 +125,7 @@ async function prepareServiceWorkerDownload(
     const timeout = setTimeout(() => {
       navigator.serviceWorker.removeEventListener('message', onMessage)
       reject(
-        Object.assign(new Error('下载 Service Worker 准备超时'), {
+        Object.assign(new Error('下载准备超时，请重试'), {
           code: 'service_worker_timeout',
         }),
       )

@@ -26,7 +26,7 @@ export function ChangePasswordSection() {
       return
     }
     if (!api) {
-      setError('当前环境不支持 Worker')
+      setError('当前浏览器不支持加密功能')
       return
     }
     setBusy(true)
@@ -52,7 +52,7 @@ export function ChangePasswordSection() {
       }}
     >
       <p className="text-sm leading-6 text-ink-600">
-        文件密文不会重新加密；只替换认证材料与包裹后的 MK。
+        修改密码不会影响已备份的文件。
       </p>
       <TextField
         label="旧密码"

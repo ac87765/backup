@@ -1,6 +1,7 @@
 import { Download, RotateCcw } from 'lucide-react'
 
 import { Button, Dialog, FormError } from '../../ui'
+import { FILE_VISUAL_META, fileVisualKind } from '../../ui/file-visual'
 import { formatBytes, formatTimestamp } from '../format'
 import type { FileNodeView, VersionView } from '../../worker/types'
 
@@ -26,6 +27,7 @@ export function VersionsDialog({
   if (!node) {
     return null
   }
+  const typeLabel = FILE_VISUAL_META[fileVisualKind(node.name, node.kind)].label
   return (
     <Dialog
       open
@@ -54,7 +56,7 @@ export function VersionsDialog({
                     )}
                   </p>
                   <p className="text-xs leading-5 text-ink-600">
-                    {formatBytes(version.size)} · {version.mime || '未知类型'}
+                    {formatBytes(version.size)} · {typeLabel}
                   </p>
                 </div>
                 <div className="flex gap-2">

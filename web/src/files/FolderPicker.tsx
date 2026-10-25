@@ -89,7 +89,7 @@ export function FolderPicker({
                 setPath(path.slice(0, index + 1))
               }}
               className={cx(
-                'rounded-control px-1.5 py-1 transition-colors',
+                'rounded-control px-1.5 py-1 transition-colors motion-fast',
                 index === path.length - 1
                   ? 'font-medium text-ink-900'
                   : 'text-ink-600 hover:bg-canvas hover:text-ink-900',
@@ -123,7 +123,7 @@ export function FolderPicker({
               setLoading(true)
               setPath([...path, { id: item.id, name: item.name }])
             }}
-            className="flex w-full items-center gap-2 rounded-control px-2.5 py-2 text-left text-sm text-ink-900 transition-colors hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+            className="flex w-full items-center gap-2 rounded-control px-2.5 py-2 text-left text-sm text-ink-900 transition-colors motion-fast hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
           >
             <Folder
               size={18}

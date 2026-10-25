@@ -15,6 +15,7 @@ import {
 import { createPortal } from 'react-dom'
 
 import { cx } from './cx'
+import { prefersReducedMotion } from './motion'
 
 export interface MenuItem {
   id?: string
@@ -53,6 +54,7 @@ interface MenuSurfaceProps {
   header?: ReactNode
   /** 点击这些元素内部不算“点击外部”。 */
   ignoreRef?: RefObject<HTMLElement | null>
+  closing?: boolean
   onClose: () => void
 }
 
@@ -63,6 +65,7 @@ function MenuSurface({
   point,
   header,
   ignoreRef,
+  closing = false,
   onClose,
 }: MenuSurfaceProps) {
   const menuRef = useRef<HTMLDivElement>(null)
@@ -75,6 +78,9 @@ function MenuSurface({
   }, [])
 
   useEffect(() => {
+    if (closing) {
+      return
+    }
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null
       if (!target) {
@@ -91,9 +97,12 @@ function MenuSurface({
     document.addEventListener('pointerdown', onPointerDown, true)
     return () =>
       document.removeEventListener('pointerdown', onPointerDown, true)
-  }, [ignoreRef, onClose])
+  }, [closing, ignoreRef, onClose])
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (closing) {
+      return
+    }
     const menuItems = Array.from(
       menuRef.current?.querySelectorAll<HTMLButtonElement>(
         '[role="menuitem"]:not([disabled])',
@@ -141,7 +150,10 @@ function MenuSurface({
         left: point.left,
         width: MENU_WIDTH,
       }}
-      className="z-50 overflow-hidden rounded-card border border-line bg-white p-1.5 shadow-pop"
+      className={cx(
+        'z-50 overflow-hidden rounded-card border border-line bg-white p-1.5 shadow-pop',
+        closing ? 'animate-menu-out' : 'animate-menu-in',
+      )}
     >
       {header && <div className="border-b border-line px-2.5 pb-2.5 pt-1.5">{header}</div>}
       {items.map((item) => (
@@ -164,7 +176,7 @@ function MenuSurface({
               item.onSelect()
             }}
             className={cx(
-              'flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm transition-colors',
+              'flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm transition-colors motion-fast',
               item.tone === 'danger'
                 ? 'text-danger-700 hover:bg-danger-50'
                 : 'text-ink-900 hover:bg-canvas',
@@ -207,12 +219,30 @@ export function Menu({
   header,
 }: MenuProps) {
   const [point, setPoint] = useState<Point | null>(null)
+  const [closing, setClosing] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const menuId = useId()
 
   const close = useCallback(() => {
-    setPoint(null)
+    if (closing) {
+      return
+    }
+    setClosing(true)
     triggerRef.current?.focus()
+    const delay = prefersReducedMotion() ? 0 : 120
+    closeTimer.current = setTimeout(() => {
+      setPoint(null)
+      setClosing(false)
+    }, delay)
+  }, [closing])
+
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) {
+        clearTimeout(closeTimer.current)
+      }
+    }
   }, [])
 
   const openMenu = useCallback(() => {
@@ -220,6 +250,10 @@ export function Menu({
     if (!element) {
       return
     }
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+    }
+    setClosing(false)
     const rect = element.getBoundingClientRect()
     setPoint(
       clampPoint(
@@ -232,13 +266,13 @@ export function Menu({
   const triggerProps = {
     ref: triggerRef,
     'aria-haspopup': 'menu' as const,
-    'aria-expanded': point !== null,
+    'aria-expanded': point !== null && !closing,
     'aria-controls': point ? menuId : undefined,
     disabled,
     onClick: (event: ReactMouseEvent<HTMLButtonElement>) => {
       event.preventDefault()
       if (point) {
-        setPoint(null)
+        close()
       } else {
         openMenu()
       }
@@ -274,6 +308,7 @@ export function Menu({
           point={point}
           header={header}
           ignoreRef={triggerRef}
+          closing={closing}
           onClose={close}
         />
       )}

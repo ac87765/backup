@@ -1,4 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   CheckCircle2,
@@ -8,6 +14,7 @@ import {
   FolderPlus,
   LogOut,
   Menu as MenuIcon,
+  Search,
   Settings,
   ShieldCheck,
   Trash2,
@@ -23,7 +30,10 @@ import {
   cx,
   IconButton,
   Menu,
+  prefersReducedMotion,
   ProgressBar,
+  TextField,
+  useMediaQuery,
   useToast,
   type MenuItem,
 } from '../ui'
@@ -32,10 +42,15 @@ import { useUsage } from './usage-context'
 
 export interface AppShellProps {
   children: ReactNode
-  /** 顶部栏左侧面包屑；外层自动带 data-testid="breadcrumb"。 */
-  breadcrumb?: ReactNode
-  /** 顶部栏右侧（筛选、视图切换等），位于账号菜单之前。 */
+  /** 移动端顶部栏显示的当前页面标题（桌面端标题在页面内容里）。 */
+  title: string
+  /** 桌面端顶部栏控件（筛选、视图切换、刷新），位于账号菜单之前。 */
   toolbar?: ReactNode
+  /** 移动端搜索图标展开的全宽筛选框。 */
+  mobileSearch?: {
+    value: string
+    onChange: (value: string) => void
+  }
   /** 当前页面能直接处理上传时提供；否则上传入口跳转到文件页。 */
   onUploadRequest?: () => void
   onNewFolderRequest?: () => void
@@ -111,7 +126,7 @@ function SidebarBody({
               icon={<Upload size={17} />}
               justify="between"
             >
-              <span>上传</span>
+              <span className="flex-1 text-left">上传</span>
               <ChevronDown size={16} aria-hidden="true" />
             </Button>
           }
@@ -124,7 +139,7 @@ function SidebarBody({
           onClick={onNavigate}
           className={({ isActive }) =>
             cx(
-              'flex items-center gap-3 rounded-control px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
+              'flex items-center gap-3 rounded-control px-3 py-2 text-sm font-medium transition-colors motion-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
               isActive
                 ? 'bg-brand-50 text-brand-600'
                 : 'text-ink-600 hover:bg-canvas hover:text-ink-900',
@@ -140,7 +155,7 @@ function SidebarBody({
           onClick={onNavigate}
           className={({ isActive }) =>
             cx(
-              'flex items-center gap-3 rounded-control px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
+              'flex items-center gap-3 rounded-control px-3 py-2 text-sm font-medium transition-colors motion-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
               isActive
                 ? 'bg-brand-50 text-brand-600'
                 : 'text-ink-600 hover:bg-canvas hover:text-ink-900',
@@ -155,7 +170,7 @@ function SidebarBody({
           onClick={onNavigate}
           className={({ isActive }) =>
             cx(
-              'flex items-center gap-3 rounded-control px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
+              'flex items-center gap-3 rounded-control px-3 py-2 text-sm font-medium transition-colors motion-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
               isActive
                 ? 'bg-brand-50 text-brand-600'
                 : 'text-ink-600 hover:bg-canvas hover:text-ink-900',
@@ -180,7 +195,9 @@ function SidebarBody({
               ? `已用 ${formatBytes(used)} / 共 ${formatBytes(quota)}`
               : '用量加载中…'}
           </p>
-          <p>{usage ? `预留 ${formatBytes(reserved)}` : '预留 —'}</p>
+          {usage && reserved > 0 && (
+            <p>预留 {formatBytes(reserved)}</p>
+          )}
         </div>
         <ProgressBar
           value={percent}
@@ -292,7 +309,7 @@ function AccountMenu() {
           type="button"
           data-testid="account-menu-trigger"
           aria-label={`账号菜单 ${email}`}
-          className="flex h-9 items-center gap-2 rounded-full pl-1 pr-2 text-ink-600 transition-colors hover:bg-canvas hover:text-ink-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+          className="flex h-9 items-center gap-2 rounded-full pl-1 pr-2 text-ink-600 transition-colors motion-fast hover:bg-canvas hover:text-ink-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
         >
           <span
             aria-hidden="true"
@@ -312,12 +329,37 @@ function AccountMenu() {
 
 function AppShellFrame({
   children,
-  breadcrumb,
+  title,
   toolbar,
+  mobileSearch,
   onUploadRequest,
   onNewFolderRequest,
 }: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [drawerClosing, setDrawerClosing] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const isMobile = useMediaQuery('(max-width: 767px)')
+  const drawerTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const closeDrawer = useCallback(() => {
+    if (drawerTimer.current) {
+      clearTimeout(drawerTimer.current)
+    }
+    setDrawerClosing(true)
+    const delay = prefersReducedMotion() ? 0 : 180
+    drawerTimer.current = setTimeout(() => {
+      setDrawerOpen(false)
+      setDrawerClosing(false)
+    }, delay)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (drawerTimer.current) {
+        clearTimeout(drawerTimer.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!drawerOpen) {
@@ -325,15 +367,15 @@ function AppShellFrame({
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setDrawerOpen(false)
+        closeDrawer()
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [drawerOpen])
+  }, [closeDrawer, drawerOpen])
 
   return (
-    <div className="min-h-dvh bg-canvas">
+    <div className="min-h-dvh bg-white">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-white px-3 pb-4 pt-5 md:flex">
         <div className="px-2">
           <Brand to="/files" />
@@ -344,28 +386,65 @@ function AppShellFrame({
         />
       </aside>
 
-      <div className="md:pl-60">
+      <div className="min-h-dvh bg-white md:pl-60">
         <header className="sticky top-0 z-20 flex h-16 items-center gap-2 border-b border-line bg-white px-3 sm:px-5 md:px-8">
           <IconButton
             label="打开导航菜单"
             className="md:hidden"
-            onClick={() => setDrawerOpen(true)}
+            onClick={() => {
+              if (drawerTimer.current) {
+                clearTimeout(drawerTimer.current)
+              }
+              setDrawerClosing(false)
+              setDrawerOpen(true)
+            }}
           >
             <MenuIcon size={20} />
           </IconButton>
-          <div
-            data-testid="breadcrumb"
-            className="min-w-0 flex-1 overflow-hidden"
-          >
-            {breadcrumb}
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-            {toolbar}
-            <AccountMenu />
-          </div>
+
+          {isMobile &&
+            (mobileSearch && searchOpen ? (
+              <div className="flex min-w-0 flex-1 items-center gap-1">
+                <TextField
+                  aria-label="筛选当前文件夹"
+                  data-testid="mobile-file-filter"
+                  placeholder="筛选当前文件夹"
+                  autoFocus
+                  value={mobileSearch.value}
+                  onChange={(event) =>
+                    mobileSearch.onChange(event.target.value)
+                  }
+                  leading={<Search size={16} />}
+                  containerClassName="min-w-0 flex-1"
+                />
+                <IconButton
+                  label="关闭搜索"
+                  size="sm"
+                  onClick={() => setSearchOpen(false)}
+                >
+                  <X size={18} />
+                </IconButton>
+              </div>
+            ) : (
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink-900">
+                {title}
+              </span>
+            ))}
+
+          {!isMobile && (
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+              {toolbar}
+            </div>
+          )}
+          {isMobile && mobileSearch && !searchOpen && (
+            <IconButton label="搜索" onClick={() => setSearchOpen(true)}>
+              <Search size={19} />
+            </IconButton>
+          )}
+          <AccountMenu />
         </header>
 
-        <main className="px-4 py-5 sm:px-6 md:px-8 md:py-6">
+        <main className="bg-white px-4 py-5 sm:px-6 md:px-8 md:py-6">
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
       </div>
@@ -374,14 +453,24 @@ function AppShellFrame({
         <div className="fixed inset-0 z-40 md:hidden">
           <div
             aria-hidden="true"
-            className="absolute inset-0 bg-ink-900/40"
-            onClick={() => setDrawerOpen(false)}
+            className={cx(
+              'absolute inset-0 bg-ink-900/40',
+              drawerClosing
+                ? 'pointer-events-none opacity-0 transition-opacity motion-base'
+                : 'animate-overlay-in',
+            )}
+            onClick={closeDrawer}
           />
           <div
             role="dialog"
             aria-modal="true"
             aria-label="导航菜单"
-            className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-white px-3 pb-4 pt-4 shadow-pop"
+            className={cx(
+              'absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-white px-3 pb-4 pt-4 shadow-pop',
+              drawerClosing
+                ? 'animate-drawer-out pointer-events-none'
+                : 'animate-drawer-in',
+            )}
           >
             <div className="flex items-center justify-between px-2">
               <Brand to="/files" />
@@ -389,7 +478,7 @@ function AppShellFrame({
                 label="关闭导航菜单"
                 size="sm"
                 autoFocus
-                onClick={() => setDrawerOpen(false)}
+                onClick={closeDrawer}
               >
                 <X size={18} />
               </IconButton>
@@ -397,7 +486,7 @@ function AppShellFrame({
             <SidebarBody
               onUploadRequest={onUploadRequest}
               onNewFolderRequest={onNewFolderRequest}
-              onNavigate={() => setDrawerOpen(false)}
+              onNavigate={closeDrawer}
             />
           </div>
         </div>

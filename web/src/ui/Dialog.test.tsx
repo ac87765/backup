@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
@@ -39,7 +39,9 @@ describe('Dialog', () => {
     expect(screen.getByTestId('folder-name')).toHaveFocus()
 
     await user.keyboard('{Escape}')
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    )
     expect(trigger).toHaveFocus()
   })
 
@@ -53,6 +55,8 @@ describe('Dialog', () => {
     expect(screen.getByRole('dialog')).toBeVisible()
 
     await user.click(dialog)
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    )
   })
 })

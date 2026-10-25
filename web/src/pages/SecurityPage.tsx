@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { AuthLayout } from '../components/AuthLayout'
 import { AppShell } from '../shell/AppShell'
+import { PageHeader } from '../shell/PageHeader'
 
 /**
  * “安全与隐私”页面（task 9.4 / client-encryption spec）。
@@ -24,8 +25,8 @@ function SecurityContent({ loggedIn }: { loggedIn: boolean }) {
           服务端能看到的信息
         </h2>
         <p>
-          Web 版是端对端加密：文件内容、文件名、文件元数据和主密钥都在你的浏览器
-          Worker 内加解密。服务端（以及数据库、OSS 的运维者）仍然能看到下面这些
+          Web 版是端对端加密：文件内容、文件名、文件元数据和主密钥都在你的浏览器里
+          加解密。服务端（以及数据库、OSS 的运维者）仍然能看到下面这些
           <strong className="text-ink-900">元数据</strong>
           ，它们足以推断部分使用情况：
         </p>
@@ -97,8 +98,8 @@ function SecurityContent({ loggedIn }: { loggedIn: boolean }) {
           className="space-y-2 rounded-card border-l-4 border-warning-600 bg-warning-50 p-4 text-ink-900"
         >
           <p>
-            主密钥（MK）只由你的密码包裹密钥或恢复密钥包裹密钥保护，服务端只保存包裹后的
-            密文。服务端<strong>没有</strong>主密钥、也没有恢复密钥，因此
+            主密钥（MK，用来解开你的文件内容）由你的密码或恢复密钥保护；服务端只保存
+            加密后的密钥材料。服务端<strong>没有</strong>主密钥、也没有恢复密钥，因此
             <strong>无法</strong>帮你解密、重置或找回数据。
           </p>
           <p>
@@ -180,14 +181,14 @@ export function SecurityPage() {
 
   if (user) {
     return (
-      <AppShell
-        breadcrumb={
-          <nav aria-label="面包屑" className="flex items-center gap-1.5 text-sm">
-            <span className="font-medium text-ink-900">安全与隐私</span>
-          </nav>
-        }
-      >
-        <SecurityContent loggedIn />
+      <AppShell title="安全与隐私">
+        <div className="max-w-3xl space-y-6">
+          <PageHeader
+            title="安全与隐私"
+            subtitle="端对端加密保护什么、不保护什么，以及你需要保管好什么。"
+          />
+          <SecurityContent loggedIn />
+        </div>
       </AppShell>
     )
   }

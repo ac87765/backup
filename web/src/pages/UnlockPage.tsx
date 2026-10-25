@@ -37,7 +37,7 @@ export function UnlockPage() {
   const submit = async () => {
     setError(null)
     if (!api) {
-      setError('当前环境不支持 Worker')
+      setError('当前浏览器不支持加密功能')
       return
     }
     setBusy(true)
@@ -56,7 +56,7 @@ export function UnlockPage() {
   return (
     <AuthLayout
       title="解锁"
-      subtitle={`已登录为 ${user.email}。主密钥只存在于本页 Worker 内存，刷新后需要重新解锁。`}
+      subtitle={`已登录为 ${user.email}。输入密码解锁本次会话；刷新或关闭页面后需要重新解锁。`}
       footer={
         <button
           type="button"

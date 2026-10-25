@@ -67,7 +67,7 @@ export function VerifyEmailPage({
   return (
     <AuthLayout
       title={state === 'success' ? '邮箱已验证' : '验证邮箱'}
-      subtitle="验证链接中的令牌只通过 POST 提交，并且只能使用一次。"
+      subtitle="验证链接只能使用一次，请尽快完成验证。"
       footer={
         <Link to="/login" className="font-medium text-brand-600 hover:underline">
           返回登录

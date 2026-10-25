@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -75,6 +75,8 @@ describe('FileList 键盘可达性', () => {
     expect(screen.getByRole('menu')).toBeVisible()
     await user.keyboard('{ArrowDown}{ArrowUp}{Enter}')
     expect(fileActions.onRename).toHaveBeenCalledTimes(1)
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+    )
   })
 })
