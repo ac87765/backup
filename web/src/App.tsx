@@ -20,6 +20,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { TrashPage } from './pages/TrashPage'
 import { UnlockPage } from './pages/UnlockPage'
 import { VerifyEmailPage } from './pages/VerifyEmailPage'
+import { UsageProvider } from './shell/UsageProvider'
 import { ToastProvider } from './ui'
 
 function RequireSession({ children }: { children: ReactNode }) {
@@ -160,9 +161,11 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <ToastProvider>
-          <AppRoutes />
-        </ToastProvider>
+        <UsageProvider>
+          <ToastProvider>
+            <AppRoutes />
+          </ToastProvider>
+        </UsageProvider>
       </AuthProvider>
     </BrowserRouter>
   )

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
+import { Folder } from 'lucide-react'
 
 import { errorMessage } from '../auth/errors'
-import { FormError } from '../components/PageShell'
+import { Button, cx, FormError } from '../ui'
 import type { FileNodeView, WorkerApi } from '../worker/types'
 import { sortByName } from './format'
 
@@ -9,7 +10,6 @@ export interface FolderPickerProps {
   api: WorkerApi | null
   startId: string
   startName: string
-  title: string
   /** 禁止选择该节点（通常是正在移动的文件夹自身）。 */
   excludeId?: string
   onCancel: () => void
@@ -21,7 +21,6 @@ export function FolderPicker({
   api,
   startId,
   startName,
-  title,
   excludeId,
   onCancel,
   onSelect,
@@ -73,81 +72,82 @@ export function FolderPicker({
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      data-testid="folder-picker"
-      className="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4"
-    >
-      <div className="w-full max-w-lg space-y-3 rounded-2xl bg-white p-4 shadow-xl">
-        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-        <nav
-          data-testid="picker-breadcrumb"
-          className="flex flex-wrap items-center gap-1 text-sm text-slate-600"
-        >
-          {path.map((entry, index) => (
-            <span key={entry.id} className="flex items-center gap-1">
-              {index > 0 && <span>/</span>}
-              <button
-                type="button"
-                className="underline disabled:no-underline"
-                disabled={index === path.length - 1}
-                onClick={() => {
-                  setLoading(true)
-                  setPath(path.slice(0, index + 1))
-                }}
-              >
-                {entry.name}
-              </button>
-            </span>
-          ))}
-        </nav>
-        <FormError message={error} />
-        <div className="max-h-64 space-y-1 overflow-y-auto">
-          {loading && <p className="text-sm text-slate-500">加载中…</p>}
-          {!loading && items.length === 0 && (
-            <p className="text-sm text-slate-500">当前文件夹没有子文件夹。</p>
-          )}
-          {items.map((item) => (
+    <div data-testid="folder-picker" className="space-y-3">
+      <nav
+        data-testid="picker-breadcrumb"
+        aria-label="目标文件夹路径"
+        className="flex flex-wrap items-center gap-0.5 text-sm text-ink-600"
+      >
+        {path.map((entry, index) => (
+          <span key={entry.id} className="flex items-center gap-0.5">
+            {index > 0 && <span className="text-ink-400">/</span>}
             <button
-              key={item.id}
               type="button"
-              data-testid="picker-folder"
-              data-name={item.name}
-              className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left text-sm text-slate-800"
+              disabled={index === path.length - 1}
               onClick={() => {
                 setLoading(true)
-                setPath([...path, { id: item.id, name: item.name }])
+                setPath(path.slice(0, index + 1))
               }}
+              className={cx(
+                'rounded-control px-1.5 py-1 transition-colors',
+                index === path.length - 1
+                  ? 'font-medium text-ink-900'
+                  : 'text-ink-600 hover:bg-canvas hover:text-ink-900',
+                'disabled:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
+              )}
             >
-              <span aria-hidden="true">📁</span>
-              <span className="truncate">{item.name}</span>
+              {entry.name}
             </button>
-          ))}
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-xs text-slate-500">
-            目标：{path.map((entry) => entry.name).join(' / ')}
+          </span>
+        ))}
+      </nav>
+      <FormError message={error} />
+      <div className="max-h-64 space-y-1 overflow-y-auto rounded-card border border-line p-1.5">
+        {loading && (
+          <p role="status" className="px-2 py-3 text-sm text-ink-600">
+            加载中…
           </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              onClick={onCancel}
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              data-testid="picker-select-current"
-              disabled={current.id === excludeId}
-              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-              onClick={() => onSelect(current)}
-            >
-              选择此文件夹
-            </button>
-          </div>
+        )}
+        {!loading && items.length === 0 && (
+          <p className="px-2 py-3 text-sm text-ink-600">
+            当前文件夹没有子文件夹。
+          </p>
+        )}
+        {items.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            data-testid="picker-folder"
+            data-name={item.name}
+            onClick={() => {
+              setLoading(true)
+              setPath([...path, { id: item.id, name: item.name }])
+            }}
+            className="flex w-full items-center gap-2 rounded-control px-2.5 py-2 text-left text-sm text-ink-900 transition-colors hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+          >
+            <Folder
+              size={18}
+              className="shrink-0 text-file-folder"
+              aria-hidden="true"
+            />
+            <span className="truncate">{item.name}</span>
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+        <p className="min-w-0 truncate text-xs leading-5 text-ink-600">
+          目标：{path.map((entry) => entry.name).join(' / ')}
+        </p>
+        <div className="flex gap-2">
+          <Button onClick={onCancel}>取消</Button>
+          <Button
+            variant="primary"
+            data-testid="picker-select-current"
+            disabled={current.id === excludeId}
+            onClick={() => onSelect(current)}
+          >
+            选择此文件夹
+          </Button>
         </div>
       </div>
     </div>

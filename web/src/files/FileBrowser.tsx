@@ -1,0 +1,1002 @@
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from 'react'
+import { FolderPlus, Search, Upload } from 'lucide-react'
+
+import { useAuth } from '../auth/context'
+import { errorCode, errorMessage } from '../auth/errors'
+import { AppShell } from '../shell/AppShell'
+import { useUsage } from '../shell/usage-context'
+import { Button, EmptyState, FormError, useToast } from '../ui'
+import type {
+  FileNodeView,
+  TransferProgressView,
+  VersionView,
+} from '../worker/types'
+import { Breadcrumbs, type Breadcrumb } from './Breadcrumbs'
+import { CreateFolderDialog } from './dialogs/CreateFolderDialog'
+import { MoveDialog } from './dialogs/MoveDialog'
+import { RenameDialog } from './dialogs/RenameDialog'
+import { VersionsDialog } from './dialogs/VersionsDialog'
+import { saveBlob, selectDownloadTarget } from './download-target'
+import { FileGrid } from './FileGrid'
+import { FileList } from './FileList'
+import type { FileActions } from './file-actions'
+import { FileToolbar } from './FileToolbar'
+import { sortByName } from './format'
+import { validateName } from './name-validation'
+import { TransferQueue, type TransferItemView } from './TransferQueue'
+import {
+  filterFileNodes,
+  loadSort,
+  loadViewMode,
+  nextSort,
+  saveSort,
+  saveViewMode,
+  sortFileNodes,
+  type SortField,
+  type ViewMode,
+} from './view-preferences'
+
+type PickerState = { mode: 'move'; node: FileNodeView } | null
+
+export function FileBrowser() {
+  const { api, user } = useAuth()
+  const rootId = user?.rootNodeId ?? ''
+  const { refreshUsage } = useUsage()
+  const { showToast } = useToast()
+
+  const [path, setPath] = useState<Breadcrumb[]>(() =>
+    rootId ? [{ id: rootId, name: '我的文件' }] : [],
+  )
+  const [items, setItems] = useState<FileNodeView[]>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const loadingMoreRef = useRef(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
+
+  const [filter, setFilter] = useState('')
+  const [viewMode, setViewMode] = useState<ViewMode>(() => loadViewMode())
+  const [sort, setSort] = useState(() => loadSort())
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createName, setCreateName] = useState('')
+  const [createError, setCreateError] = useState<string | null>(null)
+
+  const [renameTarget, setRenameTarget] = useState<FileNodeView | null>(null)
+  const [renameName, setRenameName] = useState('')
+  const [renameError, setRenameError] = useState<string | null>(null)
+
+  const [picker, setPicker] = useState<PickerState>(null)
+  const [versionsTarget, setVersionsTarget] = useState<FileNodeView | null>(null)
+  const [versions, setVersions] = useState<VersionView[]>([])
+  const [versionsError, setVersionsError] = useState<string | null>(null)
+
+  const [transfers, setTransfers] = useState<TransferItemView[]>([])
+  const uploadInputRef = useRef<HTMLInputElement>(null)
+  const versionInputRef = useRef<HTMLInputElement>(null)
+  const versionTargetRef = useRef<FileNodeView | null>(null)
+  const pendingUploadsLoaded = useRef(false)
+  const lastOpenRef = useRef<{ id: string; at: number }>({ id: '', at: 0 })
+
+  const current = path[path.length - 1]
+  const currentId = current?.id ?? null
+
+  const refresh = useCallback(() => {
+    setLoading(true)
+    setReloadToken((value) => value + 1)
+  }, [])
+
+  const patchTransfer = useCallback(
+    (localId: string, patch: Partial<TransferItemView>) => {
+      setTransfers((previous) =>
+        previous.map((item) =>
+          item.localId === localId ? { ...item, ...patch } : item,
+        ),
+      )
+    },
+    [],
+  )
+
+  const onTransferProgress = useCallback(
+    (localId: string, progress: TransferProgressView) => {
+      setTransfers((previous) =>
+        previous.map((item) =>
+          item.localId === localId
+            ? {
+                ...item,
+                status: progress.status,
+                completedChunks: progress.completedChunks,
+                totalChunks: progress.totalChunks,
+                completedBytes: progress.completedBytes,
+                totalBytes: progress.totalBytes,
+                sessionId:
+                  item.direction === 'upload'
+                    ? progress.transferId
+                    : item.sessionId,
+                downloadId:
+                  item.direction === 'download'
+                    ? progress.transferId
+                    : item.downloadId,
+                errorCode: progress.errorCode,
+                errorMessage: progress.errorMessage,
+              }
+            : item,
+        ),
+      )
+    },
+    [],
+  )
+
+  const startUpload = useCallback(
+    async (file: File, parentId: string, versionNodeId?: string) => {
+      if (!api) {
+        return
+      }
+      const localId = crypto.randomUUID()
+      const item: TransferItemView = {
+        localId,
+        direction: 'upload',
+        fileName: file.name,
+        status: 'pending',
+        completedChunks: 0,
+        totalChunks: 0,
+        completedBytes: 0,
+        totalBytes: file.size,
+        file,
+        parentId,
+        ...(versionNodeId ? { nodeId: versionNodeId } : {}),
+      }
+      setTransfers((previous) => [...previous, item])
+      try {
+        const progress = (event: TransferProgressView) =>
+          onTransferProgress(localId, event)
+        if (versionNodeId) {
+          await api.uploadNewVersion(versionNodeId, file, progress)
+        } else {
+          await api.uploadFile(parentId, file, progress)
+        }
+        patchTransfer(localId, {
+          status: 'completed',
+          completedBytes: file.size,
+          totalBytes: file.size,
+          file: undefined,
+        })
+        showToast(`“${file.name}”上传完成`)
+        refresh()
+        refreshUsage()
+      } catch (caught) {
+        const code = errorCode(caught) ?? undefined
+        patchTransfer(localId, {
+          status: code === 'cancelled' ? 'cancelled' : 'failed',
+          errorCode: code,
+          errorMessage: errorMessage(caught),
+        })
+      }
+    },
+    [
+      api,
+      onTransferProgress,
+      patchTransfer,
+      refresh,
+      refreshUsage,
+      showToast,
+    ],
+  )
+
+  const startDownload = useCallback(
+    async (
+      nodeId: string,
+      versionId: string,
+      fileName: string,
+      mime: string,
+      size: number,
+    ) => {
+      if (!api) {
+        return
+      }
+      const localId = crypto.randomUUID()
+      const item: TransferItemView = {
+        localId,
+        direction: 'download',
+        fileName,
+        status: 'pending',
+        completedChunks: 0,
+        totalChunks: 0,
+        completedBytes: 0,
+        totalBytes: size,
+        nodeId,
+        versionId,
+        mime,
+        size,
+      }
+      setTransfers((previous) => [...previous, item])
+      let cleanup: () => void = () => undefined
+      try {
+        const selection = await selectDownloadTarget(fileName, mime, size)
+        cleanup = selection.cleanup
+        const downloadId =
+          selection.target.kind === 'service-worker'
+            ? selection.target.downloadId
+            : crypto.randomUUID()
+        patchTransfer(localId, { downloadId })
+        const result = await api.downloadVersion(
+          nodeId,
+          versionId,
+          downloadId,
+          fileName,
+          selection.target,
+          (event) => onTransferProgress(localId, event),
+        )
+        if (result.blob) {
+          saveBlob(result.blob, fileName)
+        }
+        patchTransfer(localId, {
+          status: 'completed',
+          completedBytes: size,
+          totalBytes: size,
+        })
+        showToast(`“${fileName}”下载完成`)
+      } catch (caught) {
+        const code =
+          errorCode(caught) ??
+          (caught instanceof DOMException && caught.name === 'AbortError'
+            ? 'cancelled'
+            : undefined)
+        patchTransfer(localId, {
+          status: code === 'cancelled' ? 'cancelled' : 'failed',
+          errorCode: code,
+          errorMessage: errorMessage(caught),
+        })
+      } finally {
+        cleanup()
+      }
+    },
+    [api, onTransferProgress, patchTransfer, showToast],
+  )
+
+  const pauseTransfer = useCallback(
+    async (item: TransferItemView) => {
+      if (!api) {
+        return
+      }
+      try {
+        if (item.direction === 'upload' && item.sessionId) {
+          await api.pauseUpload(item.sessionId)
+        } else if (item.direction === 'download' && item.downloadId) {
+          await api.pauseDownload(item.downloadId)
+        }
+        patchTransfer(item.localId, { status: 'paused' })
+      } catch (caught) {
+        patchTransfer(item.localId, { errorMessage: errorMessage(caught) })
+      }
+    },
+    [api, patchTransfer],
+  )
+
+  const resumeTransfer = useCallback(
+    async (item: TransferItemView) => {
+      if (!api) {
+        return
+      }
+      try {
+        if (item.direction === 'upload' && item.sessionId) {
+          await api.resumeUpload(item.sessionId)
+        } else if (item.direction === 'download' && item.downloadId) {
+          await api.resumeDownload(item.downloadId)
+        }
+        patchTransfer(item.localId, {
+          status: item.direction === 'upload' ? 'uploading' : 'downloading',
+        })
+      } catch (caught) {
+        patchTransfer(item.localId, { errorMessage: errorMessage(caught) })
+      }
+    },
+    [api, patchTransfer],
+  )
+
+  const cancelTransfer = useCallback(
+    async (item: TransferItemView) => {
+      if (!api) {
+        return
+      }
+      try {
+        if (item.direction === 'upload' && item.sessionId) {
+          await api.cancelUpload(item.sessionId)
+          refresh()
+          refreshUsage()
+        } else if (item.direction === 'download' && item.downloadId) {
+          await api.cancelDownload(item.downloadId)
+        }
+        patchTransfer(item.localId, {
+          status: 'cancelled',
+          file: undefined,
+          pendingResume: false,
+        })
+      } catch (caught) {
+        patchTransfer(item.localId, {
+          status: 'failed',
+          errorMessage: errorMessage(caught),
+        })
+      }
+    },
+    [api, patchTransfer, refresh, refreshUsage],
+  )
+
+  const retryTransfer = useCallback(
+    (item: TransferItemView) => {
+      if (item.direction === 'download' && item.nodeId && item.versionId) {
+        setTransfers((previous) =>
+          previous.filter((entry) => entry.localId !== item.localId),
+        )
+        void startDownload(
+          item.nodeId,
+          item.versionId,
+          item.fileName,
+          item.mime ?? 'application/octet-stream',
+          item.size ?? item.totalBytes,
+        )
+        return
+      }
+      if (item.direction === 'upload' && item.sessionId && item.file) {
+        patchTransfer(item.localId, {
+          status: 'uploading',
+          errorCode: undefined,
+          errorMessage: undefined,
+        })
+        void api
+          ?.resumePendingUpload(
+            item.sessionId,
+            item.file,
+            (event) => onTransferProgress(item.localId, event),
+          )
+          .then(() => {
+            patchTransfer(item.localId, {
+              status: 'completed',
+              completedBytes: item.totalBytes,
+              file: undefined,
+            })
+            refresh()
+            refreshUsage()
+          })
+          .catch((caught: unknown) => {
+            patchTransfer(item.localId, {
+              status: 'failed',
+              errorCode: errorCode(caught) ?? undefined,
+              errorMessage: errorMessage(caught),
+            })
+          })
+        return
+      }
+      if (item.direction === 'upload' && item.file) {
+        // 会话尚未创建成功（例如创建请求网络失败）：重新开始一次上传。
+        setTransfers((previous) =>
+          previous.filter((entry) => entry.localId !== item.localId),
+        )
+        void startUpload(item.file, item.parentId ?? rootId, item.nodeId)
+      }
+    },
+    [
+      api,
+      onTransferProgress,
+      patchTransfer,
+      refresh,
+      refreshUsage,
+      startDownload,
+      startUpload,
+      rootId,
+    ],
+  )
+
+  const resumeUploadFile = useCallback(
+    async (item: TransferItemView, file: File) => {
+      if (!api || !item.sessionId) {
+        return
+      }
+      patchTransfer(item.localId, {
+        status: 'uploading',
+        file,
+        pendingResume: false,
+        errorCode: undefined,
+        errorMessage: undefined,
+      })
+      try {
+        await api.resumePendingUpload(
+          item.sessionId,
+          file,
+          (event) => onTransferProgress(item.localId, event),
+        )
+        patchTransfer(item.localId, {
+          status: 'completed',
+          completedBytes: file.size,
+          totalBytes: file.size,
+          file: undefined,
+        })
+        showToast(`“${file.name}”上传完成`)
+        refresh()
+        refreshUsage()
+      } catch (caught) {
+        const code = errorCode(caught)
+        patchTransfer(item.localId, {
+          status: code === 'cancelled' ? 'cancelled' : 'failed',
+          pendingResume: code === 'fingerprint_mismatch',
+          errorCode: code ?? undefined,
+          errorMessage: errorMessage(caught),
+        })
+      }
+    },
+    [
+      api,
+      onTransferProgress,
+      patchTransfer,
+      refresh,
+      refreshUsage,
+      showToast,
+    ],
+  )
+
+  const dismissTransfer = useCallback((item: TransferItemView) => {
+    setTransfers((previous) =>
+      previous.filter((entry) => entry.localId !== item.localId),
+    )
+  }, [])
+
+  const handleUploadInput = (files: FileList | null) => {
+    if (!files || !current) {
+      return
+    }
+    for (const file of Array.from(files)) {
+      void startUpload(file, current.id)
+    }
+  }
+
+  const handleVersionInput = (files: FileList | null) => {
+    const file = files?.[0]
+    const target = versionTargetRef.current
+    versionTargetRef.current = null
+    if (!file || !target) {
+      return
+    }
+    void startUpload(file, target.parentId ?? rootId, target.id)
+  }
+
+  const handleDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault()
+    if (!current) {
+      return
+    }
+    for (const file of Array.from(event.dataTransfer.files)) {
+      void startUpload(file, current.id)
+    }
+  }
+
+  const startVersionUpload = (node: FileNodeView) => {
+    versionTargetRef.current = node
+    versionInputRef.current?.click()
+  }
+
+  const downloadCurrentVersion = useCallback(
+    (node: FileNodeView) => {
+      if (!node.currentVersionId) {
+        showToast('该文件没有可下载的版本', 'error')
+        return
+      }
+      void startDownload(
+        node.id,
+        node.currentVersionId,
+        node.name,
+        node.mime ?? 'application/octet-stream',
+        node.size ?? 0,
+      )
+    },
+    [showToast, startDownload],
+  )
+
+  const openNode = useCallback(
+    (node: FileNodeView) => {
+      const now = Date.now()
+      if (
+        lastOpenRef.current.id === node.id &&
+        now - lastOpenRef.current.at < 400
+      ) {
+        return
+      }
+      lastOpenRef.current = { id: node.id, at: now }
+      if (node.kind === 'folder') {
+        setLoading(true)
+        setFilter('')
+        setSelectedId(null)
+        setPath((previous) => [
+          ...previous,
+          { id: node.id, name: node.name },
+        ])
+        return
+      }
+      downloadCurrentVersion(node)
+    },
+    [downloadCurrentVersion],
+  )
+
+  const navigateTo = useCallback((index: number) => {
+    setLoading(true)
+    setFilter('')
+    setSelectedId(null)
+    setPath((previous) => previous.slice(0, index + 1))
+  }, [])
+
+  const changeViewMode = (mode: ViewMode) => {
+    setViewMode(mode)
+    saveViewMode(mode)
+  }
+
+  const changeSort = (field: SortField) => {
+    const next = nextSort(sort, field)
+    setSort(next)
+    saveSort(next)
+  }
+
+  const downloadVersion = (version: VersionView) => {
+    if (!versionsTarget) {
+      return
+    }
+    void startDownload(
+      versionsTarget.id,
+      version.id,
+      versionsTarget.name,
+      versionsTarget.mime ?? 'application/octet-stream',
+      version.size,
+    )
+  }
+
+  useEffect(() => {
+    if (!api || !currentId) {
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const page = await api.listFolder(currentId)
+        if (!cancelled) {
+          setItems(sortByName(page.items))
+          setNextCursor(page.nextCursor)
+          setError(null)
+        }
+      } catch (caught) {
+        if (!cancelled) {
+          setError(errorMessage(caught))
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [api, currentId, reloadToken])
+
+  const loadMore = useCallback(async () => {
+    if (!api || !currentId || !nextCursor || loadingMoreRef.current) {
+      return
+    }
+    loadingMoreRef.current = true
+    setLoadingMore(true)
+    try {
+      const page = await api.listFolder(currentId, nextCursor)
+      setItems((previous) => sortByName([...previous, ...page.items]))
+      setNextCursor(page.nextCursor)
+    } catch (caught) {
+      setError(errorMessage(caught))
+    } finally {
+      loadingMoreRef.current = false
+      setLoadingMore(false)
+    }
+  }, [api, currentId, nextCursor])
+
+  useEffect(() => {
+    if (!api || pendingUploadsLoaded.current) {
+      return
+    }
+    pendingUploadsLoaded.current = true
+    void (async () => {
+      try {
+        const pending = await api.listPendingUploads()
+        setTransfers((previous) => [
+          ...previous,
+          ...pending.map<TransferItemView>((entry) => ({
+            localId: `pending-${entry.sessionId}`,
+            direction: 'upload',
+            fileName: entry.name,
+            status: 'paused',
+            completedChunks: 0,
+            totalChunks: 0,
+            completedBytes: 0,
+            totalBytes: entry.size,
+            sessionId: entry.sessionId,
+            nodeId: entry.nodeId,
+            pendingResume: true,
+          })),
+        ])
+      } catch {
+        // 读取 IndexedDB 失败不阻塞文件浏览。
+      }
+    })()
+  }, [api])
+
+  const openCreate = () => {
+    setCreateOpen(true)
+    setCreateName('')
+    setCreateError(null)
+  }
+
+  const closeCreate = () => {
+    setCreateOpen(false)
+    setCreateName('')
+    setCreateError(null)
+  }
+
+  const submitCreate = async () => {
+    if (!api || !current) {
+      return
+    }
+    const message = validateName(createName)
+    if (message) {
+      setCreateError(message)
+      return
+    }
+    setBusy('create')
+    try {
+      await api.createFolder(current.id, createName)
+      closeCreate()
+      showToast('文件夹已创建')
+      refresh()
+      refreshUsage()
+    } catch (caught) {
+      setCreateError(errorMessage(caught))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const openRename = (node: FileNodeView) => {
+    setRenameTarget(node)
+    setRenameName(node.name)
+    setRenameError(null)
+  }
+
+  const closeRename = () => {
+    setRenameTarget(null)
+    setRenameError(null)
+  }
+
+  const submitRename = async () => {
+    if (!api || !renameTarget) {
+      return
+    }
+    const message = validateName(renameName)
+    if (message) {
+      setRenameError(message)
+      return
+    }
+    setBusy('rename')
+    try {
+      await api.renameNode(
+        renameTarget.id,
+        renameTarget.parentId ?? currentId ?? rootId,
+        renameName,
+        renameTarget.rowVersion,
+      )
+      closeRename()
+      showToast('已重命名')
+      refresh()
+      refreshUsage()
+    } catch (caught) {
+      setRenameError(errorMessage(caught))
+      if (errorCode(caught) === 'conflict') {
+        refresh()
+      }
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const softDelete = async (node: FileNodeView) => {
+    if (!api) {
+      return
+    }
+    setBusy(`delete:${node.id}`)
+    try {
+      await api.deleteNode(node.id)
+      showToast(`“${node.name}”已移入回收站`)
+      refresh()
+      refreshUsage()
+    } catch (caught) {
+      showToast(errorMessage(caught), 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const submitMove = async (target: { id: string; name: string }) => {
+    if (!api || !picker || picker.mode !== 'move') {
+      return
+    }
+    setBusy('move')
+    try {
+      await api.moveNode(
+        picker.node.id,
+        target.id,
+        picker.node.name,
+        picker.node.rowVersion,
+      )
+      setPicker(null)
+      showToast(`已移动到“${target.name}”`)
+      refresh()
+      refreshUsage()
+    } catch (caught) {
+      showToast(errorMessage(caught), 'error')
+      setPicker(null)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const openVersions = async (node: FileNodeView) => {
+    if (!api) {
+      return
+    }
+    setVersionsTarget(node)
+    setVersions([])
+    setVersionsError(null)
+    try {
+      setVersions(await api.listVersions(node.id))
+    } catch (caught) {
+      setVersionsError(errorMessage(caught))
+    }
+  }
+
+  const closeVersions = () => {
+    setVersionsTarget(null)
+    setVersions([])
+    setVersionsError(null)
+  }
+
+  const restoreVersion = async (version: VersionView) => {
+    if (!api || !versionsTarget) {
+      return
+    }
+    setBusy(`version:${version.id}`)
+    try {
+      await api.restoreVersion(versionsTarget.id, version.id)
+      setVersions(await api.listVersions(versionsTarget.id))
+      showToast('已恢复该版本为当前版本')
+      refresh()
+      refreshUsage()
+    } catch (caught) {
+      setVersionsError(errorMessage(caught))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const visibleItems = useMemo(
+    () => sortFileNodes(filterFileNodes(items, filter), sort),
+    [filter, items, sort],
+  )
+
+  const actions: FileActions = {
+    busy: busy !== null,
+    onOpen: openNode,
+    onDownload: downloadCurrentVersion,
+    onRename: openRename,
+    onMove: (node) => setPicker({ mode: 'move', node }),
+    onVersions: (node) => void openVersions(node),
+    onNewVersion: startVersionUpload,
+    onDelete: (node) => void softDelete(node),
+  }
+
+  const emptyState =
+    filter.trim().length > 0 ? (
+      <EmptyState
+        icon={<Search size={24} />}
+        title="没有匹配的文件"
+        description={`当前文件夹中没有名称包含“${filter.trim()}”的项目。`}
+        actions={<Button onClick={() => setFilter('')}>清除筛选</Button>}
+      />
+    ) : (
+      <EmptyState
+        icon={<FolderPlus size={24} />}
+        title="这个文件夹还是空的"
+        description="拖入文件，或从上传菜单开始整理你的加密备份。"
+        actions={
+          <>
+            <Button
+              variant="primary"
+              icon={<Upload size={16} />}
+              onClick={() => uploadInputRef.current?.click()}
+            >
+              上传文件
+            </Button>
+            <Button
+              icon={<FolderPlus size={16} />}
+              onClick={openCreate}
+            >
+              新建文件夹
+            </Button>
+          </>
+        }
+      />
+    )
+
+  return (
+    <AppShell
+      breadcrumb={<Breadcrumbs path={path} onNavigate={navigateTo} />}
+      toolbar={
+        <FileToolbar
+          filter={filter}
+          onFilterChange={setFilter}
+          viewMode={viewMode}
+          onViewModeChange={changeViewMode}
+          onRefresh={refresh}
+        />
+      }
+      onUploadRequest={() => uploadInputRef.current?.click()}
+      onNewFolderRequest={openCreate}
+    >
+      <div
+        data-testid="file-drop-zone"
+        className="space-y-4"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={handleDrop}
+      >
+        <input
+          ref={uploadInputRef}
+          type="file"
+          multiple
+          data-testid="upload-input"
+          className="hidden"
+          onChange={(event) => {
+            handleUploadInput(event.target.files)
+            event.target.value = ''
+          }}
+        />
+        <input
+          ref={versionInputRef}
+          type="file"
+          data-testid="version-input"
+          className="hidden"
+          onChange={(event) => {
+            handleVersionInput(event.target.files)
+            event.target.value = ''
+          }}
+        />
+
+        <header className="flex flex-wrap items-end justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold tracking-tight text-ink-900">
+              {current?.name ?? '我的文件'}
+            </h1>
+            <p className="mt-0.5 text-sm leading-6 text-ink-600">
+              {loading
+                ? '正在加载…'
+                : `${visibleItems.length} 项${filter.trim() ? '（已筛选）' : ''}`}
+            </p>
+          </div>
+          {filter.trim() && (
+            <Button size="sm" variant="ghost" onClick={() => setFilter('')}>
+              清除筛选
+            </Button>
+          )}
+        </header>
+
+        <FormError message={error} />
+
+        {loading ? (
+          <div
+            role="status"
+            className="rounded-card border border-line bg-white px-6 py-16 text-center text-sm text-ink-600"
+          >
+            加载中…
+          </div>
+        ) : visibleItems.length === 0 ? (
+          <div className="rounded-card border border-line bg-white">
+            {emptyState}
+          </div>
+        ) : viewMode === 'list' ? (
+          <FileList
+            items={visibleItems}
+            sort={sort}
+            onSort={changeSort}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            actions={actions}
+            onEndReached={() => void loadMore()}
+          />
+        ) : (
+          <FileGrid
+            items={visibleItems}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            actions={actions}
+          />
+        )}
+
+        {!loading && loadingMore && (
+          <p role="status" className="text-sm text-ink-600">
+            加载更多…
+          </p>
+        )}
+      </div>
+
+      <TransferQueue
+        items={transfers}
+        onPause={(item) => void pauseTransfer(item)}
+        onResume={(item) => void resumeTransfer(item)}
+        onCancel={(item) => void cancelTransfer(item)}
+        onRetry={retryTransfer}
+        onResumeFile={(item, file) => void resumeUploadFile(item, file)}
+        onDismiss={dismissTransfer}
+      />
+
+      <CreateFolderDialog
+        open={createOpen}
+        name={createName}
+        error={createError}
+        busy={busy !== null}
+        onNameChange={(value) => {
+          setCreateName(value)
+          setCreateError(null)
+        }}
+        onClose={closeCreate}
+        onSubmit={() => void submitCreate()}
+      />
+
+      {renameTarget && (
+        <RenameDialog
+          open
+          name={renameName}
+          error={renameError}
+          busy={busy !== null}
+          onNameChange={(value) => {
+            setRenameName(value)
+            setRenameError(null)
+          }}
+          onClose={closeRename}
+          onSubmit={() => void submitRename()}
+        />
+      )}
+
+      {picker?.mode === 'move' && (
+        <MoveDialog
+          node={picker.node}
+          api={api}
+          rootId={rootId}
+          onClose={() => setPicker(null)}
+          onSelect={(folder) => void submitMove(folder)}
+        />
+      )}
+
+      {versionsTarget && (
+        <VersionsDialog
+          node={versionsTarget}
+          versions={versions}
+          error={versionsError}
+          busy={busy !== null}
+          onClose={closeVersions}
+          onDownload={downloadVersion}
+          onRestore={(version) => void restoreVersion(version)}
+        />
+      )}
+    </AppShell>
+  )
+}

@@ -4,6 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/context'
+import { UsageProvider } from '../shell/UsageProvider'
+import { ToastProvider } from '../ui'
 import type { FileNodeView, WorkerApi } from '../worker/types'
 import { FilesPage } from './FilesPage'
 
@@ -44,14 +46,18 @@ function renderPage(api: Partial<WorkerApi>) {
   return render(
     <MemoryRouter>
       <AuthContext.Provider value={value}>
-        <FilesPage />
+        <UsageProvider>
+          <ToastProvider>
+            <FilesPage />
+          </ToastProvider>
+        </UsageProvider>
       </AuthContext.Provider>
     </MemoryRouter>,
   )
 }
 
 describe('文件浏览器页面', () => {
-  it('显示 SQL/Worker 返回的文件节点并按解密名称本地排序', async () => {
+  it('文件夹排在文件之前，并按解密名称显示与排序', async () => {
     const listFolder = vi.fn().mockResolvedValue({
       items: [
         node({ id: '550e8400-e29b-41d4-a716-446655440002', name: 'Z 文件夹' }),
@@ -77,11 +83,11 @@ describe('文件浏览器页面', () => {
     await screen.findByText('A 文件.txt')
     const rows = screen.getAllByTestId('file-row')
     expect(rows.map((row) => row.getAttribute('data-name'))).toEqual([
-      'A 文件.txt',
       'Z 文件夹',
+      'A 文件.txt',
     ])
-    expect(screen.getByText(/1\.0 KiB ·/)).toBeInTheDocument()
-    expect(screen.getByTestId('usage-summary')).toHaveTextContent(
+    expect(screen.getAllByText(/1\.0 KiB/).length).toBeGreaterThan(0)
+    expect(await screen.findByTestId('usage-summary')).toHaveTextContent(
       '已用 1.0 KiB',
     )
   })
@@ -100,7 +106,8 @@ describe('文件浏览器页面', () => {
     renderPage({ listFolder, createFolder, getUsage })
 
     await waitFor(() => expect(listFolder).toHaveBeenCalled())
-    fireEvent.click(screen.getByTestId('new-folder'))
+    fireEvent.click(screen.getByTestId('upload-menu'))
+    fireEvent.click(await screen.findByTestId('new-folder'))
     fireEvent.click(screen.getByTestId('create-folder-submit'))
     expect(await screen.findByRole('alert')).toHaveTextContent('名称不能为空')
     expect(createFolder).not.toHaveBeenCalled()

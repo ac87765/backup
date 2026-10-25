@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from 'react'
 
+import { cx } from '../ui/cx'
+
 interface VirtualListProps<T> {
   items: T[]
   getKey: (item: T) => string
@@ -9,6 +11,8 @@ interface VirtualListProps<T> {
   testId?: string
   empty?: ReactNode
   onEndReached?: () => void
+  className?: string
+  rowClassName?: string
 }
 
 /**
@@ -24,10 +28,16 @@ export function VirtualList<T>({
   testId = 'virtual-list',
   empty,
   onEndReached,
+  className,
+  rowClassName = 'border-b border-line',
 }: VirtualListProps<T>) {
   const [scrollTop, setScrollTop] = useState(0)
   if (items.length === 0) {
-    return <div data-testid={testId}>{empty ?? null}</div>
+    return (
+      <div data-testid={testId} className={className}>
+        {empty ?? null}
+      </div>
+    )
   }
 
   const overscan = 4
@@ -39,7 +49,7 @@ export function VirtualList<T>({
   return (
     <div
       data-testid={testId}
-      className="relative overflow-y-auto rounded-xl border border-slate-200"
+      className={cx('relative overflow-y-auto', className)}
       style={{ height }}
       onScroll={(event) => {
         const target = event.currentTarget
@@ -58,7 +68,7 @@ export function VirtualList<T>({
           return (
             <div
               key={getKey(item)}
-              className="absolute inset-x-0 flex items-center gap-3 border-b border-slate-100 px-3"
+              className={cx('absolute inset-x-0', rowClassName)}
               style={{ top: position * rowHeight, height: rowHeight }}
             >
               {renderItem(item)}

@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/context'
+import { UsageProvider } from '../shell/UsageProvider'
 import { ToastProvider } from '../ui'
 import type { WorkerApi } from '../worker/types'
 import { SettingsPage } from './SettingsPage'
@@ -36,11 +37,13 @@ function renderSettings(initialEntry: string) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <AuthContext.Provider value={value}>
-        <ToastProvider>
-          <Routes>
-            <Route path="/settings" element={<SettingsPage />} />
-          </Routes>
-        </ToastProvider>
+        <UsageProvider>
+          <ToastProvider>
+            <Routes>
+              <Route path="/settings" element={<SettingsPage />} />
+            </Routes>
+          </ToastProvider>
+        </UsageProvider>
       </AuthContext.Provider>
     </MemoryRouter>,
   )

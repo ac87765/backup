@@ -27,7 +27,6 @@ import {
   useToast,
   type MenuItem,
 } from '../ui'
-import { UsageProvider } from './UsageProvider'
 import { useUsage } from './usage-context'
 
 export interface AppShellProps {
@@ -409,11 +408,10 @@ function AppShellFrame({
   )
 }
 
-/** 登录后的统一外壳：左侧导航 + 顶部栏 + 主内容区。 */
+/**
+ * 登录后的统一外壳：左侧导航 + 顶部栏 + 主内容区。
+ * 用量由 App 根部的 UsageProvider 提供，侧边栏与文件操作共享同一份状态。
+ */
 export function AppShell(props: AppShellProps) {
-  return (
-    <UsageProvider>
-      <AppShellFrame {...props} />
-    </UsageProvider>
-  )
+  return <AppShellFrame {...props} />
 }

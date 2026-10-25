@@ -8,6 +8,7 @@ import { AuthContext, type AuthContextValue } from '../auth/context'
 import { ToastProvider } from '../ui'
 import type { UsageView, WorkerApi } from '../worker/types'
 import { AppShell } from './AppShell'
+import { UsageProvider } from './UsageProvider'
 
 const USER = {
   userId: '550e8400-e29b-41d4-a716-446655440000',
@@ -45,8 +46,9 @@ function renderShell(value: AuthContextValue) {
   return render(
     <MemoryRouter initialEntries={['/files']}>
       <AuthContext.Provider value={value}>
-        <ToastProvider>
-          <Routes>
+        <UsageProvider>
+          <ToastProvider>
+            <Routes>
             <Route
               path="/files"
               element={
@@ -72,8 +74,9 @@ function renderShell(value: AuthContextValue) {
               }
             />
             <Route path="/login" element={<p>登录页</p>} />
-          </Routes>
-        </ToastProvider>
+            </Routes>
+          </ToastProvider>
+        </UsageProvider>
       </AuthContext.Provider>
     </MemoryRouter>,
   )
