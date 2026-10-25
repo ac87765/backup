@@ -15,6 +15,9 @@ import type {
 
 const MAX_BLOB_BYTES = 2 * 1024 * 1024 * 1024
 
+/** 文件夹 zip 的 Blob 回退上限（design D7）。Worker 会再次校验。 */
+export const MAX_FOLDER_BLOB_BYTES = 500 * 1024 * 1024
+
 interface PickerWindow extends Window {
   showSaveFilePicker?: (options?: {
     suggestedName?: string
@@ -69,6 +72,33 @@ async function selectServiceWorker(
   const downloadId = crypto.randomUUID()
   const cleanup = await prepareServiceWorkerDownload(downloadId, fileName, mime)
   return { target: { kind: 'service-worker', downloadId }, cleanup }
+}
+
+/**
+ * 文件夹 zip 的目标选择：File System Access → Service Worker → Blob。
+ *
+ * Blob 的大小上限（500 MiB）在 Worker 遍历完子文件后才能确定，因此这里
+ * 只返回 `blob` 目标，由 Worker 在打包前校验。
+ */
+export async function selectFolderDownloadTarget(
+  fileName: string,
+): Promise<DownloadSelection> {
+  const forced = forcedFallback()
+  if (forced === 'blob') {
+    return { target: { kind: 'blob' }, cleanup: () => undefined }
+  }
+  if (forced === 'service-worker') {
+    return selectServiceWorker(fileName, 'application/zip')
+  }
+  const picker = (window as PickerWindow).showSaveFilePicker
+  if (typeof picker === 'function') {
+    const handle = await picker({ suggestedName: fileName })
+    return { target: { kind: 'file-system', handle }, cleanup: () => undefined }
+  }
+  if ('serviceWorker' in navigator) {
+    return selectServiceWorker(fileName, 'application/zip')
+  }
+  return { target: { kind: 'blob' }, cleanup: () => undefined }
 }
 
 function selectBlob(size: number): DownloadSelection {
