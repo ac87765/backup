@@ -309,11 +309,12 @@ fn hex_value(byte: u8) -> Option<u8> {
     }
 }
 
-/// 插入一条最小的 users 行（仅用于第 5 组邮件队列测试的 FK 依赖）。
+/// 插入一条最小的 users 行与根节点，返回根节点 ID。
 ///
 /// `email_outbox` / `email_tokens` 在第 6 组补了指向 `users` 的外键；
-/// 这里提供一个不经过认证流程的最小用户，避免测试直接使用随机 UUID。
-pub async fn insert_test_user(database: &server::Database, user_id: Uuid) {
+/// `users.root_node_id` 在第 7 组改为 NOT NULL，因此这里必须同时创建根节点。
+/// 两个外键都是 DEFERRABLE，可以在同一事务内互相引用。
+pub async fn insert_test_user(database: &server::Database, user_id: Uuid) -> Uuid {
     let email = format!("test-{user_id}@example.com");
     let params = serde_json::json!({
         "algorithm": "argon2id",
@@ -324,13 +325,16 @@ pub async fn insert_test_user(database: &server::Database, user_id: Uuid) {
     let salt = [0_u8; 16];
     let hash = [0_u8; 32];
     let wrapped = vec![1_u8; crypto_core::FRAME_OVERHEAD + crypto_core::KEY_LEN];
+    let root_node_id = Uuid::new_v4();
+    let mut tx = database.pool().begin().await.expect("开始插入测试用户事务");
     sqlx::query(
         r#"
         INSERT INTO users (
             id, email, kdf_params, kdf_salt, auth_hash, pepper_version,
-            recovery_auth_hash, recovery_pepper_version, wrapped_mk, recovery_wrapped_mk
+            recovery_auth_hash, recovery_pepper_version, wrapped_mk, recovery_wrapped_mk,
+            root_node_id
         )
-        VALUES ($1, $2::text::citext, $3, $4, $5, 1, $6, 1, $7, $8)
+        VALUES ($1, $2::text::citext, $3, $4, $5, 1, $6, 1, $7, $8, $9)
         "#,
     )
     .bind(user_id)
@@ -341,9 +345,23 @@ pub async fn insert_test_user(database: &server::Database, user_id: Uuid) {
     .bind(hash.as_slice())
     .bind(wrapped.as_slice())
     .bind(wrapped.as_slice())
-    .execute(database.pool())
+    .bind(root_node_id)
+    .execute(&mut *tx)
     .await
     .expect("插入测试用户");
+    sqlx::query(
+        r#"
+        INSERT INTO nodes (id, user_id, parent_id, kind, row_version)
+        VALUES ($1, $2, NULL, 'folder', 1)
+        "#,
+    )
+    .bind(root_node_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await
+    .expect("插入测试根节点");
+    tx.commit().await.expect("提交测试用户事务");
+    root_node_id
 }
 
 /// 构造一个不连接任何真实依赖的配置（只用于应用骨架/中间件测试）。

@@ -420,6 +420,9 @@ pub async fn register(
     let kdf_params_json = serde_json::to_value(kdf_params).map_err(ApiError::internal)?;
 
     let user_id = Uuid::new_v4();
+    // 根节点由服务端生成 ID（design D9）；用户表与节点表互相引用，
+    // 因此外键是 DEFERRABLE 的，先插入 user 再插入 node 可在同一事务完成。
+    let root_node_id = Uuid::new_v4();
     let mut tx = state
         .database
         .pool()
@@ -431,9 +434,10 @@ pub async fn register(
         r#"
         INSERT INTO users (
             id, email, kdf_params, kdf_salt, auth_hash, pepper_version,
-            recovery_auth_hash, recovery_pepper_version, wrapped_mk, recovery_wrapped_mk
+            recovery_auth_hash, recovery_pepper_version, wrapped_mk, recovery_wrapped_mk,
+            root_node_id
         )
-        VALUES ($1, $2::text::citext, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2::text::citext, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         ON CONFLICT (email) DO NOTHING
         RETURNING id
         "#,
@@ -447,6 +451,7 @@ pub async fn register(
         state.auth.current_pepper_version(),
         wrapped_mk,
         recovery_wrapped_mk,
+        root_node_id,
     )
     .fetch_optional(&mut *tx)
     .await
@@ -454,6 +459,19 @@ pub async fn register(
 
     match inserted {
         Some(row) => {
+            // 根节点没有包裹密钥/元数据/名称令牌，也不能被删除、移动或重命名。
+            sqlx::query!(
+                r#"
+                INSERT INTO nodes (id, user_id, parent_id, kind, row_version)
+                VALUES ($1, $2, NULL, 'folder', 1)
+                "#,
+                root_node_id,
+                row.id,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(ApiError::internal)?;
+
             enqueue_email(
                 &mut tx,
                 row.id,
