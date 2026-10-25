@@ -83,7 +83,7 @@ export function UnlockPage() {
       <button
         type="button"
         onClick={() => {
-          void logout().finally(() => { void navigate('/login') })
+          void logout().catch(() => undefined).finally(() => { void navigate('/login') })
         }}
         className="mt-4 text-sm font-medium text-slate-600 underline"
       >

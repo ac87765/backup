@@ -69,7 +69,7 @@ export function HomePage() {
         <button
           type="button"
           onClick={() => {
-            void logout().finally(() => { void navigate('/login') })
+            void logout().catch(() => undefined).finally(() => { void navigate('/login') })
           }}
           className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white"
         >
