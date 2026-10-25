@@ -4,6 +4,7 @@ import {
   Navigate,
   Route,
   Routes,
+  useLocation,
   useNavigate,
 } from 'react-router-dom'
 
@@ -22,6 +23,8 @@ import { VerifyEmailPage } from './pages/VerifyEmailPage'
 
 function RequireSession({ children }: { children: ReactNode }) {
   const { user, loading, unlocked } = useAuth()
+  const location = useLocation()
+  const from = `${location.pathname}${location.search}`
   if (loading) {
     return (
       <PageShell title="加载中" subtitle="正在检查会话…">
@@ -32,10 +35,10 @@ function RequireSession({ children }: { children: ReactNode }) {
     )
   }
   if (!user) {
-    return <Navigate to="/login" replace />
+    return <Navigate to="/login" state={{ from }} replace />
   }
   if (!unlocked) {
-    return <Navigate to="/unlock" replace />
+    return <Navigate to="/unlock" state={{ from }} replace />
   }
   return <>{children}</>
 }

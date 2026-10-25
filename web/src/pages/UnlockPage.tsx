@@ -1,13 +1,25 @@
 import { useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import {
+  Navigate,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom'
 
 import { useAuth } from '../auth/context'
 import { errorMessage } from '../auth/errors'
+import {
+  type AuthRedirectState,
+  safeRedirect,
+} from '../auth/navigation'
 import { FormError, PageShell } from '../components/PageShell'
 
 export function UnlockPage() {
   const { api, user, loading, unlocked, markUnlocked, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const destination = safeRedirect(
+    (location.state as AuthRedirectState | null)?.from,
+  )
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -22,10 +34,16 @@ export function UnlockPage() {
     )
   }
   if (!user) {
-    return <Navigate to="/login" replace />
+    return (
+      <Navigate
+        to="/login"
+        state={{ from: destination }}
+        replace
+      />
+    )
   }
   if (unlocked) {
-    return <Navigate to="/" replace />
+    return <Navigate to={destination} replace />
   }
 
   const submit = async () => {
@@ -39,7 +57,7 @@ export function UnlockPage() {
       await api.unlock(password)
       setPassword('')
       markUnlocked()
-      void navigate('/')
+      void navigate(destination, { replace: true })
     } catch (caught) {
       setError(errorMessage(caught))
     } finally {

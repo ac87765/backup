@@ -1,20 +1,33 @@
 import { useState } from 'react'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import {
+  Link,
+  Navigate,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom'
 
 import { useAuth } from '../auth/context'
 import { errorMessage } from '../auth/errors'
+import {
+  type AuthRedirectState,
+  safeRedirect,
+} from '../auth/navigation'
 import { FormError, PageShell } from '../components/PageShell'
 
 export function LoginPage() {
   const { api, user, unlocked, setSession } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const destination = safeRedirect(
+    (location.state as AuthRedirectState | null)?.from,
+  )
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   if (user && unlocked) {
-    return <Navigate to="/" replace />
+    return <Navigate to={destination} replace />
   }
 
   const submit = async () => {
@@ -28,7 +41,7 @@ export function LoginPage() {
       const current = await api.login(email.trim(), password)
       setSession(current, true)
       setPassword('')
-      void navigate('/')
+      void navigate(destination, { replace: true })
     } catch (caught) {
       setError(errorMessage(caught))
     } finally {
