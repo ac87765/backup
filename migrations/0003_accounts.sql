@@ -58,13 +58,13 @@ CREATE INDEX sessions_user_active_idx
 CREATE INDEX sessions_expiry_idx ON sessions (expires_at);
 
 -- email_tokens 在 0002 中先行建立；这里补 users 外键与清理索引。
--- NOT VALID 避免历史孤儿行阻止迁移；新写入仍会强制校验。
+-- 该迁移尚未在正式环境执行过，没有历史孤儿行，因此直接创建并校验外键。
 ALTER TABLE email_tokens
     ADD CONSTRAINT email_tokens_user_id_fkey
-    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT VALID;
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
 CREATE INDEX email_tokens_expiry_idx ON email_tokens (expires_at) WHERE used_at IS NULL;
 
 -- email_outbox 同样补外键；发送任务只保存 user_id / purpose / 非敏感参数。
 ALTER TABLE email_outbox
     ADD CONSTRAINT email_outbox_user_id_fkey
-    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT VALID;
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
