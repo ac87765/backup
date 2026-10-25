@@ -43,7 +43,8 @@ services:
       # 打开 Web 控制台（9001），方便本地排查对象。
       MINIO_BROWSER: "on"
       # 服务器级 CORS 默认值；bucket 级 CORS 由 minio-init 精确设置。
-      MINIO_API_CORS_ALLOW_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:5173}
+      # 同时允许 Vite 开发源与 E2E 页面源（Playwright 的 4174）。
+      MINIO_API_CORS_ALLOW_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:5173,http://127.0.0.1:4174}
     ports:
       - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
       - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
@@ -71,7 +72,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-backup}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-backup-dev-secret}
       MINIO_BUCKET: ${MINIO_BUCKET:-backup}
-      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:5173}
+      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:5173,http://127.0.0.1:4174}
       # 镜像默认 HOME=/，非 root 用户不可写；mc 需要可写的配置目录。
       HOME: /tmp
     volumes:

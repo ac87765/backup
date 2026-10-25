@@ -7,7 +7,7 @@ set -eu
 
 : "${MINIO_ENDPOINT:=http://minio:9000}"
 : "${MINIO_BUCKET:=backup}"
-: "${CORS_ALLOWED_ORIGIN:=http://localhost:5173}"
+: "${CORS_ALLOWED_ORIGIN:=http://localhost:5173,http://127.0.0.1:4174}"
 
 ALIAS="backup-dev"
 CORS_FILE="/tmp/cors.xml"
@@ -42,7 +42,12 @@ cat >"$CORS_FILE" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <CORSConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <CORSRule>
-    <AllowedOrigin>${CORS_ALLOWED_ORIGIN}</AllowedOrigin>
+EOF
+# CORS_ALLOWED_ORIGIN 支持逗号分隔（与 MinIO 的服务器级变量一致）。
+for origin in $(printf '%s' "$CORS_ALLOWED_ORIGIN" | tr ',' ' '); do
+	printf '    <AllowedOrigin>%s</AllowedOrigin>\n' "$origin" >>"$CORS_FILE"
+done
+cat >>"$CORS_FILE" <<EOF
     <AllowedMethod>GET</AllowedMethod>
     <AllowedMethod>PUT</AllowedMethod>
     <AllowedMethod>HEAD</AllowedMethod>

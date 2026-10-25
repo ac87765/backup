@@ -213,6 +213,8 @@ jobs:
       E2E_SERVER_BIN: ${{ github.workspace }}/server-bin/server
       E2E_DATABASE_URL: postgres://backup:backup-dev-password@127.0.0.1:5432/backup
       E2E_STORAGE_ENDPOINT: http://127.0.0.1:9000
+      # E2E 页面源（Playwright 默认 4174）与本地 Vite 开发源都要能直传 MinIO。
+      CORS_ALLOWED_ORIGIN: http://localhost:5173,http://127.0.0.1:4174
     defaults:
       run:
         working-directory: web
