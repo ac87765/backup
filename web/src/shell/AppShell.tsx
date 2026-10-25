@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   CheckCircle2,
@@ -319,6 +319,19 @@ function AppShellFrame({
 }: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
 
+  useEffect(() => {
+    if (!drawerOpen) {
+      return
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setDrawerOpen(false)
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [drawerOpen])
+
   return (
     <div className="min-h-dvh bg-canvas">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-white px-3 pb-4 pt-5 md:flex">
@@ -375,6 +388,7 @@ function AppShellFrame({
               <IconButton
                 label="关闭导航菜单"
                 size="sm"
+                autoFocus
                 onClick={() => setDrawerOpen(false)}
               >
                 <X size={18} />

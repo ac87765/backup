@@ -130,6 +130,7 @@ export function FileList({
               data-name={item.name}
               data-kind={item.kind}
               data-selected={selected ? 'true' : 'false'}
+              aria-selected={selected}
               onClick={() => onSelect(item.id)}
               onContextMenu={(event: ReactMouseEvent<HTMLDivElement>) => {
                 event.preventDefault()

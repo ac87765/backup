@@ -34,15 +34,17 @@ export function FileRowActions({
     <div className={className} data-row-action>
       <div className="flex items-center justify-end gap-0.5">
         {item.kind === 'file' && (
-          <IconButton
-            size="sm"
-            label={`下载 ${item.name}`}
-            data-testid={`download-${item.id}`}
-            disabled={busy || !item.currentVersionId}
-            onClick={() => onDownload(item)}
-          >
-            <Download size={16} />
-          </IconButton>
+          <div className="hidden sm:block">
+            <IconButton
+              size="sm"
+              label={`下载 ${item.name}`}
+              data-testid={`download-${item.id}`}
+              disabled={busy || !item.currentVersionId}
+              onClick={() => onDownload(item)}
+            >
+              <Download size={16} />
+            </IconButton>
+          </div>
         )}
         <Menu
           label={`更多操作 ${item.name}`}

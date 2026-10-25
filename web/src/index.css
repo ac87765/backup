@@ -76,8 +76,4 @@
     background-color: var(--color-brand-100);
     color: var(--color-ink-900);
   }
-
-  :focus-visible {
-    outline: none;
-  }
 }
