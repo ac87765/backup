@@ -357,6 +357,14 @@ jobs:
           curl -fsS "$E2E_BASE_URL/" | grep -q '<div id="root">'
           echo "readyz 与首页检查通过"
 
+      # 迁移 0006 默认“需要审批”；全链路场景注册后直接上传，需要开放注册
+      # （与本地 web/e2e/serve.mjs 的做法一致，仅限 E2E 环境）。
+      - name: E2E 环境开放注册
+        run: >-
+          docker compose -f deploy/docker-compose.e2e.yml exec -T postgres
+          psql -U backup -d backup -v ON_ERROR_STOP=1
+          -c "UPDATE app_settings SET value = '\"open\"'::jsonb, updated_at = now() WHERE key = 'registration_mode'"
+
       - name: 安装前端依赖与 Playwright Chromium
         working-directory: web
         run: |
