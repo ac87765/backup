@@ -88,8 +88,6 @@ function SidebarBody({
     onNavigate?.()
     if (onUploadFolderRequest) {
       onUploadFolderRequest()
-    } else if (onUploadRequest) {
-      onUploadRequest()
     } else {
       void navigate('/files')
     }
