@@ -215,6 +215,11 @@ async fn login(app: &TestApp, email: &str, auth: [u8; 32]) -> (StatusCode, Heade
 struct UserSnapshot {
     id: Uuid,
     verified: bool,
+    status: String,
+    status_reason: Option<String>,
+    is_admin: bool,
+    quota_bytes: i64,
+    approved_at: Option<time::OffsetDateTime>,
     auth_hash: String,
     pepper_version: i32,
     recovery_auth_hash: String,
@@ -232,6 +237,11 @@ async fn snapshot(app: &TestApp, email: &str) -> UserSnapshot {
         r#"
         SELECT id,
                email_verified_at IS NOT NULL AS verified,
+               status,
+               status_reason,
+               is_admin,
+               quota_bytes,
+               approved_at,
                encode(auth_hash, 'hex') AS auth_hash,
                pepper_version,
                encode(recovery_auth_hash, 'hex') AS recovery_auth_hash,
@@ -253,6 +263,11 @@ async fn snapshot(app: &TestApp, email: &str) -> UserSnapshot {
     UserSnapshot {
         id: row.get("id"),
         verified: row.get("verified"),
+        status: row.get("status"),
+        status_reason: row.get("status_reason"),
+        is_admin: row.get("is_admin"),
+        quota_bytes: row.get("quota_bytes"),
+        approved_at: row.get("approved_at"),
         auth_hash: row.get("auth_hash"),
         pepper_version: row.get("pepper_version"),
         recovery_auth_hash: row.get("recovery_auth_hash"),
@@ -351,6 +366,13 @@ async fn registration_creates_pending_user_and_queues_verification_email() {
 
     let user = snapshot(&app, "user@example.com").await;
     assert!(!user.verified);
+    assert_eq!(user.status, "pending", "审批模式新账号必须待审核");
+    assert!(!user.is_admin);
+    assert_eq!(
+        user.quota_bytes,
+        server::config::DEFAULT_NEW_USER_QUOTA_BYTES as i64
+    );
+    assert!(user.approved_at.is_none());
     assert_eq!(
         user.auth_hash,
         hex(&server::auth::hmac_sha256(PEPPER.as_bytes(), &auth_key(0x10),).expect("HMAC"))
@@ -1676,4 +1698,298 @@ async fn expired_token_cleanup_removes_expired_sessions_and_used_tokens() {
         .await
         .expect("统计令牌");
     assert_eq!(tokens, 1, "只保留未过期且未使用的令牌");
+}
+
+// ---------------------------------------------------------------------------
+// 账号审批、登录错误不可区分、注册模式与限流（add-admin-console）
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn pending_user_cannot_create_upload_session_and_no_quota_is_reserved() {
+    let app = setup().await;
+    register(
+        &app,
+        "pending-upload@example.com",
+        auth_key(0x10),
+        recovery_key(0x20),
+    )
+    .await;
+    let (status, headers, _body) = login(&app, "pending-upload@example.com", auth_key(0x10)).await;
+    assert_eq!(status, StatusCode::OK, "待审核用户可以登录并看到等待页");
+    let cookie = session_cookie(&headers);
+    let user = snapshot(&app, "pending-upload@example.com").await;
+
+    let root: Uuid = sqlx::query_scalar("SELECT root_node_id FROM users WHERE id = $1")
+        .bind(user.id)
+        .fetch_one(app.database.pool())
+        .await
+        .expect("读取根节点");
+    let body = json!({
+        "content_id": Uuid::new_v4(),
+        "kind": "new_file",
+        "node_id": Uuid::new_v4(),
+        "parent_id": root,
+        "wrapped_key": wrapped(0x22),
+        "encrypted_meta": wrapped(0x33),
+        "name_token": hex(&[0x55; 32]),
+        "version_id": Uuid::new_v4(),
+        "version_meta": wrapped(0x44),
+        "chunk_count": 1,
+        "declared_size": 1024,
+    });
+    let response = send(
+        &app.app,
+        Method::POST,
+        "/api/v1/upload-sessions",
+        Some(body),
+        Some(&cookie),
+        true,
+        &[],
+        None,
+    )
+    .await;
+    let (status, _headers, body) = read(response).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["code"], "account_pending");
+
+    let sessions: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM upload_sessions WHERE user_id = $1")
+            .bind(user.id)
+            .fetch_one(app.database.pool())
+            .await
+            .expect("统计上传会话");
+    assert_eq!(sessions, 0, "被拒绝的请求不得创建上传会话");
+    let reserved: i64 = sqlx::query_scalar("SELECT reserved_bytes FROM users WHERE id = $1")
+        .bind(user.id)
+        .fetch_one(app.database.pool())
+        .await
+        .expect("读取预留配额");
+    assert_eq!(reserved, 0, "被拒绝的请求不得预留言配额");
+}
+
+#[tokio::test]
+async fn suspended_account_login_returns_reason_only_after_correct_password() {
+    let app = setup().await;
+    register(
+        &app,
+        "suspended@example.com",
+        auth_key(0x10),
+        recovery_key(0x20),
+    )
+    .await;
+    let user = snapshot(&app, "suspended@example.com").await;
+    sqlx::query(
+        "UPDATE users SET status = 'suspended', status_reason = '滥用存储', status_changed_at = now() WHERE id = $1",
+    )
+    .bind(user.id)
+    .execute(app.database.pool())
+    .await
+    .expect("停用账号");
+    assert_eq!(
+        snapshot(&app, "suspended@example.com")
+            .await
+            .status_reason
+            .as_deref(),
+        Some("滥用存储")
+    );
+
+    // 正确密码：返回停用原因，不创建会话。
+    let (status, headers, body) = login(&app, "suspended@example.com", auth_key(0x10)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["code"], "account_suspended");
+    assert_eq!(body["message"], "滥用存储");
+    assert!(!headers.contains_key(header::SET_COOKIE));
+    let sessions: i64 = sqlx::query_scalar("SELECT count(*) FROM sessions WHERE user_id = $1")
+        .bind(user.id)
+        .fetch_one(app.database.pool())
+        .await
+        .expect("统计会话");
+    assert_eq!(sessions, 0, "停用账号登录不得创建会话");
+
+    // 错误密码：与未知邮箱的响应完全一致，不泄露账号状态。
+    let (bad_status, _bad_headers, bad) =
+        login(&app, "suspended@example.com", auth_key(0x99)).await;
+    let (unknown_status, _unknown_headers, unknown) =
+        login(&app, "missing@example.com", auth_key(0x99)).await;
+    assert_eq!(bad_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(unknown_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(bad["code"], "invalid_credentials");
+    assert_eq!(unknown["code"], "invalid_credentials");
+    assert_eq!(bad["message"], unknown["message"]);
+}
+
+#[tokio::test]
+async fn rejected_account_login_returns_reason_and_no_session() {
+    let app = setup().await;
+    register(
+        &app,
+        "rejected@example.com",
+        auth_key(0x10),
+        recovery_key(0x20),
+    )
+    .await;
+    let user = snapshot(&app, "rejected@example.com").await;
+    sqlx::query(
+        "UPDATE users SET status = 'rejected', status_reason = '未通过审核', status_changed_at = now() WHERE id = $1",
+    )
+    .bind(user.id)
+    .execute(app.database.pool())
+    .await
+    .expect("拒绝账号");
+
+    let (status, headers, body) = login(&app, "rejected@example.com", auth_key(0x10)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["code"], "account_rejected");
+    assert_eq!(body["message"], "未通过审核");
+    assert!(!headers.contains_key(header::SET_COOKIE));
+}
+
+#[tokio::test]
+async fn registration_closed_rejects_without_creating_account() {
+    let app = setup().await;
+    set_registration_mode(&app, "closed").await;
+    let (status, body) = register(
+        &app,
+        "closed@example.com",
+        auth_key(0x10),
+        recovery_key(0x20),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["code"], "registration_closed");
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM users WHERE email = 'closed@example.com'::citext")
+            .fetch_one(app.database.pool())
+            .await
+            .expect("统计用户");
+    assert_eq!(count, 0, "关闭注册时不得创建账号");
+}
+
+#[tokio::test]
+async fn open_registration_creates_active_account_with_default_quota() {
+    let app = setup().await;
+    set_registration_mode(&app, "open").await;
+    let (status, body) =
+        register(&app, "open@example.com", auth_key(0x10), recovery_key(0x20)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let user = snapshot(&app, "open@example.com").await;
+    assert_eq!(user.status, "active");
+    assert_eq!(
+        user.quota_bytes,
+        server::config::DEFAULT_NEW_USER_QUOTA_BYTES as i64
+    );
+    assert!(user.approved_at.is_some());
+}
+
+#[tokio::test]
+async fn sixth_registration_from_same_ip_is_rate_limited() {
+    let app = setup().await;
+    for index in 0..5_u8 {
+        let email = format!("bulk-{index}@example.com");
+        let (status, body) = register(
+            &app,
+            &email,
+            auth_key(0x10 + index),
+            recovery_key(0x20 + index),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "第 {index} 个注册应成功: {body}");
+    }
+    let (status, body) = register(
+        &app,
+        "bulk-5@example.com",
+        auth_key(0x30),
+        recovery_key(0x40),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["code"], "rate_limited");
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM users WHERE email = 'bulk-5@example.com'::citext")
+            .fetch_one(app.database.pool())
+            .await
+            .expect("统计用户");
+    assert_eq!(count, 0, "被限流的注册不得创建账号");
+}
+
+#[tokio::test]
+async fn me_reports_status_reason_and_admin_flag() {
+    let app = setup().await;
+    register(
+        &app,
+        "me-status@example.com",
+        auth_key(0x10),
+        recovery_key(0x20),
+    )
+    .await;
+    let (status, headers, _body) = login(&app, "me-status@example.com", auth_key(0x10)).await;
+    assert_eq!(status, StatusCode::OK);
+    let cookie = session_cookie(&headers);
+
+    let response = send(
+        &app.app,
+        Method::GET,
+        "/api/v1/auth/me",
+        None,
+        Some(&cookie),
+        false,
+        &[],
+        None,
+    )
+    .await;
+    let (status, _headers, body) = read(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "pending");
+    assert_eq!(body["is_admin"], false);
+    assert!(body["status_reason"].is_null());
+
+    let user = snapshot(&app, "me-status@example.com").await;
+    sqlx::query("UPDATE users SET is_admin = true WHERE id = $1")
+        .bind(user.id)
+        .execute(app.database.pool())
+        .await
+        .expect("授予管理员");
+    let response = send(
+        &app.app,
+        Method::GET,
+        "/api/v1/auth/me",
+        None,
+        Some(&cookie),
+        false,
+        &[],
+        None,
+    )
+    .await;
+    let (status, _headers, body) = read(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["is_admin"], true);
+
+    sqlx::query("UPDATE users SET status = 'suspended', status_reason = '原因文本' WHERE id = $1")
+        .bind(user.id)
+        .execute(app.database.pool())
+        .await
+        .expect("修改账号状态");
+    // 被停用后旧会话立即不可用（即使没有被撤销，也不允许继续访问）。
+    let response = send(
+        &app.app,
+        Method::GET,
+        "/api/v1/auth/me",
+        None,
+        Some(&cookie),
+        false,
+        &[],
+        None,
+    )
+    .await;
+    let (status, _headers, body) = read(response).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["code"], "unauthenticated");
+}
+
+async fn set_registration_mode(app: &TestApp, mode: &str) {
+    sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'registration_mode'")
+        .bind(json!(mode))
+        .execute(app.database.pool())
+        .await
+        .expect("修改注册模式");
 }

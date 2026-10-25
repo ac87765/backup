@@ -325,9 +325,13 @@ pub async fn run_batch_with_lease(
             tx.commit().await?;
         }
 
-        let Some((subject, body)) =
-            render_mail(&item.purpose, &recipient, token.as_deref(), public_app_url)
-        else {
+        let Some((subject, body)) = render_mail(
+            &item.purpose,
+            &recipient,
+            token.as_deref(),
+            public_app_url,
+            &item.params,
+        ) else {
             // 理论上已被 is_supported_purpose 拦截；防御性处理。
             if fail(
                 database.pool(),

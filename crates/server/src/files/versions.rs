@@ -16,7 +16,7 @@ use super::{
 };
 use crate::AppState;
 use crate::api::error::{ApiError, ErrorBody};
-use crate::auth::AuthenticatedSession;
+use crate::auth::{AuthenticatedSession, WritableSession};
 
 /// 版本列表参数。
 #[derive(Debug, Deserialize, ToSchema)]
@@ -186,7 +186,7 @@ pub async fn list_versions(
 )]
 pub async fn restore_version(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     Path(node_id): Path<Uuid>,
     payload: Result<Json<RestoreVersionRequest>, JsonRejection>,
 ) -> Result<Json<VersionSummary>, ApiError> {

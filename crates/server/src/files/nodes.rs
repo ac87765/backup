@@ -13,7 +13,7 @@ use super::{
 };
 use crate::AppState;
 use crate::api::error::{ApiError, ErrorBody};
-use crate::auth::AuthenticatedSession;
+use crate::auth::{AuthenticatedSession, WritableSession};
 
 /// 列目录查询参数。
 #[derive(Debug, Deserialize, ToSchema)]
@@ -198,7 +198,7 @@ pub async fn list_children(
 )]
 pub async fn create_folder(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     payload: Result<Json<CreateFolderRequest>, JsonRejection>,
 ) -> Result<Json<NodeSummary>, ApiError> {
     state.auth.check_user_write(session.user_id)?;
@@ -338,7 +338,7 @@ pub async fn create_folder(
 )]
 pub async fn rename_node(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     Path(node_id): Path<Uuid>,
     payload: Result<Json<RenameNodeRequest>, JsonRejection>,
 ) -> Result<Json<NodeSummary>, ApiError> {
@@ -428,7 +428,7 @@ pub async fn rename_node(
 )]
 pub async fn move_node(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     Path(node_id): Path<Uuid>,
     payload: Result<Json<MoveNodeRequest>, JsonRejection>,
 ) -> Result<Json<NodeSummary>, ApiError> {

@@ -14,7 +14,7 @@ use super::{
 };
 use crate::AppState;
 use crate::api::error::{ApiError, ErrorBody};
-use crate::auth::AuthenticatedSession;
+use crate::auth::{AuthenticatedSession, WritableSession};
 use crate::jobs::deletion::enqueue_object_deletions;
 
 /// 回收站列表参数。
@@ -244,7 +244,7 @@ async fn is_trash_batch_top(
 )]
 pub async fn delete_node(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     Path(node_id): Path<Uuid>,
 ) -> Result<Json<TrashEntryResponse>, ApiError> {
     state.auth.check_user_write(session.user_id)?;
@@ -405,7 +405,7 @@ pub async fn list_trash(
 )]
 pub async fn restore_node(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     Path(node_id): Path<Uuid>,
     payload: Result<Json<RestoreNodeRequest>, JsonRejection>,
 ) -> Result<Json<NodeSummary>, ApiError> {
@@ -563,7 +563,7 @@ pub async fn restore_node(
 )]
 pub async fn permanently_delete_node(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     Path(node_id): Path<Uuid>,
 ) -> Result<Json<PermanentDeleteResponse>, ApiError> {
     state.auth.check_user_write(session.user_id)?;

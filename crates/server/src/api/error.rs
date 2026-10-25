@@ -31,17 +31,17 @@ pub struct ErrorBody {
 pub struct ApiError {
     status: StatusCode,
     code: &'static str,
-    message: &'static str,
+    message: String,
     retry_after: Option<u64>,
     missing_chunks: Option<Vec<i32>>,
 }
 
 impl ApiError {
-    fn new(status: StatusCode, code: &'static str, message: &'static str) -> Self {
+    fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
         Self {
             status,
             code,
-            message,
+            message: message.into(),
             retry_after: None,
             missing_chunks: None,
         }
@@ -110,6 +110,63 @@ impl ApiError {
     /// 邮箱尚未验证，不能创建上传会话（user-accounts spec）。
     pub fn email_not_verified() -> Self {
         Self::new(StatusCode::FORBIDDEN, "email_not_verified", "邮箱尚未验证")
+    }
+
+    /// 账号处于待审核状态，不能执行写操作（add-admin-console D2）。
+    pub fn account_pending() -> Self {
+        Self::new(
+            StatusCode::FORBIDDEN,
+            "account_pending",
+            "账号正在等待管理员审核",
+        )
+    }
+
+    /// 账号已被停用；登录时把管理员填写的原因返回给用户。
+    pub fn account_suspended(reason: Option<&str>) -> Self {
+        let message = reason
+            .filter(|reason| !reason.trim().is_empty())
+            .unwrap_or("账号已被停用");
+        Self::new(StatusCode::FORBIDDEN, "account_suspended", message)
+    }
+
+    /// 账号已被拒绝；登录时把管理员填写的原因返回给用户。
+    pub fn account_rejected(reason: Option<&str>) -> Self {
+        let message = reason
+            .filter(|reason| !reason.trim().is_empty())
+            .unwrap_or("账号已被拒绝");
+        Self::new(StatusCode::FORBIDDEN, "account_rejected", message)
+    }
+
+    /// 注册模式为关闭（add-admin-console D2）。
+    pub fn registration_closed() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "registration_closed", "暂不开放注册")
+    }
+
+    /// 管理员会话超过 12 小时，需要重新登录（add-admin-console D3）。
+    pub fn reauth_required() -> Self {
+        Self::new(
+            StatusCode::FORBIDDEN,
+            "reauth_required",
+            "为确保安全，请重新登录后再继续",
+        )
+    }
+
+    /// 管理员不能停用或拒绝自己的账号（add-admin-console D3）。
+    pub fn cannot_modify_self() -> Self {
+        Self::new(
+            StatusCode::BAD_REQUEST,
+            "cannot_modify_self",
+            "不能停用或拒绝自己的账号",
+        )
+    }
+
+    /// 当前账号状态不允许该操作（例如对 suspended 用户执行 approve）。
+    pub fn invalid_account_state() -> Self {
+        Self::new(
+            StatusCode::CONFLICT,
+            "invalid_account_state",
+            "当前账号状态不允许该操作",
+        )
     }
 
     /// 已用 + 已预留 + 本次声明超过配额。
@@ -247,7 +304,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let body = ErrorBody {
             code: self.code.to_owned(),
-            message: self.message.to_owned(),
+            message: self.message,
             request_id: request_id::current(),
             missing_chunks: self.missing_chunks,
         };

@@ -30,7 +30,7 @@ use super::{
 };
 use crate::AppState;
 use crate::api::error::{ApiError, ErrorBody};
-use crate::auth::{AuthenticatedSession, decode_hex_array, encode_hex};
+use crate::auth::{AuthenticatedSession, WritableSession, decode_hex_array, encode_hex};
 use crate::jobs::deletion::enqueue_object_deletions;
 use crate::storage::{MAX_PRESIGN_TTL, ObjectKey};
 
@@ -556,7 +556,7 @@ fn session_response(row: &SessionRow, confirmed: i64) -> UploadSessionResponse {
 )]
 pub async fn create_upload_session(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     payload: Result<Json<CreateUploadSessionRequest>, JsonRejection>,
 ) -> Result<Json<UploadSessionResponse>, ApiError> {
     state.auth.check_user_write(session.user_id)?;
@@ -838,7 +838,7 @@ pub async fn list_confirmed_chunks(
 )]
 pub async fn presign_chunk(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     Path((session_id, idx)): Path<(Uuid, i32)>,
 ) -> Result<Json<PresignChunkResponse>, ApiError> {
     state.auth.check_user_write(session.user_id)?;
@@ -868,7 +868,7 @@ pub async fn presign_chunk(
 )]
 pub async fn presign_chunks(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     Path(session_id): Path<Uuid>,
     payload: Result<Json<PresignChunksRequest>, JsonRejection>,
 ) -> Result<Json<PresignChunksResponse>, ApiError> {
@@ -1037,7 +1037,7 @@ fn require_open(row: &SessionRow) -> Result<(), ApiError> {
 )]
 pub async fn confirm_chunk(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     Path((session_id, idx)): Path<(Uuid, i32)>,
     payload: Result<Json<ConfirmChunkRequest>, JsonRejection>,
 ) -> Result<Json<ConfirmChunkResponse>, ApiError> {
@@ -1082,7 +1082,7 @@ pub async fn confirm_chunk(
 )]
 pub async fn confirm_chunks(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     Path(session_id): Path<Uuid>,
     payload: Result<Json<ConfirmChunksRequest>, JsonRejection>,
 ) -> Result<Json<ConfirmChunksResponse>, ApiError> {
@@ -1366,7 +1366,7 @@ async fn confirm_chunk_core(
 )]
 pub async fn commit_upload(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     Path(session_id): Path<Uuid>,
 ) -> Result<Json<CommitUploadResponse>, ApiError> {
     state.auth.check_user_write(session.user_id)?;
@@ -1718,7 +1718,7 @@ fn committed_response(row: &SessionRow) -> Result<CommitUploadResponse, ApiError
 )]
 pub async fn abort_upload(
     State(state): State<AppState>,
-    session: AuthenticatedSession,
+    session: WritableSession,
     Path(session_id): Path<Uuid>,
 ) -> Result<Json<AbortUploadResponse>, ApiError> {
     state.auth.check_user_write(session.user_id)?;

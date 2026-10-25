@@ -24,7 +24,9 @@ use super::{
     generate_session_token, hash_token, normalize_email,
 };
 use crate::AppState;
+use crate::accounts;
 use crate::api::error::{ApiError, ErrorBody};
+use crate::app_settings;
 use crate::jobs::email::enqueue_email;
 use crate::mail::purpose;
 
@@ -146,6 +148,12 @@ pub struct LoginResponse {
     pub wrapped_mk: String,
     /// 当前用户的根文件夹 ID（非密钥；供文件浏览器导航使用）。
     pub root_node_id: Uuid,
+    /// 账号状态（add-admin-console D2）。
+    pub status: String,
+    /// 停用/拒绝原因；其余状态为 null。
+    pub status_reason: Option<String>,
+    /// 是否为管理员（只读）。
+    pub is_admin: bool,
 }
 
 /// 刷新页面后解锁所需的数据。
@@ -159,6 +167,12 @@ pub struct MeResponse {
     pub wrapped_mk: String,
     /// 当前用户的根文件夹 ID（非密钥；供文件浏览器导航使用）。
     pub root_node_id: Uuid,
+    /// 账号状态（add-admin-console D2）。
+    pub status: String,
+    /// 停用/拒绝原因；其余状态为 null。
+    pub status_reason: Option<String>,
+    /// 是否为管理员（只读）。
+    pub is_admin: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -434,14 +448,51 @@ pub async fn register(
         .await
         .map_err(ApiError::internal)?;
 
+    // 注册模式在事务内读取：管理员刚改完设置后，下一个注册请求立即生效。
+    let mode = app_settings::registration_mode(&mut tx)
+        .await
+        .map_err(ApiError::internal)?;
+    if mode == app_settings::MODE_CLOSED {
+        return Err(ApiError::registration_closed());
+    }
+
+    // 先判断邮箱是否已存在：重复注册不应消耗每 IP 的“新账号”配额，
+    // 也不应改变现有账号（user-accounts spec 的不可区分响应）。
+    let existing = sqlx::query!(
+        "SELECT id FROM users WHERE email = $1::text::citext FOR UPDATE",
+        email,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(ApiError::internal)?;
+    if let Some(existing) = existing {
+        queue_existing_account_email(&mut tx, existing.id).await?;
+        tx.commit().await.map_err(ApiError::internal)?;
+        return Ok(ok());
+    }
+
+    // 同一 IP 每小时最多 5 个成功注册（在现有认证限流之外）。
+    state.auth.check_registration(ip)?;
+
+    let quota_bytes = app_settings::default_quota(&mut tx)
+        .await
+        .map_err(ApiError::internal)?
+        .unwrap_or(state.config.default_quota_bytes)
+        .clamp(0, state.config.max_quota_bytes);
+    let (status, approved_at) = if mode == app_settings::MODE_OPEN {
+        (accounts::ACTIVE, Some(OffsetDateTime::now_utc()))
+    } else {
+        (accounts::PENDING, None)
+    };
+
     let inserted = sqlx::query!(
         r#"
         INSERT INTO users (
             id, email, kdf_params, kdf_salt, auth_hash, pepper_version,
             recovery_auth_hash, recovery_pepper_version, wrapped_mk, recovery_wrapped_mk,
-            root_node_id
+            root_node_id, status, quota_bytes, approved_at
         )
-        VALUES ($1, $2::text::citext, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2::text::citext, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (email) DO NOTHING
         RETURNING id
         "#,
@@ -456,6 +507,9 @@ pub async fn register(
         wrapped_mk,
         recovery_wrapped_mk,
         root_node_id,
+        status,
+        quota_bytes,
+        approved_at,
     )
     .fetch_optional(&mut *tx)
     .await
@@ -486,44 +540,52 @@ pub async fn register(
             .map_err(ApiError::internal)?;
         }
         None => {
-            // 邮箱已存在：返回与成功完全相同的响应，并发“已有账号”提示邮件。
+            // 并发注册同一邮箱：事务内已加行锁的路径已提前返回，这里只可能是
+            // 极窄的并发窗口。按“已有账号”处理，响应与成功完全相同。
             let existing =
                 sqlx::query!("SELECT id FROM users WHERE email = $1::text::citext", email,)
                     .fetch_one(&mut *tx)
                     .await
                     .map_err(ApiError::internal)?;
-            // 账号维度限流：同一账号 10 分钟内只发一封“已有账号”提示邮件，
-            // 避免攻击者用重复注册刷受害者的邮箱。
-            let recent = sqlx::query_scalar!(
-                r#"
-                SELECT EXISTS (
-                    SELECT 1 FROM email_outbox
-                    WHERE user_id = $1 AND purpose = $2
-                      AND created_at > now() - make_interval(mins => $3)
-                ) AS "recent!"
-                "#,
-                existing.id,
-                purpose::EXISTING_ACCOUNT,
-                RESEND_THROTTLE_MINUTES,
-            )
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(ApiError::internal)?;
-            if !recent {
-                enqueue_email(
-                    &mut tx,
-                    existing.id,
-                    purpose::EXISTING_ACCOUNT,
-                    &serde_json::json!({}),
-                )
-                .await
-                .map_err(ApiError::internal)?;
-            }
+            queue_existing_account_email(&mut tx, existing.id).await?;
         }
     }
 
     tx.commit().await.map_err(ApiError::internal)?;
     Ok(ok())
+}
+
+/// 对已存在邮箱的重复注册：账号维度限流，10 分钟内只发一封提示邮件。
+async fn queue_existing_account_email(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+) -> Result<(), ApiError> {
+    let recent = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS (
+            SELECT 1 FROM email_outbox
+            WHERE user_id = $1 AND purpose = $2
+              AND created_at > now() - make_interval(mins => $3)
+        ) AS "recent!"
+        "#,
+        user_id,
+        purpose::EXISTING_ACCOUNT,
+        RESEND_THROTTLE_MINUTES,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(ApiError::internal)?;
+    if !recent {
+        enqueue_email(
+            tx,
+            user_id,
+            purpose::EXISTING_ACCOUNT,
+            &serde_json::json!({}),
+        )
+        .await
+        .map_err(ApiError::internal)?;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -605,8 +667,61 @@ pub async fn verify_email(
     .await
     .map_err(ApiError::internal)?;
 
+    // 审批模式下，用户验证邮箱后通知每位管理员（design D5）。
+    notify_admins_of_new_user(&mut tx, row.user_id, &state.config.public_app_url).await?;
+
     tx.commit().await.map_err(ApiError::internal)?;
     Ok(ok())
+}
+
+/// 待审核用户完成邮箱验证时，给每位 active 管理员入队一封提醒邮件。
+///
+/// 邮箱只写入邮件参数（最终在管理员收件箱中），不写日志。
+async fn notify_admins_of_new_user(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+    public_app_url: &str,
+) -> Result<(), ApiError> {
+    let user = sqlx::query!(
+        r#"
+        SELECT email::text AS "email!", created_at, status
+        FROM users
+        WHERE id = $1
+        "#,
+        user_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::internal)?;
+    let Some(user) = user else {
+        return Ok(());
+    };
+    // 只有待审批账号需要提醒；开放注册的账号已经 active。
+    if user.status != accounts::PENDING {
+        return Ok(());
+    }
+    let admins = sqlx::query_scalar!(
+        r#"
+        SELECT id FROM users
+        WHERE is_admin = true AND status = $1
+        ORDER BY created_at
+        "#,
+        accounts::ACTIVE,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(ApiError::internal)?;
+    let params = serde_json::json!({
+        "new_user_email": user.email,
+        "registered_at": format_time(user.created_at),
+        "admin_users_url": format!("{}/admin/users?status=pending", public_app_url.trim_end_matches('/')),
+    });
+    for admin_id in admins {
+        enqueue_email(tx, admin_id, purpose::ADMIN_NEW_USER, &params)
+            .await
+            .map_err(ApiError::internal)?;
+    }
+    Ok(())
 }
 
 #[utoipa::path(
@@ -720,7 +835,7 @@ pub async fn login(
             r#"
             SELECT id, email::text AS "email!", email_verified_at, kdf_params, kdf_salt,
                    auth_hash, pepper_version, wrapped_mk, failed_logins, locked_until,
-                   root_node_id
+                   root_node_id, status, status_reason, is_admin
             FROM users
             WHERE email = $1::text::citext
             "#,
@@ -776,6 +891,17 @@ pub async fn login(
         record_failed_login(&mut tx, user.id).await?;
         tx.commit().await.map_err(ApiError::internal)?;
         return Err(ApiError::invalid_credentials());
+    }
+
+    // 密码校验通过后才返回停用/拒绝原因；错误密码与未知邮箱仍然完全不可区分。
+    match user.status.as_str() {
+        accounts::SUSPENDED => {
+            return Err(ApiError::account_suspended(user.status_reason.as_deref()));
+        }
+        accounts::REJECTED => {
+            return Err(ApiError::account_rejected(user.status_reason.as_deref()));
+        }
+        _ => {}
     }
 
     // 登录成功：清零失败计数；若账号仍使用旧 pepper，则升级 auth_hash。
@@ -840,6 +966,9 @@ pub async fn login(
         kdf_salt: encode_hex(&user.kdf_salt),
         wrapped_mk: encode_hex(&user.wrapped_mk),
         root_node_id: user.root_node_id,
+        status: user.status,
+        status_reason: user.status_reason,
+        is_admin: user.is_admin,
     };
     Ok((session_cookie_header(&token)?, Json(response)))
 }
@@ -868,7 +997,7 @@ pub async fn me(
     let row = sqlx::query!(
         r#"
         SELECT id, email::text AS "email!", email_verified_at, kdf_params, kdf_salt, wrapped_mk,
-               root_node_id
+               root_node_id, status, status_reason, is_admin
         FROM users
         WHERE id = $1
         "#,
@@ -889,6 +1018,9 @@ pub async fn me(
         kdf_salt: encode_hex(&row.kdf_salt),
         wrapped_mk: encode_hex(&row.wrapped_mk),
         root_node_id: row.root_node_id,
+        status: row.status,
+        status_reason: row.status_reason,
+        is_admin: row.is_admin,
     }))
 }
 

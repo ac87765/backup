@@ -63,15 +63,4 @@ pub fn record_action(action: &'static str) {
     metrics::counter!("backup_admin_actions_total", "action" => action).increment(1);
 }
 
-/// 把字节数格式化为人类可读的配额（只用于邮件正文，不参与计算）。
-pub fn format_quota(bytes: i64) -> String {
-    const GIB: i64 = 1024 * 1024 * 1024;
-    const TIB: i64 = 1024 * GIB;
-    if bytes >= TIB && bytes % TIB == 0 {
-        return format!("{} TB", bytes / TIB);
-    }
-    if bytes >= GIB && bytes % GIB == 0 {
-        return format!("{} GB", bytes / GIB);
-    }
-    format!("{bytes} 字节")
-}
+pub use crate::accounts::format_quota;

@@ -163,6 +163,10 @@ pub mod purpose {
     pub const PASSWORD_CHANGED: &str = "password_changed";
     /// 恢复密钥已轮换通知（不需要令牌）。
     pub const RECOVERY_KEY_CHANGED: &str = "recovery_key_changed";
+    /// 有新用户等待审核，通知管理员（add-admin-console D5）。
+    pub const ADMIN_NEW_USER: &str = "admin_new_user";
+    /// 账号已开通，通知用户（add-admin-console D5）。
+    pub const ACCOUNT_APPROVED: &str = "account_approved";
     /// 仅测试使用（需要令牌，覆盖 file/SMTP 发送链路）。
     pub const TEST: &str = "test";
 }
@@ -180,6 +184,8 @@ pub fn is_supported_purpose(purpose: &str) -> bool {
             | purpose::EXISTING_ACCOUNT
             | purpose::PASSWORD_CHANGED
             | purpose::RECOVERY_KEY_CHANGED
+            | purpose::ADMIN_NEW_USER
+            | purpose::ACCOUNT_APPROVED
             | purpose::TEST
     )
 }
@@ -194,6 +200,7 @@ pub fn render_mail(
     to: &str,
     token: Option<&str>,
     app_url: &str,
+    params: &serde_json::Value,
 ) -> Option<(String, String)> {
     let base = app_url.trim_end_matches('/');
     match purpose {
@@ -234,6 +241,44 @@ pub fn render_mail(
                  如果这不是你本人的操作，请立即修改密码。\n"
             ),
         )),
+        purpose::ADMIN_NEW_USER => {
+            let new_user = params
+                .get("new_user_email")
+                .and_then(|value| value.as_str())
+                .unwrap_or("（未知邮箱）");
+            let registered_at = params
+                .get("registered_at")
+                .and_then(|value| value.as_str())
+                .unwrap_or("（未知时间）");
+            let link = params
+                .get("admin_users_url")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("{base}/admin/users?status=pending"));
+            Some((
+                "有新的备份服务账号等待审核".to_owned(),
+                format!(
+                    "新用户 {new_user} 已于 {registered_at} 完成邮箱验证，正在等待审核。\n\n\
+                     打开管理后台：{link}\n\
+                     批准后系统会自动通知用户开通结果。\n"
+                ),
+            ))
+        }
+        purpose::ACCOUNT_APPROVED => {
+            let quota = params
+                .get("quota_bytes")
+                .and_then(|value| value.as_i64())
+                .map(crate::accounts::format_quota)
+                .unwrap_or_else(|| "默认额度".to_owned());
+            Some((
+                "你的备份服务账号已开通".to_owned(),
+                format!(
+                    "管理员已审核通过你的账号，存储额度为 {quota}。\n\n\
+                     现在可以登录并开始加密备份：{base}/#/login\n\
+                     所有文件都在你的浏览器中加密，服务端无法看到内容。\n"
+                ),
+            ))
+        }
         purpose::TEST => {
             let token = token?;
             Some((
@@ -247,8 +292,14 @@ pub fn render_mail(
 
 /// 测试模板的兼容入口（第 5 组测试使用）。
 pub fn render_test_mail(to: &str, token: &str) -> (String, String) {
-    render_mail(purpose::TEST, to, Some(token), "http://localhost")
-        .unwrap_or_else(|| ("测试邮件".to_owned(), String::new()))
+    render_mail(
+        purpose::TEST,
+        to,
+        Some(token),
+        "http://localhost",
+        &serde_json::json!({}),
+    )
+    .unwrap_or_else(|| ("测试邮件".to_owned(), String::new()))
 }
 
 #[cfg(test)]
@@ -296,6 +347,7 @@ mod tests {
             "user@example.com",
             Some(&token),
             "https://backup.example.com/",
+            &serde_json::json!({}),
         )
         .expect("验证模板");
         assert!(body.contains(&format!("https://backup.example.com/#token={token}")));
@@ -315,13 +367,53 @@ mod tests {
                 "user@example.com",
                 None,
                 "https://backup.example.com",
+                &serde_json::json!({}),
             );
             assert!(rendered.is_some(), "{purpose} 模板必须存在");
             let (subject, body) = rendered.expect("模板");
             assert!(!subject.is_empty());
             assert!(!body.is_empty());
         }
-        assert!(render_mail("unknown", "user@example.com", None, "https://x").is_none());
+        assert!(
+            render_mail(
+                "unknown",
+                "user@example.com",
+                None,
+                "https://x",
+                &serde_json::json!({})
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn admin_new_user_and_account_approved_templates_use_params() {
+        let rendered = render_mail(
+            purpose::ADMIN_NEW_USER,
+            "admin@example.com",
+            None,
+            "https://backup.example.com",
+            &serde_json::json!({
+                "new_user_email": "new@example.com",
+                "registered_at": "2026-01-01T00:00:00Z",
+                "admin_users_url": "https://backup.example.com/admin/users?status=pending",
+            }),
+        )
+        .expect("管理员提醒模板");
+        assert!(rendered.1.contains("new@example.com"));
+        assert!(rendered.1.contains("/admin/users?status=pending"));
+        assert!(!rendered.1.contains("token="));
+
+        let rendered = render_mail(
+            purpose::ACCOUNT_APPROVED,
+            "user@example.com",
+            None,
+            "https://backup.example.com",
+            &serde_json::json!({ "quota_bytes": 53_687_091_200_i64 }),
+        )
+        .expect("账号开通模板");
+        assert!(rendered.1.contains("50 GB"));
+        assert!(rendered.1.contains("/#/login"));
     }
 
     #[test]
@@ -331,7 +423,8 @@ mod tests {
                 purpose::VERIFY_EMAIL,
                 "user@example.com",
                 None,
-                "https://backup.example.com"
+                "https://backup.example.com",
+                &serde_json::json!({}),
             )
             .is_none()
         );

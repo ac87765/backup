@@ -27,9 +27,11 @@ use ipnet::IpNet;
 use rand::TryRngCore;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::accounts;
 use crate::api::error::ApiError;
 use crate::config::{AuthConfig, Secret};
 
@@ -56,6 +58,14 @@ pub const EMAIL_PURPOSE_VERIFY: &str = "verify_email";
 /// 重发验证邮件的账号维度节流窗口（分钟）。
 pub const RESEND_THROTTLE_MINUTES: i32 = 10;
 
+/// 每 IP 每小时允许的成功注册账号数（add-admin-console D2）。
+pub const REGISTRATION_LIMIT_PER_HOUR: u32 = 5;
+/// 以 `NonZeroU32` 形式暴露给 governor（常量求值，不产生运行时错误路径）。
+const REGISTRATIONS_PER_HOUR: NonZeroU32 = match NonZeroU32::new(REGISTRATION_LIMIT_PER_HOUR) {
+    Some(value) => value,
+    None => NonZeroU32::MIN,
+};
+
 /// 每用户每分钟的写接口上限由配置项
 /// `BACKUP_USER_WRITE_RATE_LIMIT_PER_MINUTE` 提供；批量上传接口各算一次请求。
 type KeyedLimiter =
@@ -68,6 +78,7 @@ type UserKeyedLimiter =
 pub struct AuthContext {
     config: Arc<AuthConfig>,
     limiter: Arc<IpRateLimiter>,
+    registration_limiter: Arc<IpRateLimiter>,
     user_write_limiter: Arc<UserWriteRateLimiter>,
 }
 
@@ -80,6 +91,9 @@ impl AuthContext {
         Self {
             config: Arc::new(config),
             limiter: Arc::new(IpRateLimiter::new(per_minute)),
+            registration_limiter: Arc::new(IpRateLimiter::with_quota(Quota::per_hour(
+                REGISTRATIONS_PER_HOUR,
+            ))),
             user_write_limiter: Arc::new(UserWriteRateLimiter::new(user_write_per_minute)),
         }
     }
@@ -146,6 +160,13 @@ impl AuthContext {
         self.limiter.check(ip).map_err(ApiError::too_many_requests)
     }
 
+    /// 检查并消耗该 IP 的一次注册配额（每小时 5 个成功注册）。
+    pub fn check_registration(&self, ip: IpAddr) -> Result<(), ApiError> {
+        self.registration_limiter
+            .check(ip)
+            .map_err(ApiError::too_many_requests)
+    }
+
     /// 检查并消耗该已认证用户的一次写接口配额。
     pub fn check_user_write(&self, user_id: Uuid) -> Result<(), ApiError> {
         self.user_write_limiter
@@ -197,10 +218,14 @@ const RATE_LIMITER_CLEANUP_INTERVAL: u64 = 1024;
 
 impl IpRateLimiter {
     fn new(per_minute: NonZeroU32) -> Self {
+        Self::with_quota(Quota::per_minute(per_minute))
+    }
+
+    fn with_quota(quota: Quota) -> Self {
         Self {
             // 关闭 dashmap/quanta 特性：默认使用 parking_lot HashMap 与 std Instant，
             // 与 design 的“进程内令牌桶”语义一致，且不引入额外并发组件。
-            limiter: RateLimiter::keyed(Quota::per_minute(per_minute)),
+            limiter: RateLimiter::keyed(quota),
             checks: AtomicU64::new(0),
         }
     }
@@ -393,10 +418,16 @@ fn is_trusted(ip: IpAddr, trusted_proxies: &[IpNet]) -> bool {
 }
 
 /// 已通过会话 Cookie 认证的当前会话。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthenticatedSession {
     pub session_id: Uuid,
     pub user_id: Uuid,
+    /// 用户当前状态（add-admin-console D2）。
+    pub status: String,
+    /// 是否为管理员（只读；不能通过任何 HTTP 接口修改）。
+    pub is_admin: bool,
+    /// 会话创建时间；管理操作要求它在最近 12 小时内（D3）。
+    pub session_created_at: OffsetDateTime,
 }
 
 impl FromRequestParts<AppState> for AuthenticatedSession {
@@ -410,14 +441,16 @@ impl FromRequestParts<AppState> for AuthenticatedSession {
         let token = session_cookie(&parts.headers).ok_or_else(ApiError::unauthenticated)?;
         let token_hash = hash_token(&token);
 
+        // 用户状态与会话状态在同一次 JOIN 查询中读取，不额外往返（design D2）。
         let row = sqlx::query!(
             r#"
-            SELECT id, user_id
-            FROM sessions
-            WHERE token_hash = $1
-              AND revoked_at IS NULL
-              AND expires_at > now()
-              AND last_seen_at > now() - make_interval(days => $2)
+            SELECT s.id, s.user_id, s.created_at, u.status, u.is_admin
+            FROM sessions s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.token_hash = $1
+              AND s.revoked_at IS NULL
+              AND s.expires_at > now()
+              AND s.last_seen_at > now() - make_interval(days => $2)
             "#,
             token_hash,
             SESSION_IDLE_DAYS,
@@ -429,6 +462,14 @@ impl FromRequestParts<AppState> for AuthenticatedSession {
         let Some(row) = row else {
             return Err(ApiError::unauthenticated());
         };
+
+        // 被停用/拒绝的账号即使还残留会话也不能继续使用（停用时已撤销全部会话）。
+        if matches!(
+            row.status.as_str(),
+            accounts::SUSPENDED | accounts::REJECTED
+        ) {
+            return Err(ApiError::unauthenticated());
+        }
 
         // 写节流：最多每 5 分钟更新一次 last_seen_at。失败不影响本次请求。
         if let Err(error) = sqlx::query!(
@@ -450,7 +491,43 @@ impl FromRequestParts<AppState> for AuthenticatedSession {
         Ok(Self {
             session_id: row.id,
             user_id: row.user_id,
+            status: row.status,
+            is_admin: row.is_admin,
+            session_created_at: row.created_at,
         })
+    }
+}
+
+/// 需要写权限的会话：账号必须处于 `active`。
+///
+/// 只读接口（列目录、下载、会话列表等）继续使用 [`AuthenticatedSession`]；
+/// 所有创建/修改/删除接口改用本提取器，从而把“待审核用户不能写”的规则集中在一处。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WritableSession(pub AuthenticatedSession);
+
+impl std::ops::Deref for WritableSession {
+    type Target = AuthenticatedSession;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl FromRequestParts<AppState> for WritableSession {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let session = AuthenticatedSession::from_request_parts(parts, state).await?;
+        match session.status.as_str() {
+            accounts::ACTIVE => Ok(Self(session)),
+            accounts::PENDING => Err(ApiError::account_pending()),
+            accounts::SUSPENDED => Err(ApiError::account_suspended(None)),
+            accounts::REJECTED => Err(ApiError::account_rejected(None)),
+            _ => Err(ApiError::internal("遇到未知的账号状态")),
+        }
     }
 }
 
