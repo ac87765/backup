@@ -20,6 +20,8 @@ export default defineConfig({
   use: {
     baseURL: baseUrl,
     trace: 'retain-on-failure',
+    // design D10：E2E 不依赖动画完成时机。
+    reducedMotion: 'reduce',
   },
   webServer: {
     // 本机沙箱下可先手动 `npm run build`，再用 E2E_SKIP_BUILD=1 跳过重复构建。

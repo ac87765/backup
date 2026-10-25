@@ -83,7 +83,12 @@ export function ChangePasswordSection() {
         onChange={(event) => setConfirm(event.target.value)}
       />
       <FormError message={error} />
-      <Button type="submit" variant="primary" disabled={busy}>
+      <Button
+        type="submit"
+        variant="primary"
+        data-testid="change-submit"
+        disabled={busy}
+      >
         {busy ? '修改中…' : '修改密码'}
       </Button>
     </form>

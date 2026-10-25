@@ -93,7 +93,12 @@ export function RotateRecoverySection() {
         onChange={(event) => setCurrentPassword(event.target.value)}
       />
       <FormError message={error} />
-      <Button type="submit" variant="primary" disabled={busy}>
+      <Button
+        type="submit"
+        variant="primary"
+        data-testid="rotate-prepare"
+        disabled={busy}
+      >
         {busy ? '准备中…' : '生成新的恢复密钥'}
       </Button>
     </form>
