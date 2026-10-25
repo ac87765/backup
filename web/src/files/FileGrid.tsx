@@ -63,6 +63,7 @@ export function FileGrid({
               onVersions={actions.onVersions}
               onNewVersion={actions.onNewVersion}
               onDelete={actions.onDelete}
+              onDownloadFolder={actions.onDownloadFolder}
               className={cx(
                 'absolute right-2 top-2 rounded-control bg-white/90 transition-opacity',
                 selected

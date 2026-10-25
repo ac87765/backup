@@ -1,4 +1,5 @@
 import {
+  FolderDown,
   FolderInput,
   History,
   Pencil,
@@ -16,6 +17,8 @@ export interface FileActionHandlers {
   onVersions: (item: FileNodeView) => void
   onNewVersion: (item: FileNodeView) => void
   onDelete: (item: FileNodeView) => void
+  /** 文件夹整体下载为 .zip（design D7）。 */
+  onDownloadFolder?: (item: FileNodeView) => void
 }
 
 export interface FileActions extends FileActionHandlers {
@@ -61,6 +64,14 @@ export function fileMenuItems(
         onSelect: () => handlers.onNewVersion(item),
       },
     )
+  } else if (handlers.onDownloadFolder) {
+    items.push({
+      label: '下载为 .zip',
+      ariaLabel: `下载为 .zip ${item.name}`,
+      icon: <FolderDown size={16} />,
+      disabled: handlers.busy,
+      onSelect: () => handlers.onDownloadFolder?.(item),
+    })
   }
   items.push({
     label: '删除',

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { InputHTMLAttributes } from 'react'
 import { FolderPlus, Search, Upload, UploadCloud } from 'lucide-react'
 
 import { useAuth } from '../auth/context'
@@ -23,11 +24,18 @@ import { CreateFolderDialog } from './dialogs/CreateFolderDialog'
 import { MoveDialog } from './dialogs/MoveDialog'
 import { RenameDialog } from './dialogs/RenameDialog'
 import { VersionsDialog } from './dialogs/VersionsDialog'
-import { saveBlob, selectDownloadTarget } from './download-target'
+import { saveBlob, selectDownloadTarget, selectFolderDownloadTarget } from './download-target'
 import { FileGrid } from './FileGrid'
 import { FileList } from './FileList'
 import { FileSkeleton } from './FileSkeleton'
 import type { FileActions } from './file-actions'
+import {
+  entriesFromDataTransfer,
+  scanDroppedEntries,
+  scanFileList,
+  type FolderScanTask,
+} from './folder-scan'
+import { FolderUploadJob, type FolderJobView } from './folder-job'
 import { FileToolbar, ViewToggle } from './FileToolbar'
 import { sortByName } from './format'
 import { validateName } from './name-validation'
@@ -95,10 +103,16 @@ export function FileBrowser() {
   const [versionsError, setVersionsError] = useState<string | null>(null)
 
   const [transfers, setTransfers] = useState<TransferItemView[]>([])
+  const [folderJobs, setFolderJobs] = useState<FolderJobView[]>([])
+  const [scanning, setScanning] = useState(false)
+  const [scannedItems, setScannedItems] = useState(0)
   const [dragActive, setDragActive] = useState(false)
   const uploadInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
   const versionInputRef = useRef<HTMLInputElement>(null)
   const versionTargetRef = useRef<FileNodeView | null>(null)
+  const folderJobsRef = useRef(new Map<string, FolderUploadJob>())
+  const folderDownloadCancels = useRef(new Map<string, () => void>())
   const pendingUploadsLoaded = useRef(false)
   const lastOpenRef = useRef<{ id: string; at: number }>({ id: '', at: 0 })
   const dragDepthRef = useRef(0)
@@ -224,6 +238,67 @@ export function FileBrowser() {
     ],
   )
 
+  const updateFolderJob = useCallback((snapshot: FolderJobView) => {
+    setFolderJobs((previous) => {
+      const index = previous.findIndex((job) => job.id === snapshot.id)
+      if (index === -1) {
+        return [...previous, snapshot]
+      }
+      const next = [...previous]
+      next[index] = snapshot
+      return next
+    })
+  }, [])
+
+  const startFolderTasks = useCallback(
+    async (tasks: FolderScanTask[]) => {
+      if (!api || !current) {
+        return
+      }
+      const parentId = current.id
+      for (const task of tasks) {
+        const job = new FolderUploadJob({
+          task,
+          parentId,
+          api,
+          onUpdate: updateFolderJob,
+        })
+        folderJobsRef.current.set(job.id, job)
+        updateFolderJob(job.snapshot())
+        await job.start()
+        const snapshot = job.snapshot()
+        if (snapshot.status === 'done') {
+          showToast(
+            `“${task.rootName}”备份完成：新增 ${snapshot.counts.added} · 更新 ${snapshot.counts.updated} · 未变化 ${snapshot.counts.unchanged}`,
+          )
+        } else if (snapshot.status === 'failed' && snapshot.errorMessage) {
+          showToast(snapshot.errorMessage, 'error')
+        }
+        if (task.skipped.length > 0) {
+          showToast(
+            `有 ${task.skipped.length} 项被跳过：${task.skipped[0]?.reason ?? '名称不合法'}`,
+            'info',
+          )
+        }
+        refresh()
+        refreshUsage()
+      }
+    },
+    [api, current, refresh, refreshUsage, showToast, updateFolderJob],
+  )
+
+  const handleFolderInput = (files: FileList | null) => {
+    if (!files || files.length === 0) {
+      return
+    }
+    const result = scanFileList(Array.from(files))
+    if (result.tasks.length === 0) {
+      showToast('这个文件夹里没有可备份的文件', 'info')
+      return
+    }
+    void startFolderTasks(result.tasks)
+  }
+
   const startDownload = useCallback(
     async (
       nodeId: string,
@@ -293,6 +368,93 @@ export function FileBrowser() {
       }
     },
     [api, onTransferProgress, patchTransfer, showToast],
+  )
+
+  const startFolderDownload = useCallback(
+    async (folderId: string, folderName: string) => {
+      if (!api) {
+        return
+      }
+      const baseName = folderId === rootId ? '加密备份' : folderName
+      const fileName = `${baseName}.zip`
+      const jobId = crypto.randomUUID()
+      let latest: FolderJobView = {
+        id: jobId,
+        name: baseName,
+        kind: 'folder',
+        direction: 'download',
+        status: 'running',
+        doneFiles: 0,
+        totalFiles: 0,
+        completedBytes: 0,
+        totalBytes: 0,
+        counts: { added: 0, updated: 0, unchanged: 0, failed: 0 },
+        children: [],
+        hiddenChildren: 0,
+        retrying: false,
+        retryable: false,
+      }
+      const patch = (changes: Partial<FolderJobView>) => {
+        latest = { ...latest, ...changes }
+        updateFolderJob(latest)
+      }
+      updateFolderJob(latest)
+      let cleanup: () => void = () => undefined
+      try {
+        const selection = await selectFolderDownloadTarget(fileName)
+        cleanup = selection.cleanup
+        const downloadId =
+          selection.target.kind === 'service-worker'
+            ? selection.target.downloadId
+            : crypto.randomUUID()
+        folderDownloadCancels.current.set(jobId, () => {
+          void api.cancelDownload(downloadId)
+        })
+        const result = await api.downloadFolder(
+          folderId,
+          fileName,
+          downloadId,
+          selection.target,
+          (event) => {
+            patch({
+              status:
+                event.status === 'completed'
+                  ? 'done'
+                  : event.status === 'cancelled'
+                    ? 'cancelled'
+                    : event.status === 'failed'
+                      ? 'failed'
+                      : 'running',
+              doneFiles: event.completedChunks,
+              totalFiles: event.totalChunks,
+              completedBytes: event.completedBytes,
+              totalBytes: event.totalBytes,
+              retrying: event.status === 'retrying',
+              ...(event.errorMessage
+                ? { errorMessage: event.errorMessage }
+                : {}),
+            })
+          },
+        )
+        if (result.blob) {
+          saveBlob(result.blob, fileName)
+        }
+        patch({ status: 'done', retrying: false })
+        showToast(`“${fileName}”下载完成`)
+      } catch (caught) {
+        const code = errorCode(caught) ?? undefined
+        patch({
+          status: code === 'cancelled' ? 'cancelled' : 'failed',
+          retrying: false,
+          errorCode: code,
+          errorMessage: errorMessage(caught),
+        })
+      } finally {
+        cleanup()
+        folderDownloadCancels.current.delete(jobId)
+      }
+    },
+    [api, rootId, showToast, updateFolderJob],
   )
 
   const pauseTransfer = useCallback(
@@ -623,8 +785,8 @@ export function FileBrowser() {
       }
     }
     const onDrop = (event: DragEvent) => {
-      const files = event.dataTransfer?.files
-      if (!files || files.length === 0) {
+      const transfer = event.dataTransfer
+      if (!transfer || !transfer.types.includes('Files')) {
         return
       }
       event.preventDefault()
@@ -633,7 +795,31 @@ export function FileBrowser() {
       if (!current) {
         return
       }
-      for (const file of Array.from(files)) {
+      const items = transfer.items
+      const entries =
+        items && items.length > 0 ? entriesFromDataTransfer(items) : []
+      if (entries.length > 0) {
+        setScanning(true)
+        setScannedItems(0)
+        void scanDroppedEntries(entries, {
+          onProgress: (count) => setScannedItems(count),
+        })
+          .then((result) => {
+            setScanning(false)
+            if (result.tasks.length === 0) {
+              showToast('这个文件夹里没有可备份的文件', 'info')
+              return
+            }
+            void startFolderTasks(result.tasks)
+          })
+          .catch((caught: unknown) => {
+            setScanning(false)
+            showToast(errorMessage(caught), 'error')
+          })
+        return
+      }
+      // 浏览器不支持 webkitGetAsEntry 时回退到普通文件拖拽。
+      for (const file of Array.from(transfer.files)) {
         void startUpload(file, current.id)
       }
     }
@@ -648,7 +834,25 @@ export function FileBrowser() {
       window.removeEventListener('dragleave', onDragLeave)
       window.removeEventListener('drop', onDrop)
     }
-  }, [current, startUpload])
+  }, [current, showToast, startFolderTasks, startUpload])
+
+  const folderJobsRunning = folderJobs.some(
+    (job) =>
+      job.status === 'scanning' ||
+      job.status === 'planning' ||
+      job.status === 'running',
+  )
+  useEffect(() => {
+    if (!folderJobsRunning) {
+      return
+    }
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [folderJobsRunning])
 
   useEffect(() => {
     if (!api || !currentId) {
@@ -900,6 +1104,7 @@ export function FileBrowser() {
     onVersions: (node) => void openVersions(node),
     onNewVersion: startVersionUpload,
     onDelete: (node) => void softDelete(node),
+    onDownloadFolder: (node) => void startFolderDownload(node.id, node.name),
   }
 
   const emptyState =
@@ -945,10 +1150,16 @@ export function FileBrowser() {
           viewMode={viewMode}
           onViewModeChange={changeViewMode}
           onRefresh={refresh}
+          onDownloadFolder={() => {
+            if (current) {
+              void startFolderDownload(current.id, current.name)
+            }
+          }}
         />
       }
       mobileSearch={{ value: filter, onChange: setFilter }}
       onUploadRequest={() => uploadInputRef.current?.click()}
+      onUploadFolderRequest={() => folderInputRef.current?.click()}
       onNewFolderRequest={openCreate}
     >
       <div data-testid="file-drop-zone" className="space-y-4">
@@ -960,6 +1171,21 @@ export function FileBrowser() {
           className="hidden"
           onChange={(event) => {
             handleUploadInput(event.target.files)
+            event.target.value = ''
+          }}
+        />
+        <input
+          ref={folderInputRef}
+          type="file"
+          multiple
+          data-testid="folder-upload-input"
+          className="hidden"
+          {...({
+            webkitdirectory: '',
+            directory: '',
+          } as unknown as InputHTMLAttributes<HTMLInputElement>)}
+          onChange={(event) => {
+            handleFolderInput(event.target.files)
             event.target.value = ''
           }}
         />
@@ -1046,6 +1272,7 @@ export function FileBrowser() {
       <TransferPanel
         key={transfers.length === 0 ? 'empty' : 'panel'}
         items={transfers}
+        folderJobs={folderJobs}
         onPause={(item) => void pauseTransfer(item)}
         onResume={(item) => void resumeTransfer(item)}
         onCancel={(item) => void cancelTransfer(item)}
@@ -1053,6 +1280,23 @@ export function FileBrowser() {
         onResumeFile={(item, file) => void resumeUploadFile(item, file)}
         onDismiss={dismissTransfer}
         onDismissCompleted={dismissCompleted}
+        onCancelFolder={(job) => {
+          const cancelDownload = folderDownloadCancels.current.get(job.id)
+          if (cancelDownload) {
+            cancelDownload()
+          } else {
+            void folderJobsRef.current.get(job.id)?.cancel()
+          }
+        }}
+        onRetryFolder={(job) =>
+          void folderJobsRef.current.get(job.id)?.retryFailed()
+        }
+        onDismissFolder={(job) => {
+          folderJobsRef.current.delete(job.id)
+          setFolderJobs((previous) =>
+            previous.filter((entry) => entry.id !== job.id),
+          )
+        }}
       />
 
       <CreateFolderDialog
@@ -1104,6 +1348,20 @@ export function FileBrowser() {
           onRestore={(version) => void restoreVersion(version)}
         />
       )}
+      {scanning && (
+        <div
+          data-testid="folder-scan-overlay"
+          className="animate-overlay-in pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-brand-600/90 p-6 backdrop-blur-sm"
+        >
+          <div className="flex max-w-lg flex-col items-center gap-3 rounded-card bg-white px-10 py-8 text-center shadow-pop">
+            <UploadCloud size={40} className="text-brand-600" aria-hidden="true" />
+            <p className="text-sm font-semibold text-ink-900">
+              正在扫描文件夹…
+            </p>
+            <p className="text-sm text-ink-600">已发现 {scannedItems} 项</p>
+          </div>
+        </div>
+      )}
       {dragActive && current && (
         <div
           data-testid="drop-overlay"
@@ -1115,7 +1373,7 @@ export function FileBrowser() {
               松开以上传到“{current.name}”
             </p>
             <p className="text-sm text-white">
-              文件会在本机加密后上传
+              文件或文件夹会在本机加密后上传
             </p>
           </div>
         </div>

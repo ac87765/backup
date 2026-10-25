@@ -12,6 +12,7 @@ import {
   CircleAlert,
   FolderOpen,
   FolderPlus,
+  FolderUp,
   LogOut,
   Menu as MenuIcon,
   Search,
@@ -53,17 +54,21 @@ export interface AppShellProps {
   }
   /** 当前页面能直接处理上传时提供；否则上传入口跳转到文件页。 */
   onUploadRequest?: () => void
+  /** 上传整个文件夹（webkitdirectory）；与上传文件共用菜单。 */
+  onUploadFolderRequest?: () => void
   onNewFolderRequest?: () => void
 }
 
 interface SidebarBodyProps {
   onUploadRequest?: () => void
+  onUploadFolderRequest?: () => void
   onNewFolderRequest?: () => void
   onNavigate?: () => void
 }
 
 function SidebarBody({
   onUploadRequest,
+  onUploadFolderRequest,
   onNewFolderRequest,
   onNavigate,
 }: SidebarBodyProps) {
@@ -73,6 +78,17 @@ function SidebarBody({
   const runUpload = () => {
     onNavigate?.()
     if (onUploadRequest) {
+      onUploadRequest()
+    } else {
+      void navigate('/files')
+    }
+  }
+
+  const runUploadFolder = () => {
+    onNavigate?.()
+    if (onUploadFolderRequest) {
+      onUploadFolderRequest()
+    } else if (onUploadRequest) {
       onUploadRequest()
     } else {
       void navigate('/files')
@@ -95,6 +111,13 @@ function SidebarBody({
       ariaLabel: '上传文件',
       icon: <Upload size={16} />,
       onSelect: runUpload,
+    },
+    {
+      label: '上传文件夹',
+      testId: 'upload-folder',
+      ariaLabel: '上传文件夹',
+      icon: <FolderUp size={16} />,
+      onSelect: runUploadFolder,
     },
     {
       label: '新建文件夹',
@@ -333,6 +356,7 @@ function AppShellFrame({
   toolbar,
   mobileSearch,
   onUploadRequest,
+  onUploadFolderRequest,
   onNewFolderRequest,
 }: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -382,6 +406,7 @@ function AppShellFrame({
         </div>
         <SidebarBody
           onUploadRequest={onUploadRequest}
+          onUploadFolderRequest={onUploadFolderRequest}
           onNewFolderRequest={onNewFolderRequest}
         />
       </aside>
@@ -485,6 +510,7 @@ function AppShellFrame({
             </div>
             <SidebarBody
               onUploadRequest={onUploadRequest}
+              onUploadFolderRequest={onUploadFolderRequest}
               onNewFolderRequest={onNewFolderRequest}
               onNavigate={closeDrawer}
             />

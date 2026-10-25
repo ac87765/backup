@@ -20,6 +20,7 @@ export function FileRowActions({
   onVersions,
   onNewVersion,
   onDelete,
+  onDownloadFolder,
 }: FileRowActionsProps) {
   const handlersForMenu: FileActionHandlers = {
     busy,
@@ -28,6 +29,7 @@ export function FileRowActions({
     onVersions,
     onNewVersion,
     onDelete,
+    onDownloadFolder,
   }
 
   return (

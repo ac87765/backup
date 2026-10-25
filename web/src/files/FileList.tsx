@@ -167,6 +167,7 @@ export function FileList({
             onVersions={actions.onVersions}
             onNewVersion={actions.onNewVersion}
             onDelete={actions.onDelete}
+            onDownloadFolder={actions.onDownloadFolder}
             className={cx(
               'transition-opacity',
               selected

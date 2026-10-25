@@ -1,4 +1,4 @@
-import { LayoutGrid, List, RotateCw, Search } from 'lucide-react'
+import { FolderDown, LayoutGrid, List, RotateCw, Search } from 'lucide-react'
 
 import { cx, IconButton, TextField } from '../ui'
 import type { ViewMode } from './view-preferences'
@@ -56,6 +56,8 @@ export interface FileToolbarProps extends ViewToggleProps {
   filter: string
   onFilterChange: (value: string) => void
   onRefresh: () => void
+  /** 当前文件夹整体下载为 .zip（design D7）。 */
+  onDownloadFolder?: () => void
 }
 
 export function FileToolbar({
@@ -64,6 +66,7 @@ export function FileToolbar({
   viewMode,
   onViewModeChange,
   onRefresh,
+  onDownloadFolder,
 }: FileToolbarProps) {
   return (
     <div className="flex items-center gap-2">
@@ -88,6 +91,15 @@ export function FileToolbar({
       >
         <RotateCw size={16} />
       </IconButton>
+      {onDownloadFolder && (
+        <IconButton
+          label="下载当前文件夹为 .zip"
+          data-testid="download-folder-zip"
+          onClick={onDownloadFolder}
+        >
+          <FolderDown size={16} />
+        </IconButton>
+      )}
     </div>
   )
 }

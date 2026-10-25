@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { FolderJobView } from './folder-job'
 import { TransferPanel, type TransferItemView } from './TransferPanel'
 
 function item(overrides: Partial<TransferItemView>): TransferItemView {
@@ -18,9 +19,47 @@ function item(overrides: Partial<TransferItemView>): TransferItemView {
   }
 }
 
-function renderPanel(items: TransferItemView[]) {
+function folderJob(overrides: Partial<FolderJobView> = {}): FolderJobView {
+  return {
+    id: 'folder-job-1',
+    name: '照片',
+    kind: 'folder',
+    direction: 'upload',
+    status: 'running',
+    doneFiles: 2,
+    totalFiles: 5,
+    completedBytes: 20,
+    totalBytes: 100,
+    counts: { added: 1, updated: 1, unchanged: 0, failed: 1 },
+    children: [
+      {
+        id: 'a',
+        name: 'a.jpg',
+        relativePath: '2025/a.jpg',
+        status: 'uploading',
+      },
+      {
+        id: 'b',
+        name: 'b.jpg',
+        relativePath: 'b.jpg',
+        status: 'failed',
+        error: '网络中断',
+      },
+    ],
+    hiddenChildren: 0,
+    retrying: false,
+    retryable: true,
+    ...overrides,
+  }
+}
+
+function renderPanel(
+  items: TransferItemView[],
+  folderJobs: FolderJobView[] = [],
+) {
   const props = {
     items,
+    folderJobs,
     onPause: vi.fn(),
     onResume: vi.fn(),
     onCancel: vi.fn(),
@@ -28,6 +67,9 @@ function renderPanel(items: TransferItemView[]) {
     onResumeFile: vi.fn(),
     onDismiss: vi.fn(),
     onDismissCompleted: vi.fn(),
+    onCancelFolder: vi.fn(),
+    onRetryFolder: vi.fn(),
+    onDismissFolder: vi.fn(),
   }
   const view = render(<TransferPanel {...props} />)
   return { ...props, ...view }
@@ -120,5 +162,35 @@ describe('TransferPanel', () => {
     expect(
       screen.getByTestId('resume-upload-input-session-1'),
     ).toBeInTheDocument()
+  })
+
+  it('文件夹任务分组显示计数、摘要、勾子与展开的失败文件', async () => {
+    const user = userEvent.setup()
+    const job = folderJob()
+    const { onCancelFolder } = renderPanel([], [job])
+
+    const row = screen.getByTestId('folder-job')
+    expect(row).toHaveAttribute('data-status', 'running')
+    expect(row).toHaveAttribute('data-done', '2')
+    expect(row).toHaveAttribute('data-total', '5')
+    expect(row).toHaveAttribute('data-direction', 'upload')
+    expect(row).toHaveTextContent('已完成 2 / 5 个文件')
+    expect(row).toHaveTextContent('新增 1 · 更新 1 · 未变化 0 · 失败 1')
+
+    await user.click(screen.getAllByTestId('folder-job-expand')[0])
+    expect(screen.getAllByTestId('folder-job-child')).toHaveLength(2)
+    expect(screen.getByText('网络中断')).toBeVisible()
+
+    await user.click(screen.getByTestId('folder-job-cancel'))
+    expect(onCancelFolder).toHaveBeenCalledWith(job)
+
+    const failed = folderJob({
+      status: 'failed',
+      retryable: true,
+      doneFiles: 5,
+    })
+    const retryRender = renderPanel([], [failed])
+    await user.click(screen.getByTestId('folder-job-retry'))
+    expect(retryRender.onRetryFolder).toHaveBeenCalledWith(failed)
   })
 })
