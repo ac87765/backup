@@ -344,6 +344,8 @@ export interface components {
             email: string;
         };
         RotateRecoveryKeyRequest: {
+            /** @description 当前密码派生出的认证密钥，用于证明知道当前密码。 */
+            current_auth_key: string;
             new_recovery_wrapped_mk: string;
             new_recovery_auth_key: string;
         };
