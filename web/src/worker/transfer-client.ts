@@ -377,25 +377,30 @@ export class TransferClient implements TransferWorkerApi {
         )
       }
 
-      const progress = (
+      const progressView = (
         status: TransferStatus,
         completedChunks: number,
         completedBytes: number,
         error?: TransferErrorPayload,
-      ) =>
-        this.emit(onProgress, {
-          transferId: downloadId,
-          direction: 'download',
-          fileName,
-          status,
-          completedChunks,
-          totalChunks: manifest.chunk_count,
-          completedBytes,
-          totalBytes: metadata.size,
-          ...(error
-            ? { errorCode: error.code, errorMessage: error.message }
-            : {}),
-        })
+      ): TransferProgressView => ({
+        transferId: downloadId,
+        direction: 'download',
+        fileName,
+        status,
+        completedChunks,
+        totalChunks: manifest.chunk_count,
+        completedBytes,
+        totalBytes: metadata.size,
+        ...(error
+          ? { errorCode: error.code, errorMessage: error.message }
+          : {}),
+      })
+      const report = (
+        status: TransferStatus,
+        completedChunks: number,
+        completedBytes: number,
+        error?: TransferErrorPayload,
+      ) => this.emit(onProgress, progressView(status, completedChunks, completedBytes, error))
 
       sink = await this.createSink(target, metadata.mime)
       const chunks = new Map<number, components['schemas']['DownloadChunk']>()
@@ -422,7 +427,7 @@ export class TransferClient implements TransferWorkerApi {
 
       let completedBytes = 0
       for (let index = 0; index < manifest.chunk_count; index += 1) {
-        await this.checkpoint(control, () => progress('paused', index, completedBytes))
+        await this.checkpoint(control, () => report('paused', index, completedBytes))
         for (
           let ahead = index;
           ahead < Math.min(manifest.chunk_count, index + DOWNLOAD_PREFETCH);
@@ -452,7 +457,7 @@ export class TransferClient implements TransferWorkerApi {
         assertChunkLength(plaintext, metadata.size, index, manifest.chunk_count)
         await sink.write(plaintext)
         completedBytes += plaintext.byteLength
-        progress('downloading', index + 1, completedBytes)
+        report('downloading', index + 1, completedBytes)
       }
 
       try {
@@ -461,7 +466,10 @@ export class TransferClient implements TransferWorkerApi {
         throw transferError('integrity_error', '解密后的明文总大小不符')
       }
       const blob = await sink.finish()
-      progress('completed', manifest.chunk_count, completedBytes)
+      await this.emitFinal(
+        onProgress,
+        progressView('completed', manifest.chunk_count, completedBytes),
+      )
       return { blob }
     } catch (error) {
       const payload = error as TransferErrorPayload
@@ -474,7 +482,7 @@ export class TransferClient implements TransferWorkerApi {
         }
       }
       const status: TransferStatus = cancelled ? 'cancelled' : 'failed'
-      this.emit(onProgress, {
+      await this.emitFinal(onProgress, {
         transferId: downloadId,
         direction: 'download',
         fileName,
@@ -716,7 +724,7 @@ export class TransferClient implements TransferWorkerApi {
         name: record.name,
         size: record.size,
       }
-      this.emit(onProgress, {
+      await this.emitFinal(onProgress, {
         transferId: record.sessionId,
         direction: 'upload',
         fileName: record.name,
@@ -775,23 +783,24 @@ export class TransferClient implements TransferWorkerApi {
       completedBytes += plaintextBytesForCiphertext(chunk.declared_size)
     }
 
-    const progress = (
+    const progressView = (
       status: TransferStatus,
       error?: TransferErrorPayload,
-    ) =>
-      this.emit(onProgress, {
-        transferId: record.sessionId,
-        direction: 'upload',
-        fileName: record.name,
-        status,
-        completedChunks,
-        totalChunks: count,
-        completedBytes,
-        totalBytes,
-        ...(error
-          ? { errorCode: error.code, errorMessage: error.message }
-          : {}),
-      })
+    ): TransferProgressView => ({
+      transferId: record.sessionId,
+      direction: 'upload',
+      fileName: record.name,
+      status,
+      completedChunks,
+      totalChunks: count,
+      completedBytes,
+      totalBytes,
+      ...(error
+        ? { errorCode: error.code, errorMessage: error.message }
+        : {}),
+    })
+    const report = (status: TransferStatus, error?: TransferErrorPayload) =>
+      this.emit(onProgress, progressView(status, error))
 
     const missing: number[] = []
     for (let index = 0; index < count; index += 1) {
@@ -799,11 +808,11 @@ export class TransferClient implements TransferWorkerApi {
         missing.push(index)
       }
     }
-    progress('uploading')
+    report('uploading')
 
     try {
       for (let offset = 0; offset < missing.length; offset += MAX_BATCH_CHUNKS) {
-        await this.checkpoint(control, () => progress('paused'))
+        await this.checkpoint(control, () => report('paused'))
         const batch = missing.slice(offset, offset + MAX_BATCH_CHUNKS)
         const presigned = await this.presignBatch(record.sessionId, batch)
         const successful: ConfirmChunkItemInput[] = []
@@ -811,7 +820,7 @@ export class TransferClient implements TransferWorkerApi {
         let lastError: TransferErrorPayload | null = null
 
         await mapWithConcurrency(batch, MAX_UPLOAD_CONCURRENCY, async (index) => {
-          await this.checkpoint(control, () => progress('paused'))
+          await this.checkpoint(control, () => report('paused'))
           const item = presigned.get(index)
           if (
             !item ||
@@ -862,7 +871,7 @@ export class TransferClient implements TransferWorkerApi {
               )
             }
           }
-          progress('uploading')
+          report('uploading')
         }
 
         if (failed.length > 0) {
@@ -874,7 +883,7 @@ export class TransferClient implements TransferWorkerApi {
         }
       }
 
-      await this.checkpoint(control, () => progress('paused'))
+      await this.checkpoint(control, () => report('paused'))
       const result = await this.request<{
         session_id: string
         status: string
@@ -894,7 +903,7 @@ export class TransferClient implements TransferWorkerApi {
       await this.store.delete(record.sessionId)
       completedChunks = count
       completedBytes = totalBytes
-      progress('completed')
+      await this.emitFinal(onProgress, progressView('completed'))
       return {
         nodeId: result.node_id,
         versionId: result.version_id,
@@ -905,14 +914,14 @@ export class TransferClient implements TransferWorkerApi {
     } catch (error) {
       const payload = error as TransferErrorPayload
       if (control.cancelled || payload.code === 'cancelled') {
-        progress('cancelled')
+        await this.emitFinal(onProgress, progressView('cancelled'))
         throw transferError('cancelled', '传输已取消')
       }
       const current = await this.store.get(record.sessionId)
       if (current) {
         await this.store.put({ ...current, status: 'failed' })
       }
-      progress('failed', payload)
+      await this.emitFinal(onProgress, progressView('failed', payload))
       throw error
     } finally {
       this.controls.delete(record.sessionId)
@@ -1128,6 +1137,30 @@ export class TransferClient implements TransferWorkerApi {
       callback?.(progress)
     } catch {
       // UI 回调失败不能中断传输。
+    }
+  }
+
+  /**
+   * 发送最终进度并等待接收方处理完成。
+   *
+   * Comlink 代理调用是异步消息；不等待最后一次回调就 resolve 会让调用方先
+   * 拿到完成结果、后收到 completed 进度（契约测试与真实 UI 都会竞态）。
+   */
+  private async emitFinal(
+    callback: ((progress: TransferProgressView) => void) | undefined,
+    progress: TransferProgressView,
+  ): Promise<void> {
+    try {
+      const result: unknown = callback?.(progress)
+      if (
+        result !== undefined &&
+        result !== null &&
+        typeof (result as { then?: unknown }).then === 'function'
+      ) {
+        await (result as PromiseLike<void>)
+      }
+    } catch {
+      // UI 回调失败不能中断传输，也不能阻止最终结果返回。
     }
   }
 
