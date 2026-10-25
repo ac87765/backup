@@ -15,6 +15,7 @@ const DOCKERFILE: &str = include_str!("../../../Dockerfile");
 const RUST_TOOLCHAIN: &str = include_str!("../../../rust-toolchain.toml");
 const NVMRC: &str = include_str!("../../../.nvmrc");
 const DOCKERIGNORE: &str = include_str!("../../../.dockerignore");
+const E2E_COMPOSE: &str = include_str!("../../../deploy/docker-compose.e2e.yml");
 
 /// 所有 `BACKUP_*` 配置项（新增配置时必须同步更新生产模板与清单）。
 const ALL_CONFIG_KEYS: &[&str] = &[
@@ -199,4 +200,49 @@ fn dockerignore_excludes_large_and_generated_paths() {
             ".dockerignore 必须排除 {required}"
         );
     }
+}
+
+#[test]
+fn dockerfile_arch_guard_falls_back_for_legacy_builder() {
+    // 传统 builder 不注入 TARGETARCH，必须回退到 dpkg 查询实际架构。
+    assert!(DOCKERFILE.contains("ARG TARGETARCH"));
+    assert!(DOCKERFILE.contains("dpkg --print-architecture"));
+    assert!(DOCKERFILE.contains("arch=\"${TARGETARCH:-}\""));
+    assert!(DOCKERFILE.contains("amd64) ;;"));
+
+    // 不使用仅 BuildKit 支持的语法，保证传统 builder 也能构建。
+    // 注释里提到这些关键字是说明文字，这里只检查真正的指令行。
+    let instructions = DOCKERFILE
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for forbidden in ["RUN --mount", "COPY --link", "<<EOF", "<<'EOF'"] {
+        assert!(
+            !instructions.contains(forbidden),
+            "Dockerfile 指令不能依赖仅 BuildKit 支持的语法：{forbidden}"
+        );
+    }
+    assert!(
+        !DOCKERFILE
+            .lines()
+            .any(|line| line.trim_start().starts_with("# syntax=")),
+        "不应要求 BuildKit 专用 frontend 指令"
+    );
+}
+
+#[test]
+fn e2e_compose_default_ports_do_not_collide_with_dev_compose() {
+    for expected in [
+        "E2E_POSTGRES_PORT:-55433",
+        "E2E_STORAGE_PORT:-59100",
+        "BACKUP_STORAGE_PUBLIC_ENDPOINT: http://127.0.0.1:${E2E_STORAGE_PORT:-59100}",
+    ] {
+        assert!(
+            E2E_COMPOSE.contains(expected),
+            "docker-compose.e2e.yml 默认端口未与 dev compose 错开：{expected}"
+        );
+    }
+    assert!(!E2E_COMPOSE.contains("E2E_POSTGRES_PORT:-5432"));
+    assert!(!E2E_COMPOSE.contains("E2E_STORAGE_PORT:-9000"));
 }

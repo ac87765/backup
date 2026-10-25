@@ -1,10 +1,12 @@
-# syntax=docker/dockerfile:1.7
-#
 # 单镜像多阶段构建（design D15 / task 9.1）：
 #   planner/builder  cargo-chef 缓存依赖 → release 构建 server
 #   wasm-builder    wasm-pack 0.15.0 构建 crypto-wasm
 #   web-builder     Node（.nvmrc）+ Vite 构建前端
 #   runtime         debian:bookworm-slim，非 root，仅 server 二进制 + 前端 + CA 证书
+#
+# 同时兼容 Docker BuildKit 与传统 builder：不使用 RUN --mount、COPY --link、
+# heredoc 等仅 BuildKit 支持的语法；TARGETARCH 在传统 builder 下为空时，
+# wasm-builder 用 `dpkg --print-architecture` 回退识别实际架构。
 #
 # 迁移文件由 `sqlx::migrate!` 编译进 server 二进制；运行时使用 `server migrate`
 # 与 `server serve` 两个子命令（design D15）。
@@ -53,11 +55,23 @@ FROM rust:1.98.1-bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288
 
 # CI 与本地都使用 x86_64 Linux；这里使用与 CI 完全相同的官方 wasm-pack 发布包。
 # 若需要在其他架构构建，请先补充对应架构的发布包（不要静默换版本）。
+#
+# BuildKit 会自动注入 TARGETARCH；传统 builder 不会，此时用 dpkg 查询实际架构。
+# `dpkg --print-architecture` 在 Debian 基础镜像中始终可用，避免依赖 uname 映射。
 ARG TARGETARCH
-RUN if [ "$TARGETARCH" != "amd64" ]; then \
-      echo "wasm-pack 0.15.0 当前仅配置了 linux/amd64 发布包" >&2; \
-      exit 1; \
-    fi
+RUN set -eu; \
+    arch="${TARGETARCH:-}"; \
+    if [ -z "$arch" ]; then \
+      arch="$(dpkg --print-architecture)"; \
+    fi; \
+    echo "building wasm for architecture: $arch"; \
+    case "$arch" in \
+      amd64) ;; \
+      *) \
+        echo "wasm-pack 0.15.0 当前仅配置了 linux/amd64 发布包（实际架构：$arch）" >&2; \
+        exit 1; \
+        ;; \
+    esac
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \

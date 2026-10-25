@@ -213,11 +213,16 @@ PostgreSQL/MinIO 由 `deploy/docker-compose.dev.yml` 提供。邮件使用 file 
 
 ### 6. Docker 镜像与容器化验收
 
+`Dockerfile` 同时兼容 Docker BuildKit 与传统 builder：不使用 `RUN --mount`、
+`COPY --link`、heredoc 等仅 BuildKit 支持的语法；传统 builder 不注入 `TARGETARCH` 时，
+镜像会用 `dpkg --print-architecture` 回退识别架构（当前 wasm-pack 发布包仅支持 amd64）。
+
 ```bash
 # 只构建（不推送）；基础镜像按 digest 固定
 docker build -t backup-server:local .
 
 # 容器化全链路：PostgreSQL + MinIO + 镜像内 server（先 migrate 再 serve）
+# 宿主端口默认 server 8080、PostgreSQL 55433、MinIO 59100，与 dev compose 错开。
 docker compose -f deploy/docker-compose.e2e.yml up -d --build
 curl -fsS http://127.0.0.1:8080/readyz
 curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="root">'
