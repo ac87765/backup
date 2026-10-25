@@ -9,23 +9,27 @@
  * - 下载按序解密写出，预取窗口 3；失败时中止文件流，不留下残缺文件。
  */
 import type { components } from '../api/schema'
+import { downloadZip } from 'client-zip'
 import { validateName } from '../files/name-validation'
 import type {
   CryptoBackend,
   DownloadResultView,
   DownloadTargetView,
+  FileNodeView,
   FileSystemWritableLike,
   PendingUploadView,
   TransferProgressView,
   TransferStatus,
   TransferWorkerApi,
   UploadResultView,
+  VersionMetadataView,
 } from './types'
 import type { FileClient } from './file-client'
 import {
   backoffDelay,
+  isRateLimited,
   isRetryable,
-  sleep,
+  sleepWithCancellation,
   transferError,
   withRetry,
   type TransferErrorPayload,
@@ -50,8 +54,28 @@ export const MAX_BATCH_CHUNKS = 32
 export const MAX_UPLOAD_CONCURRENCY = 4
 export const DOWNLOAD_PREFETCH = 3
 export const MAX_BLOB_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
+/** 文件夹 zip 的 Blob 回退上限（design D7）。 */
+export const MAX_BLOB_FOLDER_DOWNLOAD_BYTES = 500 * 1024 * 1024
 
 const MAX_ATTEMPTS = 5
+
+interface RetryContext {
+  isCancelled?: () => boolean
+  onRetry?: (error: TransferErrorPayload, delayMs: number) => void
+}
+
+interface VersionDownloadContext {
+  nodeId: string
+  versionId: string
+  manifest: DownloadManifest
+  metadata: VersionMetadataView
+  chunks: Map<number, components['schemas']['DownloadChunk']>
+}
+
+function rateLimitWaitMessage(delayMs: number): string {
+  const seconds = Math.max(1, Math.ceil(delayMs / 1000))
+  return `服务器繁忙，${seconds} 秒后自动继续`
+}
 
 interface Control {
   paused: boolean
@@ -108,6 +132,61 @@ function chunkCountFor(backend: CryptoBackend, size: number): number {
     throw transferError('invalid_chunk_layout', '无法计算分块数量')
   }
   return count
+}
+
+/** 计算加密后的预计大小（配额按密文计费）。 */
+export function projectedCiphertextSize(size: number): number {
+  const count = Math.max(1, Math.ceil(size / CHUNK_PLAINTEXT_SIZE))
+  return size + count * CHUNK_FRAME_OVERHEAD
+}
+
+/**
+ * 流式计算明文 SHA-256；每次只读 4 MiB，内存与文件大小无关。
+ */
+async function computeContentSha256(
+  backend: CryptoBackend,
+  file: File,
+): Promise<string> {
+  // 优先用 Blob.stream()：不经过 File.slice，避免与上传分片统计混淆，
+  // 也避免把整个文件读入内存。部分测试环境（jsdom）的 File.stream 会把
+  // Blob 转成 "[object File]" 文本，因此校验读到的总字节数；不一致时
+  // 退回 arrayBuffer（只影响测试/不支持正确 Blob.stream 的旧浏览器）。
+  if (typeof file.stream === 'function') {
+    const hasher = backend.createContentHasher()
+    const reader = file.stream().getReader()
+    let total = 0
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+      const bytes =
+        value instanceof Uint8Array ? value : new Uint8Array(value)
+      total += bytes.byteLength
+      hasher.update(bytes)
+    }
+    if (total === file.size) {
+      return hasher.finish()
+    }
+    // 释放这个不可信的哈希实例，改用 arrayBuffer 重新计算。
+    hasher.finish()
+  }
+  const all = new Uint8Array(await file.arrayBuffer())
+  const hasher = backend.createContentHasher()
+  hasher.update(all)
+  return hasher.finish()
+}
+
+/** 常数时间比较两个等长十六进制摘要（AGENTS.md：哈希比较一律常数时间）。 */
+function constantTimeHexEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+  let diff = 0
+  for (let index = 0; index < left.length; index += 1) {
+    diff |= left.charCodeAt(index) ^ right.charCodeAt(index)
+  }
+  return diff === 0
 }
 
 /** 按并发上限执行异步任务；用于上传的 PUT 阶段。 */
@@ -206,6 +285,20 @@ export class TransferClient implements TransferWorkerApi {
       return this.resumeInternal(existing, file, onProgress)
     }
     return this.startNewVersion(backend, nodeId, file, onProgress)
+  }
+
+  /** 流式计算文件明文 SHA-256，并与云端当前版本摘要做常数时间比较。 */
+  async contentMatchesCurrentVersion(
+    nodeId: string,
+    file: File,
+  ): Promise<boolean | null> {
+    const expected = this.fileClient.contentHashFor(nodeId)
+    if (expected === undefined || expected === null) {
+      return null
+    }
+    const backend = await this.unlockedBackend()
+    const actual = await computeContentSha256(backend, file)
+    return constantTimeHexEqual(actual, expected)
   }
 
   async resumePendingUpload(
@@ -337,45 +430,43 @@ export class TransferClient implements TransferWorkerApi {
     })
 
     let sink: DownloadSink | null = null
+    const retryContext: RetryContext = {
+      isCancelled: () => control.cancelled,
+      onRetry: (error, delayMs) => {
+        if (!isRateLimited(error)) {
+          return
+        }
+        this.emit(onProgress, {
+          transferId: downloadId,
+          direction: 'download',
+          fileName,
+          status: 'retrying',
+          completedChunks: 0,
+          totalChunks: 0,
+          completedBytes: 0,
+          totalBytes: 0,
+          errorCode: error.code,
+          errorMessage: rateLimitWaitMessage(delayMs),
+        })
+      },
+    }
     try {
-      const manifest = await this.request<DownloadManifest>(
-        `/api/v1/nodes/${encodeURIComponent(nodeId)}/versions/${encodeURIComponent(versionId)}/download`,
-        { method: 'GET' },
+      const context = await this.prepareVersionDownload(
+        backend,
+        nodeId,
+        versionId,
+        retryContext,
       )
-      const wrapped =
-        manifest.wrapped_key === null || manifest.wrapped_key === undefined
-          ? this.fileClient.wrappedKeyFor(nodeId)
-          : hexToBytes(manifest.wrapped_key)
-      if (!wrapped) {
-        throw transferError('node_key_missing', '节点密钥尚未加载，请刷新后重试')
-      }
-      backend.loadNodeKey(nodeId, wrapped)
-      this.fileClient.rememberWrappedKey(nodeId, wrapped)
-
-      let metadata
-      try {
-        metadata = backend.decryptVersionMetadataForContent(
-          nodeId,
-          versionId,
-          manifest.content_id,
-          hexToBytes(manifest.encrypted_meta),
-        )
-      } catch {
-        throw transferError('integrity_error', '版本元数据校验失败')
-      }
-      const expectedChannels = chunkCountFor(backend, metadata.size)
-      if (expectedChannels !== manifest.chunk_count) {
-        throw transferError('integrity_error', '版本元数据与块数量不一致')
-      }
       if (
         target.kind === 'blob' &&
-        metadata.size > MAX_BLOB_DOWNLOAD_BYTES
+        context.metadata.size > MAX_BLOB_DOWNLOAD_BYTES
       ) {
         throw transferError(
           'file_too_large',
           '当前浏览器只能以内存方式下载，文件不能超过 2 GiB',
         )
       }
+      const { manifest, metadata } = context
 
       const progressView = (
         status: TransferStatus,
@@ -403,67 +494,14 @@ export class TransferClient implements TransferWorkerApi {
       ) => this.emit(onProgress, progressView(status, completedChunks, completedBytes, error))
 
       sink = await this.createSink(target, metadata.mime)
-      const chunks = new Map<number, components['schemas']['DownloadChunk']>()
-      for (const chunk of manifest.chunks) {
-        chunks.set(chunk.idx, chunk)
-      }
-
-      const prefetched = new Map<number, Promise<Uint8Array>>()
-      const ensureFetch = (index: number): Promise<Uint8Array> => {
-        const previous = prefetched.get(index)
-        if (previous) {
-          return previous
-        }
-        const chunk = chunks.get(index)
-        if (!chunk) {
-          throw transferError('integrity_error', '下载清单缺少块')
-        }
-        const pending = this.fetchChunk(chunk.url)
-        // 防止靠后的预取错误在按序 await 之前变成未处理拒绝。
-        void pending.catch(() => undefined)
-        prefetched.set(index, pending)
-        return pending
-      }
-
       let completedBytes = 0
-      for (let index = 0; index < manifest.chunk_count; index += 1) {
-        await this.checkpoint(control, () => report('paused', index, completedBytes))
-        for (
-          let ahead = index;
-          ahead < Math.min(manifest.chunk_count, index + DOWNLOAD_PREFETCH);
-          ahead += 1
-        ) {
-          void ensureFetch(ahead)
-        }
-        const pendingCiphertext = prefetched.get(index)
-        if (!pendingCiphertext) {
-          throw transferError('integrity_error', '下载清单缺少块')
-        }
-        const ciphertext = await pendingCiphertext
-        prefetched.delete(index)
-        let plaintext: Uint8Array
-        try {
-          plaintext = backend.decryptChunk(
-            nodeId,
-            manifest.content_id,
-            index,
-            manifest.chunk_count,
-            index === manifest.chunk_count - 1,
-            ciphertext,
-          )
-        } catch {
-          throw transferError('integrity_error', '块解密认证失败')
-        }
-        assertChunkLength(plaintext, metadata.size, index, manifest.chunk_count)
+      for await (const plaintext of this.decryptVersionChunks(
+        context,
+        control,
+        report,
+      )) {
         await sink.write(plaintext)
         completedBytes += plaintext.byteLength
-        report('downloading', index + 1, completedBytes)
-      }
-
-      try {
-        backend.verifyPlaintextSize(metadata.size, completedBytes)
-      } catch {
-        throw transferError('integrity_error', '解密后的明文总大小不符')
       }
       const blob = await sink.finish()
       await this.emitFinal(
@@ -500,6 +538,334 @@ export class TransferClient implements TransferWorkerApi {
       throw error
     } finally {
       this.controls.delete(downloadId)
+    }
+  }
+
+  /**
+   * 把文件夹（含子树与空目录）流式打包成 zip（design D7）。
+   *
+   * - 逐文件解密后直接送入 client-zip 的流，内存不随总大小增长；
+   * - 任一文件解密失败即中止，不产生“看似完整”的 zip；
+   * - Blob 回退只允许 ≤ 500 MiB。
+   */
+  async downloadFolder(
+    nodeId: string,
+    fileName: string,
+    downloadId: string,
+    target: DownloadTargetView,
+    onProgress?: (progress: TransferProgressView) => void,
+  ): Promise<DownloadResultView> {
+    const control = this.control(downloadId)
+    const report = (
+      status: TransferStatus,
+      completedFiles: number,
+      totalFiles: number,
+      completedBytes: number,
+      totalBytes: number,
+      error?: TransferErrorPayload,
+    ) =>
+      this.emit(onProgress, {
+        transferId: downloadId,
+        direction: 'download',
+        fileName,
+        status,
+        completedChunks: completedFiles,
+        totalChunks: totalFiles,
+        completedBytes,
+        totalBytes,
+        ...(error
+          ? { errorCode: error.code, errorMessage: error.message }
+          : {}),
+      })
+    report('downloading', 0, 0, 0, 0)
+
+    let sink: DownloadSink | null = null
+    try {
+      const files: Array<{ path: string; node: FileNodeView; size: number; mtime: number }> =
+        []
+      const folders: Array<{ path: string; mtime: number }> = []
+      await this.collectFolderEntries(nodeId, '', files, folders, control)
+      const totalBytes = files.reduce((sum, entry) => sum + entry.size, 0)
+      if (
+        target.kind === 'blob' &&
+        totalBytes > MAX_BLOB_FOLDER_DOWNLOAD_BYTES
+      ) {
+        throw transferError(
+          'folder_too_large',
+          '当前浏览器只能以内存方式下载，文件夹超过 500 MiB 时请换用 Chrome/Edge',
+        )
+      }
+      report('downloading', 0, files.length, 0, totalBytes)
+
+      sink = await this.createSink(target, 'application/zip')
+      let completedBytes = 0
+      let completedFiles = 0
+      const zipEntries = [
+        ...folders.map((folder) => ({
+          name: `${folder.path}/`,
+          lastModified: new Date(folder.mtime * 1000),
+        })),
+        ...files.map((entry) => ({
+          name: entry.path,
+          lastModified: new Date(entry.mtime * 1000),
+          input: this.zipFileInput(entry, control, (bytes) => {
+            completedBytes += bytes
+            report(
+              'downloading',
+              completedFiles,
+              files.length,
+              completedBytes,
+              totalBytes,
+            )
+          }, () => {
+            completedFiles += 1
+            report(
+              'downloading',
+              completedFiles,
+              files.length,
+              completedBytes,
+              totalBytes,
+            )
+          }),
+        })),
+      ]
+      const response = downloadZip(
+        zipEntries as Parameters<typeof downloadZip>[0],
+      )
+      if (!response.body) {
+        throw transferError('download_failed', '无法创建 zip 下载流')
+      }
+      const reader = response.body.getReader()
+      for (;;) {
+        await this.checkpoint(control, () =>
+          report(
+            'paused',
+            completedFiles,
+            files.length,
+            completedBytes,
+            totalBytes,
+          ),
+        )
+        const { done, value } = await reader.read()
+        if (done) {
+          break
+        }
+        await sink.write(value)
+      }
+      const blob = await sink.finish()
+      await this.emitFinal(
+        onProgress,
+        {
+          transferId: downloadId,
+          direction: 'download',
+          fileName,
+          status: 'completed',
+          completedChunks: files.length,
+          totalChunks: files.length,
+          completedBytes,
+          totalBytes,
+        },
+      )
+      return { blob }
+    } catch (error) {
+      const payload = error as TransferErrorPayload
+      const cancelled = control.cancelled || payload.code === 'cancelled'
+      if (sink) {
+        try {
+          await sink.abort()
+        } catch {
+          // 中止失败不覆盖原始错误。
+        }
+      }
+      if (cancelled) {
+        throw transferError('cancelled', '传输已取消')
+      }
+      throw error
+    } finally {
+      this.controls.delete(downloadId)
+    }
+  }
+
+  private async *zipFileInput(
+    entry: { path: string; node: FileNodeView; size: number; mtime: number },
+    control: Control,
+    onBytes: (bytes: number) => void,
+    onFileDone: () => void,
+  ): AsyncGenerator<Uint8Array> {
+    const backend = await this.unlockedBackend()
+    const versionId = entry.node.currentVersionId
+    if (!versionId) {
+      throw transferError('integrity_error', '文件缺少当前版本')
+    }
+    const context = await this.prepareVersionDownload(
+      backend,
+      entry.node.id,
+      versionId,
+      { isCancelled: () => control.cancelled },
+    )
+    for await (const chunk of this.decryptVersionChunks(
+      context,
+      control,
+      () => undefined,
+    )) {
+      onBytes(chunk.byteLength)
+      yield chunk
+    }
+    onFileDone()
+  }
+
+  private async collectFolderEntries(
+    folderId: string,
+    prefix: string,
+    files: Array<{ path: string; node: FileNodeView; size: number; mtime: number }>,
+    folders: Array<{ path: string; mtime: number }>,
+    control: Control,
+  ): Promise<void> {
+    let cursor: string | undefined
+    for (;;) {
+      await this.checkpoint(control, () => undefined)
+      const page = await this.fileClient.listFolder(folderId, cursor)
+      for (const item of page.items) {
+        await this.checkpoint(control, () => undefined)
+        const path = prefix ? `${prefix}/${item.name}` : item.name
+        if (item.kind === 'folder') {
+          folders.push({ path, mtime: item.mtime ?? 0 })
+          await this.collectFolderEntries(item.id, path, files, folders, control)
+        } else {
+          if (!item.currentVersionId) {
+            throw transferError('integrity_error', '文件缺少当前版本')
+          }
+          files.push({
+            path,
+            node: item,
+            size: item.size ?? 0,
+            mtime: item.mtime ?? 0,
+          })
+        }
+      }
+      if (!page.nextCursor) {
+        return
+      }
+      cursor = page.nextCursor
+    }
+  }
+
+  private async prepareVersionDownload(
+    backend: CryptoBackend,
+    nodeId: string,
+    versionId: string,
+    retryContext: RetryContext,
+  ): Promise<VersionDownloadContext> {
+    const manifest = await this.request<DownloadManifest>(
+      `/api/v1/nodes/${encodeURIComponent(nodeId)}/versions/${encodeURIComponent(versionId)}/download`,
+      { method: 'GET' },
+      retryContext,
+    )
+    const wrapped =
+      manifest.wrapped_key === null || manifest.wrapped_key === undefined
+        ? this.fileClient.wrappedKeyFor(nodeId)
+        : hexToBytes(manifest.wrapped_key)
+    if (!wrapped) {
+      throw transferError('node_key_missing', '节点密钥尚未加载，请刷新后重试')
+    }
+    backend.loadNodeKey(nodeId, wrapped)
+    this.fileClient.rememberWrappedKey(nodeId, wrapped)
+
+    let metadata
+    try {
+      metadata = backend.decryptVersionMetadataForContent(
+        nodeId,
+        versionId,
+        manifest.content_id,
+        hexToBytes(manifest.encrypted_meta),
+      )
+    } catch {
+      throw transferError('integrity_error', '版本元数据校验失败')
+    }
+    const expectedChannels = chunkCountFor(backend, metadata.size)
+    if (expectedChannels !== manifest.chunk_count) {
+      throw transferError('integrity_error', '版本元数据与块数量不一致')
+    }
+    const chunks = new Map<number, components['schemas']['DownloadChunk']>()
+    for (const chunk of manifest.chunks) {
+      chunks.set(chunk.idx, chunk)
+    }
+    return { nodeId, versionId, manifest, metadata, chunks }
+  }
+
+  private async *decryptVersionChunks(
+    context: VersionDownloadContext,
+    control: Control,
+    report: (
+      status: TransferStatus,
+      completedChunks: number,
+      completedBytes: number,
+      error?: TransferErrorPayload,
+    ) => void,
+  ): AsyncGenerator<Uint8Array> {
+    const backend = await this.unlockedBackend()
+    const { nodeId, manifest, metadata, chunks } = context
+    const retryContext: RetryContext = {
+      isCancelled: () => control.cancelled,
+    }
+    const prefetched = new Map<number, Promise<Uint8Array>>()
+    const ensureFetch = (index: number): Promise<Uint8Array> => {
+      const previous = prefetched.get(index)
+      if (previous) {
+        return previous
+      }
+      const chunk = chunks.get(index)
+      if (!chunk) {
+        throw transferError('integrity_error', '下载清单缺少块')
+      }
+      const pending = this.fetchChunk(chunk.url, retryContext)
+      // 防止靠后的预取错误在按序 await 之前变成未处理拒绝。
+      void pending.catch(() => undefined)
+      prefetched.set(index, pending)
+      return pending
+    }
+
+    let completedBytes = 0
+    for (let index = 0; index < manifest.chunk_count; index += 1) {
+      await this.checkpoint(control, () =>
+        report('paused', index, completedBytes),
+      )
+      for (
+        let ahead = index;
+        ahead < Math.min(manifest.chunk_count, index + DOWNLOAD_PREFETCH);
+        ahead += 1
+      ) {
+        void ensureFetch(ahead)
+      }
+      const pendingCiphertext = prefetched.get(index)
+      if (!pendingCiphertext) {
+        throw transferError('integrity_error', '下载清单缺少块')
+      }
+      const ciphertext = await pendingCiphertext
+      prefetched.delete(index)
+      let plaintext: Uint8Array
+      try {
+        plaintext = backend.decryptChunk(
+          nodeId,
+          manifest.content_id,
+          index,
+          manifest.chunk_count,
+          index === manifest.chunk_count - 1,
+          ciphertext,
+        )
+      } catch {
+        throw transferError('integrity_error', '块解密认证失败')
+      }
+      assertChunkLength(plaintext, metadata.size, index, manifest.chunk_count)
+      completedBytes += plaintext.byteLength
+      report('downloading', index + 1, completedBytes)
+      yield plaintext
+    }
+
+    try {
+      backend.verifyPlaintextSize(metadata.size, completedBytes)
+    } catch {
+      throw transferError('integrity_error', '解密后的明文总大小不符')
     }
   }
 
@@ -550,6 +916,7 @@ export class TransferClient implements TransferWorkerApi {
     this.fileClient.rememberWrappedKey(nodeId, wrapped)
     const encryptedMeta = backend.encryptNodeMetadata(nodeId, file.name)
     const nameToken = backend.nameToken(parentId, file.name)
+    const contentSha256 = await computeContentSha256(backend, file)
     const count = chunkCountFor(backend, file.size)
     const declaredSize = file.size + count * CHUNK_FRAME_OVERHEAD
     const versionMeta = backend.encryptVersionMetadata(
@@ -559,6 +926,7 @@ export class TransferClient implements TransferWorkerApi {
       file.size,
       fileMtime(file),
       fileMime(file),
+      contentSha256,
     )
     const session = await this.request<UploadSessionResponse>(
       '/api/v1/upload-sessions',
@@ -577,6 +945,10 @@ export class TransferClient implements TransferWorkerApi {
           chunk_count: count,
           declared_size: declaredSize,
         }),
+      },
+      {
+        onRetry: (error, delayMs) =>
+          this.emitRateLimitWait(onProgress, file.name, file.size, error, delayMs),
       },
     )
     this.verifySession(session, {
@@ -622,6 +994,7 @@ export class TransferClient implements TransferWorkerApi {
     backend.loadNodeKey(nodeId, wrapped)
     const contentId = crypto.randomUUID()
     const versionId = crypto.randomUUID()
+    const contentSha256 = await computeContentSha256(backend, file)
     const count = chunkCountFor(backend, file.size)
     const declaredSize = file.size + count * CHUNK_FRAME_OVERHEAD
     const versionMeta = backend.encryptVersionMetadata(
@@ -631,6 +1004,7 @@ export class TransferClient implements TransferWorkerApi {
       file.size,
       fileMtime(file),
       fileMime(file),
+      contentSha256,
     )
     const session = await this.request<UploadSessionResponse>(
       '/api/v1/upload-sessions',
@@ -645,6 +1019,10 @@ export class TransferClient implements TransferWorkerApi {
           chunk_count: count,
           declared_size: declaredSize,
         }),
+      },
+      {
+        onRetry: (error, delayMs) =>
+          this.emitRateLimitWait(onProgress, file.name, file.size, error, delayMs),
       },
     )
     this.verifySession(session, {
@@ -770,18 +1148,9 @@ export class TransferClient implements TransferWorkerApi {
     const control = this.control(record.sessionId)
     const count = session.chunk_count
     const totalBytes = file.size
-    const confirmedResponse = await this.request<ConfirmedChunksResponse>(
-      `/api/v1/upload-sessions/${encodeURIComponent(record.sessionId)}/chunks`,
-      { method: 'GET' },
-    )
     const confirmed = new Set<number>()
     let completedChunks = 0
     let completedBytes = 0
-    for (const chunk of confirmedResponse.items) {
-      confirmed.add(chunk.idx)
-      completedChunks += 1
-      completedBytes += plaintextBytesForCiphertext(chunk.declared_size)
-    }
 
     const progressView = (
       status: TransferStatus,
@@ -801,6 +1170,29 @@ export class TransferClient implements TransferWorkerApi {
     })
     const report = (status: TransferStatus, error?: TransferErrorPayload) =>
       this.emit(onProgress, progressView(status, error))
+    const retryContext: RetryContext = {
+      isCancelled: () => control.cancelled,
+      onRetry: (error, delayMs) => {
+        if (isRateLimited(error)) {
+          report(
+            'retrying',
+            transferError(error.code, rateLimitWaitMessage(delayMs)),
+          )
+        }
+      },
+    }
+    const request = <T>(path: string, init: { method: string; body?: string }) =>
+      this.request<T>(path, init, retryContext)
+
+    const confirmedResponse = await request<ConfirmedChunksResponse>(
+      `/api/v1/upload-sessions/${encodeURIComponent(record.sessionId)}/chunks`,
+      { method: 'GET' },
+    )
+    for (const chunk of confirmedResponse.items) {
+      confirmed.add(chunk.idx)
+      completedChunks += 1
+      completedBytes += plaintextBytesForCiphertext(chunk.declared_size)
+    }
 
     const missing: number[] = []
     for (let index = 0; index < count; index += 1) {
@@ -814,7 +1206,7 @@ export class TransferClient implements TransferWorkerApi {
       for (let offset = 0; offset < missing.length; offset += MAX_BATCH_CHUNKS) {
         await this.checkpoint(control, () => report('paused'))
         const batch = missing.slice(offset, offset + MAX_BATCH_CHUNKS)
-        const presigned = await this.presignBatch(record.sessionId, batch)
+        const presigned = await this.presignBatch(record.sessionId, batch, retryContext)
         const successful: ConfirmChunkItemInput[] = []
         const failed: number[] = []
         let lastError: TransferErrorPayload | null = null
@@ -842,6 +1234,7 @@ export class TransferClient implements TransferWorkerApi {
               count,
               item.url,
               item.expected_size,
+              retryContext,
             )
             successful.push(uploaded)
           } catch (error) {
@@ -854,6 +1247,7 @@ export class TransferClient implements TransferWorkerApi {
           const confirmedItems = await this.confirmBatch(
             record.sessionId,
             successful,
+            retryContext,
           )
           for (const result of confirmedItems) {
             if (
@@ -884,7 +1278,7 @@ export class TransferClient implements TransferWorkerApi {
       }
 
       await this.checkpoint(control, () => report('paused'))
-      const result = await this.request<{
+      const result = await request<{
         session_id: string
         status: string
         node_id: string
@@ -936,6 +1330,7 @@ export class TransferClient implements TransferWorkerApi {
     count: number,
     initialUrl: string,
     expectedSize: number,
+    retryContext?: RetryContext,
   ): Promise<ConfirmChunkItemInput> {
     const { start, end } = chunkBytes(index, file)
     const plaintext = new Uint8Array(await file.slice(start, end).arrayBuffer())
@@ -974,7 +1369,11 @@ export class TransferClient implements TransferWorkerApi {
       }
       if (response?.status === 403 && resigns < MAX_ATTEMPTS) {
         resigns += 1
-        const presigned = await this.presignBatch(record.sessionId, [index])
+        const presigned = await this.presignBatch(
+          record.sessionId,
+          [index],
+          retryContext,
+        )
         const item = presigned.get(index)
         if (!item?.url) {
           throw transferError('presign_failed', 'URL 过期后重新预签名失败')
@@ -989,13 +1388,20 @@ export class TransferClient implements TransferWorkerApi {
       if (attempt >= MAX_ATTEMPTS || !isRetryable(error)) {
         throw error
       }
-      await sleep(backoffDelay(attempt - 1))
+      if (isRateLimited(error) && retryContext?.onRetry) {
+        retryContext.onRetry(error, 0)
+      }
+      await sleepWithCancellation(
+        backoffDelay(attempt - 1),
+        retryContext?.isCancelled,
+      )
     }
   }
 
   private async presignBatch(
     sessionId: string,
     indices: number[],
+    retryContext?: RetryContext,
   ): Promise<
     Map<
       number,
@@ -1008,6 +1414,7 @@ export class TransferClient implements TransferWorkerApi {
         method: 'POST',
         body: JSON.stringify({ indices }),
       },
+      retryContext,
     )
     return new Map(response.items.map((item) => [item.idx, item]))
   }
@@ -1015,6 +1422,7 @@ export class TransferClient implements TransferWorkerApi {
   private async confirmBatch(
     sessionId: string,
     chunks: ConfirmChunkItemInput[],
+    retryContext?: RetryContext,
   ): Promise<components['schemas']['ConfirmChunkItemResult'][]> {
     const response = await this.request<ConfirmChunksResponse>(
       `/api/v1/upload-sessions/${encodeURIComponent(sessionId)}/chunks/confirm`,
@@ -1028,23 +1436,30 @@ export class TransferClient implements TransferWorkerApi {
           })),
         }),
       },
+      retryContext,
     )
     return response.items
   }
 
-  private async fetchChunk(url: string): Promise<Uint8Array> {
-    return withRetry(async () => {
-      let response: Response
-      try {
-        response = await this.fetchImpl(url, { method: 'GET' })
-      } catch {
-        throw transferError('network_error', '下载块时网络中断')
-      }
-      if (!response.ok) {
-        throw await responseError(response)
-      }
-      return new Uint8Array(await response.arrayBuffer())
-    })
+  private async fetchChunk(
+    url: string,
+    retryContext?: RetryContext,
+  ): Promise<Uint8Array> {
+    return withRetry(
+      async () => {
+        let response: Response
+        try {
+          response = await this.fetchImpl(url, { method: 'GET' })
+        } catch {
+          throw transferError('network_error', '下载块时网络中断')
+        }
+        if (!response.ok) {
+          throw await responseError(response)
+        }
+        return new Uint8Array(await response.arrayBuffer())
+      },
+      { isCancelled: retryContext?.isCancelled },
+    )
   }
 
   private async createSink(
@@ -1140,6 +1555,31 @@ export class TransferClient implements TransferWorkerApi {
     }
   }
 
+  /** 会话创建阶段的 429 等待：还没有服务端会话 ID，transferId 留空。 */
+  private emitRateLimitWait(
+    onProgress: ((progress: TransferProgressView) => void) | undefined,
+    fileName: string,
+    totalBytes: number,
+    error: TransferErrorPayload,
+    delayMs: number,
+  ): void {
+    if (!isRateLimited(error)) {
+      return
+    }
+    this.emit(onProgress, {
+      transferId: '',
+      direction: 'upload',
+      fileName,
+      status: 'retrying',
+      completedChunks: 0,
+      totalChunks: 0,
+      completedBytes: 0,
+      totalBytes,
+      errorCode: error.code,
+      errorMessage: rateLimitWaitMessage(delayMs),
+    })
+  }
+
   /**
    * 发送最终进度并等待接收方处理完成。
    *
@@ -1167,36 +1607,45 @@ export class TransferClient implements TransferWorkerApi {
   private async request<T>(
     path: string,
     init: { method: string; body?: string },
+    retryContext?: RetryContext,
   ): Promise<T> {
-    return withRetry(async () => {
-      let response: Response
-      try {
-        response = await this.fetchImpl(path, {
-          method: init.method,
-          credentials: 'same-origin',
-          headers: {
-            'X-Requested-With': 'backup-web',
-            ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-          },
-          body: init.body,
-        })
-      } catch {
-        throw transferError('network_error', '网络请求失败，请稍后重试')
-      }
-      const text = await response.text()
-      let payload: unknown
-      if (text) {
+    return withRetry(
+      async () => {
+        let response: Response
         try {
-          payload = JSON.parse(text) as unknown
+          response = await this.fetchImpl(path, {
+            method: init.method,
+            credentials: 'same-origin',
+            headers: {
+              'X-Requested-With': 'backup-web',
+              ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+            },
+            body: init.body,
+          })
         } catch {
-          payload = undefined
+          throw transferError('network_error', '网络请求失败，请稍后重试')
         }
-      }
-      if (!response.ok) {
-        throw await responseError(response, payload)
-      }
-      return payload as T
-    })
+        const text = await response.text()
+        let payload: unknown
+        if (text) {
+          try {
+            payload = JSON.parse(text) as unknown
+          } catch {
+            payload = undefined
+          }
+        }
+        if (!response.ok) {
+          throw await responseError(response, payload)
+        }
+        return payload as T
+      },
+      {
+        isCancelled: retryContext?.isCancelled,
+        onRetry: (_attempt, error, delayMs) => {
+          retryContext?.onRetry?.(error, delayMs)
+        },
+      },
+    )
   }
 }
 

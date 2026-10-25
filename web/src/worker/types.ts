@@ -18,6 +18,14 @@ export interface VersionMetadataView {
   mtime: number
   /** MIME 类型。 */
   mime: string
+  /** 明文内容 SHA-256（64 位小写十六进制）；旧版本没有该字段时为 null。 */
+  contentSha256: string | null
+}
+
+/** 流式明文 SHA-256 哈希器（只处理明文，不接触密钥）。 */
+export interface ContentHasherBackend {
+  update(bytes: Uint8Array): void
+  finish(): string
 }
 
 /** 注册 prepare 结果（仅 WASM → Worker；绝不经过 Comlink）。 */
@@ -92,6 +100,8 @@ export interface FileNodeView {
   /** 文件原始修改时间（Unix 秒）；文件夹为 null。 */
   mtime: number | null
   mime: string | null
+  /** 当前版本是否有明文内容 SHA-256（旧版本为 false）；摘要本身不离开 Worker。 */
+  hasContentSha256: boolean
   rowVersion: number
   currentVersionId: string | null
   createdAt: string
@@ -117,6 +127,8 @@ export interface VersionView {
   size: number
   mtime: number
   mime: string
+  /** 该版本是否有明文内容 SHA-256；摘要本身不离开 Worker。 */
+  hasContentSha256: boolean
   isCurrent: boolean
   createdAt: string
 }
@@ -272,7 +284,9 @@ export interface CryptoBackend {
     size: number,
     mtime: number,
     mime: string,
+    contentSha256: string | null,
   ): Uint8Array
+  createContentHasher(): ContentHasherBackend
   decryptVersionMetadataForContent(
     nodeId: string,
     versionId: string,
@@ -322,6 +336,7 @@ export interface CryptoWorkerApi {
     size: number,
     mtime: number,
     mime: string,
+    contentSha256: string | null,
   ): Promise<Uint8Array>
   decryptVersionMetadataForContent(
     nodeId: string,
@@ -415,6 +430,8 @@ export interface TransferWorkerApi {
     file: File,
     onProgress?: (progress: TransferProgressView) => void,
   ): Promise<UploadResultView>
+  /** 流式计算文件明文 SHA-256 并与云端当前版本比较（常数时间）；云端没有摘要时返回 null。 */
+  contentMatchesCurrentVersion(nodeId: string, file: File): Promise<boolean | null>
   /** 列出刷新后仍可继续的上传会话（只有元数据）。 */
   listPendingUploads(): Promise<PendingUploadView[]>
   pauseUpload(sessionId: string): Promise<void>
@@ -427,6 +444,14 @@ export interface TransferWorkerApi {
     versionId: string,
     downloadId: string,
     fileName: string,
+    target: DownloadTargetView,
+    onProgress?: (progress: TransferProgressView) => void,
+  ): Promise<DownloadResultView>
+  /** 把文件夹（含子树与空目录）流式打包为 zip；解密失败时中止。 */
+  downloadFolder(
+    nodeId: string,
+    fileName: string,
+    downloadId: string,
     target: DownloadTargetView,
     onProgress?: (progress: TransferProgressView) => void,
   ): Promise<DownloadResultView>

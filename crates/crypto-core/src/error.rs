@@ -75,6 +75,10 @@ pub enum CryptoError {
     #[error("名称令牌格式非法")]
     InvalidNameToken,
 
+    /// 明文内容 SHA-256 字段格式非法（要求 64 位小写十六进制）。
+    #[error("content_sha256 必须是 64 位小写十六进制")]
+    InvalidContentSha256,
+
     /// 系统随机数源不可用。
     #[error("无法获取安全随机数")]
     Randomness,

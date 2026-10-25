@@ -138,6 +138,7 @@ export class CryptoApi implements CryptoWorkerApi {
     size: number,
     mtime: number,
     mime: string,
+    contentSha256: string | null,
   ): Promise<Uint8Array> {
     return this.run((backend) =>
       backend.encryptVersionMetadata(
@@ -147,6 +148,7 @@ export class CryptoApi implements CryptoWorkerApi {
         size,
         mtime,
         mime,
+        contentSha256,
       ),
     )
   }

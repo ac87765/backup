@@ -139,6 +139,7 @@ describe('Crypto Worker API 契约', () => {
       1024,
       1_700_000_000,
       'text/plain',
+      null,
     )
     expect(versionCiphertext).toBeInstanceOf(Uint8Array)
     assertNoKeyMaterial(versionCiphertext)
@@ -154,6 +155,7 @@ describe('Crypto Worker API 契约', () => {
       size: 1024,
       mtime: 1_700_000_000,
       mime: 'text/plain',
+      contentSha256: null,
     })
     assertNoKeyMaterial(versionView)
 

@@ -20,9 +20,10 @@
 use std::collections::HashMap;
 
 use crypto_core::{
-    ContentId, CryptoError, KDF_SALT_LEN, KdfParams, MasterKey, NodeId, NodeKey, NodeMetadata,
-    PasswordKeys, PasswordWrapKey, RecoveryKey, VersionId, VersionMetadata, compute_name_token,
-    decrypt_chunk as core_decrypt_chunk, decrypt_node_metadata as core_decrypt_node_metadata,
+    ContentHasher as CoreContentHasher, ContentId, CryptoError, KDF_SALT_LEN, KdfParams, MasterKey,
+    NodeId, NodeKey, NodeMetadata, PasswordKeys, PasswordWrapKey, RecoveryKey, VersionId,
+    VersionMetadata, compute_name_token, decrypt_chunk as core_decrypt_chunk,
+    decrypt_node_metadata as core_decrypt_node_metadata,
     decrypt_version_metadata_for_content as core_decrypt_version_metadata_for_content,
     derive_content_key, derive_keys_from_password, derive_name_key, derive_recovery_keys,
     encode_recovery_key, encrypt_chunk as core_encrypt_chunk,
@@ -265,6 +266,38 @@ pub struct VersionMetadataView {
     pub mtime: f64,
     /// MIME 类型。
     pub mime: String,
+    /// 明文内容 SHA-256（旧版本没有该字段时为 `None`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_sha256: Option<String>,
+}
+
+/// 流式 SHA-256（文件夹增量备份的明文内容摘要，design add-folder-backup D3）。
+///
+/// 只处理明文、不接触任何密钥；浏览器不需要一次性把大文件读入内存。
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct ContentHasher {
+    inner: CoreContentHasher,
+}
+
+#[wasm_bindgen]
+impl ContentHasher {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            inner: CoreContentHasher::new(),
+        }
+    }
+
+    /// 追加一段明文。
+    pub fn update(&mut self, bytes: &[u8]) {
+        self.inner.update(bytes);
+    }
+
+    /// 结束并返回 64 位小写十六进制 SHA-256。
+    pub fn finish(&self) -> String {
+        self.inner.finish_hex()
+    }
 }
 
 /// 密钥库错误（内部类型，转换成带 code 的 JS Error）。
@@ -346,6 +379,7 @@ impl KeyStoreError {
             Self::Crypto(error) => match error {
                 CryptoError::ContentBindingMismatch => "content_binding_mismatch",
                 CryptoError::PlaintextSizeMismatch => "plaintext_size_mismatch",
+                CryptoError::InvalidContentSha256 => "invalid_content_sha256",
                 CryptoError::UnsupportedKdfAlgorithm => "unsupported_kdf_algorithm",
                 CryptoError::InvalidKdfParams => "invalid_kdf_params",
                 CryptoError::InvalidId { .. } => "invalid_id",
@@ -770,7 +804,7 @@ impl KeyStore {
         Ok(token.to_hex())
     }
 
-    /// 加密版本元数据（含 content_id 与明文大小）。
+    /// 加密版本元数据（含 content_id 与明文大小；可选明文内容 SHA-256）。
     #[allow(clippy::too_many_arguments)]
     pub fn encrypt_version_metadata(
         &mut self,
@@ -780,14 +814,21 @@ impl KeyStore {
         size: f64,
         mtime: f64,
         mime: &str,
+        content_sha256: Option<String>,
     ) -> Result<Vec<u8>, KeyStoreError> {
         let (_, node_key) = self.lookup_node_key(node_id)?;
         let version_id = VersionId::parse(version_id)?;
+        if let Some(value) = content_sha256.as_deref()
+            && !crypto_core::is_valid_content_sha256(value)
+        {
+            return Err(KeyStoreError::Crypto(CryptoError::InvalidContentSha256));
+        }
         let metadata = VersionMetadata {
             content_id: ContentId::parse(content_id)?,
             size: to_u64(size)?,
             mtime: to_i64(mtime)?,
             mime: mime.to_owned(),
+            content_sha256,
         };
         Ok(core_encrypt_version_metadata(
             node_key,
@@ -824,6 +865,7 @@ impl KeyStore {
             size: metadata.size as f64,
             mtime: metadata.mtime as f64,
             mime: metadata.mime,
+            content_sha256: metadata.content_sha256,
         })
     }
 

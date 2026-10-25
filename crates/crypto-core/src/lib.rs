@@ -36,6 +36,7 @@ pub mod chunk;
 pub mod domain;
 pub(crate) mod encoding;
 pub mod error;
+pub mod hash;
 pub mod ids;
 pub mod kdf;
 pub mod keys;
@@ -57,6 +58,7 @@ pub use chunk::{
 };
 pub use domain::*;
 pub use error::CryptoError;
+pub use hash::ContentHasher;
 pub use ids::{ContentId, NodeId, VersionId};
 pub use kdf::{
     KDF_OUTPUT_LEN, KDF_SALT_LEN, KdfAlgorithm, KdfParams, MAX_M_COST_KIB, MAX_T_COST,
@@ -71,10 +73,10 @@ pub use mk::{
     unwrap_mk_with_password, unwrap_mk_with_recovery, wrap_mk_with_password, wrap_mk_with_recovery,
 };
 pub use node::{
-    NAME_TOKEN_LEN, NameToken, NodeMetadata, VersionMetadata, compute_name_token,
-    decrypt_node_metadata, decrypt_version_metadata_for_content, derive_name_key,
-    encrypt_node_metadata, encrypt_version_metadata, unwrap_node_key, verify_plaintext_size,
-    wrap_node_key,
+    CONTENT_SHA256_HEX_LEN, NAME_TOKEN_LEN, NameToken, NodeMetadata, VersionMetadata,
+    compute_name_token, decrypt_node_metadata, decrypt_version_metadata_for_content,
+    derive_name_key, encrypt_node_metadata, encrypt_version_metadata, is_valid_content_sha256,
+    unwrap_node_key, verify_plaintext_size, wrap_node_key,
 };
 pub use recovery::{
     RECOVERY_CHECKSUM_LEN, RECOVERY_DISPLAY_GROUP_SIZE, RECOVERY_KEY_LEN, RECOVERY_SYMBOL_COUNT,

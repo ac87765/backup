@@ -25,6 +25,7 @@ function trashItem(overrides: Partial<TrashNodeView> = {}): TrashNodeView {
     size: 2048,
     mtime: 1_700_000_000,
     mime: 'application/pdf',
+    hasContentSha256: false,
     rowVersion: 1,
     currentVersionId: 'version-1',
     createdAt: '2026-01-01T00:00:00Z',

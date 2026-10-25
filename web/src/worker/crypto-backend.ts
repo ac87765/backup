@@ -4,10 +4,14 @@
  * **只允许在 Worker 中 import 本文件**：主线程不得加载 WASM，也不得接触密钥。
  * 生产构建的加载路径由 `initCryptoWasm()` 负责（Vite 把 .wasm 作为静态资源提供）。
  */
-import init, { KeyStore as WasmKeyStore } from '../generated/crypto-wasm/crypto_wasm.js'
+import init, {
+  ContentHasher as WasmContentHasher,
+  KeyStore as WasmKeyStore,
+} from '../generated/crypto-wasm/crypto_wasm.js'
 import wasmUrl from '../generated/crypto-wasm/crypto_wasm_bg.wasm?url'
 
 import type {
+  ContentHasherBackend,
   CryptoBackend,
   PreparedPasswordChangeView,
   PreparedRecoveryResetView,
@@ -188,6 +192,7 @@ export class WasmCryptoBackend implements CryptoBackend {
     size: number,
     mtime: number,
     mime: string,
+    contentSha256: string | null,
   ): Uint8Array {
     return this.store.encrypt_version_metadata(
       nodeId,
@@ -196,7 +201,22 @@ export class WasmCryptoBackend implements CryptoBackend {
       size,
       mtime,
       mime,
+      contentSha256,
     )
+  }
+
+  createContentHasher(): ContentHasherBackend {
+    const hasher = new WasmContentHasher()
+    return {
+      update: (bytes) => hasher.update(bytes),
+      finish: () => {
+        try {
+          return hasher.finish()
+        } finally {
+          hasher.free()
+        }
+      },
+    }
   }
 
   decryptVersionMetadataForContent(
@@ -216,6 +236,7 @@ export class WasmCryptoBackend implements CryptoBackend {
       size: view.size,
       mtime: view.mtime,
       mime: view.mime,
+      contentSha256: view.content_sha256 ?? null,
     }
   }
 

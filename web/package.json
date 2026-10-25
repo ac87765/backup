@@ -27,6 +27,7 @@
   "dependencies": {
     "@zxcvbn-ts/core": "^3.0.4",
     "@zxcvbn-ts/language-common": "^3.0.4",
+    "client-zip": "^2.5.1",
     "comlink": "^4.4.2",
     "lucide-react": "^1.61.0",
     "react": "^19.3.1",

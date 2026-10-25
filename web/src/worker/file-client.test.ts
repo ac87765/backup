@@ -114,6 +114,42 @@ describe('FileClient', () => {
     assertNoKeys(page)
   })
 
+  it('列目录返回当前版本的 content_sha256 供增量判定', async () => {
+    const backend = unlockedBackend()
+    const client = new FileClient(Promise.resolve(backend))
+    const base = nodeSummary(backend, 'same.txt', 'file')
+    const sha = '0123456789abcdef'.repeat(4)
+    const versionMeta = backend.encryptVersionMetadata(
+      NODE_ID,
+      VERSION_ID,
+      CONTENT_ID,
+      4,
+      1_700_000_000,
+      'text/plain',
+      sha,
+    )
+    const summary = {
+      ...base,
+      current_version: {
+        id: VERSION_ID,
+        content_id: CONTENT_ID,
+        encrypted_meta: hex(versionMeta),
+        ciphertext_size: 45,
+        chunk_count: 1,
+        is_current: true,
+        created_at: '2026-01-01T00:00:00Z',
+      },
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(response({ items: [summary], next_cursor: null })),
+    )
+
+    const page = await client.listFolder(PARENT_ID)
+    expect(page.items[0]?.hasContentSha256).toBe(true)
+    expect(page.items[0]?.size).toBe(4)
+  })
+
   it('创建文件夹时生成 ID/密钥/元数据/令牌，返回数据不含密钥', async () => {
     const backend = unlockedBackend()
     const client = new FileClient(Promise.resolve(backend))
@@ -180,6 +216,7 @@ describe('FileClient', () => {
       1234,
       1_700_000_000,
       'text/plain',
+      null,
     )
     const version = {
       id: VERSION_ID,

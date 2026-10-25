@@ -264,6 +264,15 @@ export class WorkerApi
     ).finally(() => releaseCallback(onProgress))
   }
 
+  contentMatchesCurrentVersion(
+    nodeId: string,
+    file: File,
+  ): Promise<boolean | null> {
+    return runApi(() =>
+      this.transfer.contentMatchesCurrentVersion(nodeId, file),
+    )
+  }
+
   resumePendingUpload(
     sessionId: string,
     file: File,
@@ -304,6 +313,24 @@ export class WorkerApi
         versionId,
         downloadId,
         fileName,
+        target,
+        onProgress,
+      ),
+    ).finally(() => releaseCallback(onProgress))
+  }
+
+  downloadFolder(
+    nodeId: string,
+    fileName: string,
+    downloadId: string,
+    target: DownloadTargetView,
+    onProgress?: (progress: TransferProgressView) => void,
+  ): Promise<DownloadResultView> {
+    return runApi(() =>
+      this.transfer.downloadFolder(
+        nodeId,
+        fileName,
+        downloadId,
         target,
         onProgress,
       ),

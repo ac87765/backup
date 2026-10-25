@@ -14,7 +14,7 @@ use crypto_core::{
 use serde::Deserialize;
 use wasm_bindgen_test::*;
 
-use crate::KeyStore;
+use crate::{ContentHasher, KeyStore};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -458,6 +458,7 @@ fn key_store_roundtrip_through_high_level_api() {
             10_485_760.0,
             1_700_000_000.0,
             "application/pdf",
+            None,
         )
         .unwrap();
     let view = store
@@ -617,6 +618,7 @@ fn tampered_metadata_returns_integrity_error() {
             10.0,
             1_700_000_000.0,
             "text/plain",
+            None,
         )
         .unwrap();
     flip_last_byte(&mut version_metadata);
@@ -682,6 +684,84 @@ fn wrong_recovery_key_returns_invalid_recovery_key() {
 
     owner.discard_pending();
     other.discard_pending();
+}
+
+#[wasm_bindgen_test]
+fn content_sha256_is_optional_and_roundtrips_in_wasm() {
+    let mut store = unlocked_store();
+    store.generate_node_key(NODE_ID).unwrap();
+
+    // 旧版本没有该字段：None 加密后解密为 None。
+    let legacy = store
+        .encrypt_version_metadata(
+            NODE_ID,
+            VERSION_ID,
+            CONTENT_ID,
+            10.0,
+            1_700_000_000.0,
+            "text/plain",
+            None,
+        )
+        .unwrap();
+    let view = store
+        .decrypt_version_metadata_for_content(NODE_ID, VERSION_ID, CONTENT_ID, &legacy)
+        .unwrap()
+        .to_rust()
+        .unwrap();
+    assert_eq!(view.content_sha256, None);
+
+    // 新字段往返，并且值以密文形式存在（不直接出现在帧里）。
+    let sha = "0123456789abcdef".repeat(4);
+    let encrypted = store
+        .encrypt_version_metadata(
+            NODE_ID,
+            VERSION_ID,
+            CONTENT_ID,
+            10.0,
+            1_700_000_000.0,
+            "text/plain",
+            Some(sha.clone()),
+        )
+        .unwrap();
+    assert!(!hex_encode(&encrypted).contains(&sha));
+    let view = store
+        .decrypt_version_metadata_for_content(NODE_ID, VERSION_ID, CONTENT_ID, &encrypted)
+        .unwrap()
+        .to_rust()
+        .unwrap();
+    assert_eq!(view.content_sha256, Some(sha));
+
+    // 非法格式被拒绝。
+    let error = store
+        .encrypt_version_metadata(
+            NODE_ID,
+            VERSION_ID,
+            CONTENT_ID,
+            10.0,
+            1_700_000_000.0,
+            "text/plain",
+            Some("A".repeat(64)),
+        )
+        .unwrap_err();
+    assert_eq!(error_code(&error), "invalid_content_sha256");
+}
+
+#[wasm_bindgen_test]
+fn content_hasher_streams_plaintext_sha256() {
+    let mut hasher = ContentHasher::new();
+    hasher.update(b"abc");
+    assert_eq!(
+        hasher.finish(),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+
+    let mut streamed = ContentHasher::new();
+    for chunk in b"the quick brown fox jumps over the lazy dog".chunks(7) {
+        streamed.update(chunk);
+    }
+    let mut whole = ContentHasher::new();
+    whole.update(b"the quick brown fox jumps over the lazy dog");
+    assert_eq!(streamed.finish(), whole.finish());
 }
 
 #[wasm_bindgen_test]

@@ -374,8 +374,11 @@ function unlockedBackend(): CryptoBackend {
   return backend
 }
 
-function makeFile(size: number, name: string, lastModified = 1_700_000_000_000): File {
-  const bytes = new Uint8Array(size)
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function makeFile(size: number, name: string, lastModified = 1_700_000_000_000): File {  const bytes = new Uint8Array(size)
   for (let index = 0; index < size; index += 1) {
     bytes[index] = index % 251
   }
@@ -547,6 +550,46 @@ describe('TransferClient', () => {
     await expect(upload).rejects.toMatchObject({ code: 'cancelled' })
     expect(server.session(sessionId).status).toBe('aborted')
     expect(await store.list()).toHaveLength(0)
+  })
+
+  it('明文 SHA-256 比较在 Worker 内完成，只向主线程返回布尔值', async () => {
+    const backend = unlockedBackend()
+    const bytes = new Uint8Array(64)
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = index
+    }
+    const expected = bytesToHex(
+      new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+    )
+    const probeHasher = backend.createContentHasher()
+    probeHasher.update(bytes)
+    expect(probeHasher.finish()).toBe(expected)
+    let hash: string | null = expected
+    const fileClient = {
+      contentHashFor: () => hash,
+      wrappedKeyFor: () => undefined,
+      rememberWrappedKey: () => undefined,
+    } as unknown as FileClient
+    const client = new TransferClient(Promise.resolve(backend), fileClient, {
+      store: new MemoryUploadStore(),
+    })
+    const same = new File([bytes], 'same.bin')
+    const different = new File(
+      [new Uint8Array(bytes.length).fill(0x7f)],
+      'same.bin',
+    )
+
+    await expect(
+      client.contentMatchesCurrentVersion('550e8400-e29b-41d4-a716-446655440000', same),
+    ).resolves.toBe(true)
+    await expect(
+      client.contentMatchesCurrentVersion('550e8400-e29b-41d4-a716-446655440000', different),
+    ).resolves.toBe(false)
+
+    hash = null
+    await expect(
+      client.contentMatchesCurrentVersion('550e8400-e29b-41d4-a716-446655440000', same),
+    ).resolves.toBeNull()
   })
 
   it('Service Worker 目标把解密块与结束信号送入 BroadcastChannel', async () => {

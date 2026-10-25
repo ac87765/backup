@@ -323,6 +323,7 @@ fn build_node_vectors() -> NodeVectors {
         size: 10 * 1024 * 1024,
         mtime: 1_700_000_000,
         mime: "application/pdf".to_owned(),
+        content_sha256: None,
     };
     let version_meta_plaintext = serde_json::to_vec(&version_metadata).unwrap();
     let version_meta_frame = aead::seal_with_nonce(

@@ -8,6 +8,7 @@
  */
 import type { components } from '../api/schema'
 import { validateName } from '../files/name-validation'
+import { withRetry } from './retry'
 import type {
   AuthErrorPayload,
   CryptoBackend,
@@ -18,6 +19,7 @@ import type {
   NodeKind,
   TrashNodeView,
   UsageView,
+  VersionMetadataView,
   VersionView,
 } from './types'
 
@@ -80,6 +82,8 @@ export class FileClient implements FileWorkerApi {
   private readonly backend: Promise<CryptoBackend>
   /** node_id → 包裹后的节点密钥（只在 Worker 内存中）。 */
   private readonly wrappedKeys = new Map<string, NodeKeyEntry>()
+  /** node_id → 当前版本的明文内容 SHA-256（只在 Worker 内存中，不经过 Comlink）。 */
+  private readonly contentHashes = new Map<string, string | null>()
 
   constructor(backend: Promise<CryptoBackend>) {
     this.backend = backend
@@ -265,7 +269,7 @@ export class FileClient implements FileWorkerApi {
     if (!source) {
       throw fileError('not_found', '版本不存在')
     }
-    const metadata = this.decryptVersion(backend, nodeId, source)
+    const metadata = this.decryptVersionMetadata(backend, nodeId, source)
     const newVersionId = crypto.randomUUID()
     const encryptedMeta = backend.encryptVersionMetadata(
       nodeId,
@@ -274,6 +278,7 @@ export class FileClient implements FileWorkerApi {
       metadata.size,
       metadata.mtime,
       metadata.mime,
+      metadata.contentSha256,
     )
     const response = await this.request<VersionSummary>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/versions/restore`,
@@ -307,6 +312,11 @@ export class FileClient implements FileWorkerApi {
   wrappedKeyFor(nodeId: string): Uint8Array | undefined {
     const cached = this.wrappedKeys.get(nodeId)
     return cached ? cached.wrapped.slice() : undefined
+  }
+
+  /** Worker 内部使用：当前版本的明文内容 SHA-256；未加载时为 undefined。 */
+  contentHashFor(nodeId: string): string | null | undefined {
+    return this.contentHashes.get(nodeId)
   }
 
   /** Worker 内部使用：缓存新生成或从会话恢复的包裹节点密钥。 */
@@ -349,12 +359,14 @@ export class FileClient implements FileWorkerApi {
     let size: number | null = null
     let mtime: number | null = null
     let mime: string | null = null
+    let hasContentSha256 = false
     const currentVersion = summary.current_version
     if (currentVersion) {
       const metadata = this.decryptVersion(backend, summary.id, currentVersion)
       size = metadata.size
       mtime = metadata.mtime
       mime = metadata.mime
+      hasContentSha256 = metadata.hasContentSha256
     }
 
     return {
@@ -365,6 +377,7 @@ export class FileClient implements FileWorkerApi {
       size,
       mtime,
       mime,
+      hasContentSha256,
       rowVersion: summary.row_version,
       currentVersionId: currentVersion?.id ?? null,
       createdAt: summary.created_at,
@@ -372,23 +385,37 @@ export class FileClient implements FileWorkerApi {
     }
   }
 
-  private decryptVersion(
+  private decryptVersionMetadata(
     backend: CryptoBackend,
     nodeId: string,
     version: VersionSummary,
-  ): VersionView {
+  ): VersionMetadataView {
     const metadata = backend.decryptVersionMetadataForContent(
       nodeId,
       version.id,
       version.content_id,
       hexToBytes(version.encrypted_meta),
     )
+    if (version.is_current) {
+      // 明文摘要只留在 Worker 内存；主线程只拿到 hasContentSha256 布尔值。
+      this.contentHashes.set(nodeId, metadata.contentSha256)
+    }
+    return metadata
+  }
+
+  private decryptVersion(
+    backend: CryptoBackend,
+    nodeId: string,
+    version: VersionSummary,
+  ): VersionView {
+    const metadata = this.decryptVersionMetadata(backend, nodeId, version)
     return {
       id: version.id,
       contentId: version.content_id,
       size: metadata.size,
       mtime: metadata.mtime,
       mime: metadata.mime,
+      hasContentSha256: metadata.contentSha256 !== null,
       isCurrent: version.is_current,
       createdAt: version.created_at,
     }
@@ -398,38 +425,50 @@ export class FileClient implements FileWorkerApi {
     path: string,
     init: { method: string; body?: string },
   ): Promise<T> {
-    let response: Response
-    try {
-      response = await fetch(path, {
-        method: init.method,
-        credentials: 'same-origin',
-        headers: {
-          'X-Requested-With': 'backup-web',
-          ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-        },
-        body: init.body,
-      })
-    } catch {
-      throw fileError('network_error', '网络请求失败，请稍后重试')
-    }
-
-    const text = await response.text()
-    let payload: unknown = undefined
-    if (text) {
+    return withRetry(async () => {
+      let response: Response
       try {
-        payload = JSON.parse(text) as unknown
+        response = await fetch(path, {
+          method: init.method,
+          credentials: 'same-origin',
+          headers: {
+            'X-Requested-With': 'backup-web',
+            ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+          },
+          body: init.body,
+        })
       } catch {
-        payload = undefined
+        throw fileError('network_error', '网络请求失败，请稍后重试')
       }
-    }
-    if (!response.ok) {
-      const error = payload as { code?: unknown; message?: unknown } | undefined
-      throw fileError(
-        typeof error?.code === 'string' ? error.code : 'http_error',
-        typeof error?.message === 'string' ? error.message : '请求失败',
-      )
-    }
-    return payload as T
+
+      const text = await response.text()
+      let payload: unknown = undefined
+      if (text) {
+        try {
+          payload = JSON.parse(text) as unknown
+        } catch {
+          payload = undefined
+        }
+      }
+      if (!response.ok) {
+        const error = payload as { code?: unknown; message?: unknown } | undefined
+        const retryAfter = Number(response.headers.get('retry-after'))
+        throw {
+          code:
+            typeof error?.code === 'string' ? error.code : 'http_error',
+          message:
+            typeof error?.message === 'string' ? error.message : '请求失败',
+          status: response.status,
+          ...(Number.isFinite(retryAfter) && retryAfter > 0
+            ? { retryAfter }
+            : {}),
+        } satisfies AuthErrorPayload & {
+          status: number
+          retryAfter?: number
+        }
+      }
+      return payload as T
+    })
   }
 }
 

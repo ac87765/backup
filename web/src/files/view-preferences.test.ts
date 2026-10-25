@@ -17,6 +17,7 @@ function node(overrides: Partial<FileNodeView>): FileNodeView {
     size: 10,
     mtime: 100,
     mime: 'text/plain',
+    hasContentSha256: false,
     rowVersion: 1,
     currentVersionId: 'version',
     createdAt: '2026-01-01T00:00:00Z',

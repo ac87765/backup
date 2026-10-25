@@ -40,10 +40,17 @@ impl fmt::Debug for NodeMetadata {
     }
 }
 
+/// 明文内容 SHA-256 的十六进制长度。
+pub const CONTENT_SHA256_HEX_LEN: usize = 64;
+
 /// 版本元数据（加密后存储）。
 ///
 /// JSON 契约（字段顺序固定）：
 /// `{"content_id":"<uuid>","size":<u64>,"mtime":<i64>,"mime":"<string>"}`
+///
+/// add-folder-backup D3 在末尾追加可选字段 `content_sha256`。它为 `None` 时
+/// 序列化结果与旧契约逐字节相同（`skip_serializing_if`），因此既有测试向量不变；
+/// 旧客户端会忽略不认识的字段（结构体未启用 `deny_unknown_fields`）。
 #[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct VersionMetadata {
     /// 该版本引用的内容 ID（下载时必须与服务端给出的 content 校验一致）。
@@ -54,14 +61,44 @@ pub struct VersionMetadata {
     pub mtime: i64,
     /// MIME 类型，未知时为空字符串。
     pub mime: String,
+    /// 明文内容 SHA-256（64 位小写十六进制）；旧版本没有该字段时为 `None`。
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_content_sha256"
+    )]
+    pub content_sha256: Option<String>,
+}
+
+/// 校验 `content_sha256` 的格式：恰好 64 个小写十六进制字符。
+#[must_use]
+pub fn is_valid_content_sha256(value: &str) -> bool {
+    value.len() == CONTENT_SHA256_HEX_LEN
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn deserialize_content_sha256<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: Option<String> = serde::Deserialize::deserialize(deserializer)?;
+    match value {
+        Some(value) if is_valid_content_sha256(&value) => Ok(Some(value)),
+        Some(_) => Err(serde::de::Error::custom(
+            "content_sha256 必须是 64 位小写十六进制",
+        )),
+        None => Ok(None),
+    }
 }
 
 impl fmt::Debug for VersionMetadata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // mime 属于加密元数据，不打印；content_id/size/mtime 是服务端已知信息。
+        // mime 与 content_sha256 属于加密元数据，不打印；其余是服务端已知信息。
         write!(
             f,
-            "VersionMetadata {{ content_id: {}, size: {}, mtime: {}, mime: <redacted> }}",
+            "VersionMetadata {{ content_id: {}, size: {}, mtime: {}, mime: <redacted>, content_sha256: <redacted> }}",
             self.content_id, self.size, self.mtime
         )
     }
@@ -279,6 +316,7 @@ mod tests {
             size: 10 * 1024 * 1024,
             mtime: 1_700_000_000,
             mime: "application/pdf".to_owned(),
+            content_sha256: None,
         }
     }
 
@@ -439,11 +477,127 @@ mod tests {
             size: 1,
             mtime: 2,
             mime: "text/plain".to_owned(),
+            content_sha256: None,
         };
         assert_eq!(
             serde_json::to_string(&version).unwrap(),
             r#"{"content_id":"6ba7b811-9dad-41d1-80b4-00c04fd430c8","size":1,"mtime":2,"mime":"text/plain"}"#
         );
+    }
+
+    #[test]
+    fn version_metadata_without_sha256_is_byte_identical_to_old_contract() {
+        let version = VersionMetadata {
+            content_id: ContentId::parse("6ba7b811-9dad-41d1-80b4-00c04fd430c8").unwrap(),
+            size: 10 * 1024 * 1024,
+            mtime: 1_700_000_000,
+            mime: "application/pdf".to_owned(),
+            content_sha256: None,
+        };
+        // 与 testdata/crypto-vectors/node.json 的 version_meta_plaintext 完全一致。
+        assert_eq!(
+            serde_json::to_string(&version).unwrap(),
+            r#"{"content_id":"6ba7b811-9dad-41d1-80b4-00c04fd430c8","size":10485760,"mtime":1700000000,"mime":"application/pdf"}"#
+        );
+    }
+
+    #[test]
+    fn version_metadata_appends_sha256_at_the_end() {
+        let sha = "a".repeat(CONTENT_SHA256_HEX_LEN);
+        let version = VersionMetadata {
+            content_id: ContentId::parse("6ba7b811-9dad-41d1-80b4-00c04fd430c8").unwrap(),
+            size: 1,
+            mtime: 2,
+            mime: "text/plain".to_owned(),
+            content_sha256: Some(sha.clone()),
+        };
+        assert_eq!(
+            serde_json::to_string(&version).unwrap(),
+            format!(
+                r#"{{"content_id":"6ba7b811-9dad-41d1-80b4-00c04fd430c8","size":1,"mtime":2,"mime":"text/plain","content_sha256":"{sha}"}}"#
+            )
+        );
+        // 反序列化往返保持字段。
+        let parsed: VersionMetadata =
+            serde_json::from_str(&serde_json::to_string(&version).unwrap()).unwrap();
+        assert_eq!(parsed, version);
+    }
+
+    #[test]
+    fn content_sha256_format_is_validated() {
+        let base = |value: &str| {
+            format!(
+                r#"{{"content_id":"6ba7b811-9dad-41d1-80b4-00c04fd430c8","size":1,"mtime":2,"mime":"text/plain","content_sha256":"{value}"}}"#
+            )
+        };
+        let valid = "0123456789abcdef".repeat(4);
+        assert!(serde_json::from_str::<VersionMetadata>(&base(&valid)).is_ok());
+
+        // 长度、大小写、非十六进制字符都必须拒绝。
+        let invalid_values = [
+            "a".repeat(63),
+            "a".repeat(65),
+            "A".repeat(64),
+            "g".repeat(64),
+        ];
+        for invalid in &invalid_values {
+            assert!(
+                serde_json::from_str::<VersionMetadata>(&base(invalid)).is_err(),
+                "应拒绝非法 content_sha256: {invalid}"
+            );
+        }
+        assert!(!is_valid_content_sha256(&"a".repeat(63)));
+        assert!(!is_valid_content_sha256(&"A".repeat(64)));
+    }
+
+    #[test]
+    fn legacy_struct_can_decrypt_metadata_with_new_field() {
+        // 旧客户端没有 content_sha256 字段；serde 默认忽略未知字段，仍能解密使用。
+        #[derive(serde::Deserialize)]
+        struct LegacyVersionMetadata {
+            content_id: ContentId,
+            size: u64,
+            mtime: i64,
+            mime: String,
+        }
+
+        let (_, _, version_id, content_id) = ids();
+        let node_key = NodeKey::generate().unwrap();
+        let metadata = VersionMetadata {
+            content_id: content_id.clone(),
+            size: 1,
+            mtime: 2,
+            mime: "text/plain".to_owned(),
+            content_sha256: Some("b".repeat(CONTENT_SHA256_HEX_LEN)),
+        };
+        let ciphertext = encrypt_version_metadata(&node_key, &version_id, &metadata).unwrap();
+
+        // 旧结构走同一 AAD 与帧格式解密，不认识的字段被忽略。
+        let plaintext = aead::open(
+            node_key.as_bytes(),
+            &aad::version_metadata(&version_id),
+            &ciphertext,
+        )
+        .unwrap();
+        let legacy: LegacyVersionMetadata = serde_json::from_slice(&plaintext).unwrap();
+        assert_eq!(legacy.content_id, content_id);
+        assert_eq!(legacy.size, metadata.size);
+        assert_eq!(legacy.mtime, metadata.mtime);
+        assert_eq!(legacy.mime, metadata.mime);
+    }
+
+    #[test]
+    fn debug_does_not_leak_content_sha256() {
+        let version = VersionMetadata {
+            content_id: ContentId::parse("6ba7b811-9dad-41d1-80b4-00c04fd430c8").unwrap(),
+            size: 1,
+            mtime: 2,
+            mime: "text/plain".to_owned(),
+            content_sha256: Some("c".repeat(CONTENT_SHA256_HEX_LEN)),
+        };
+        let printed = format!("{version:?}");
+        assert!(!printed.contains(&"c".repeat(CONTENT_SHA256_HEX_LEN)));
+        assert!(!printed.contains("text/plain"));
     }
 
     #[test]
