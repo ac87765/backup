@@ -20,7 +20,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn;
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::{Config, Database, Storage, metrics};
@@ -139,6 +139,42 @@ pub fn build_router_with(state: AppState, extra: Router<AppState>) -> Router {
             post(crate::files::versions::restore_version),
         )
         .route("/v1/me/usage", get(crate::files::usage::get_usage))
+        // 管理后台（add-admin-console D4）；非管理员由提取器返回 404。
+        .route("/v1/admin/overview", get(crate::admin::routes::overview))
+        .route("/v1/admin/users", get(crate::admin::routes::list_users))
+        .route(
+            "/v1/admin/users/{user_id}",
+            get(crate::admin::routes::get_user),
+        )
+        .route(
+            "/v1/admin/users/{user_id}/approve",
+            post(crate::admin::routes::approve_user),
+        )
+        .route(
+            "/v1/admin/users/{user_id}/reject",
+            post(crate::admin::routes::reject_user),
+        )
+        .route(
+            "/v1/admin/users/{user_id}/suspend",
+            post(crate::admin::routes::suspend_user),
+        )
+        .route(
+            "/v1/admin/users/{user_id}/reactivate",
+            post(crate::admin::routes::reactivate_user),
+        )
+        .route(
+            "/v1/admin/users/{user_id}/quota",
+            put(crate::admin::routes::update_quota),
+        )
+        .route(
+            "/v1/admin/users/{user_id}/revoke-sessions",
+            post(crate::admin::routes::revoke_user_sessions),
+        )
+        .route(
+            "/v1/admin/settings",
+            get(crate::admin::routes::get_settings).put(crate::admin::routes::update_settings),
+        )
+        .route("/v1/admin/audit", get(crate::admin::routes::list_audit))
         // 文件传输（第 8 组）
         .route(
             "/v1/upload-sessions",

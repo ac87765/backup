@@ -57,6 +57,20 @@ pub async fn record_queue_metrics(pool: &PgPool) -> Result<(), sqlx::Error> {
     for session in sessions {
         metrics::gauge!("upload_sessions", "status" => session.status).set(session.count as f64);
     }
+
+    // 账号状态计数（add-admin-console D7：定时刷新）。
+    let users = sqlx::query!(
+        r#"
+        SELECT status, count(*) AS "count!"
+        FROM users
+        GROUP BY status
+        "#
+    )
+    .fetch_all(pool)
+    .await?;
+    for user in users {
+        metrics::gauge!("backup_users", "status" => user.status).set(user.count as f64);
+    }
     Ok(())
 }
 

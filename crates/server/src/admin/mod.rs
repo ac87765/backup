@@ -7,9 +7,18 @@
 //! - 日志只记录 action / admin_id / target_user_id，不记录邮箱或原因。
 
 pub mod cli;
+pub mod routes;
 
+use axum::extract::FromRequestParts;
+use axum::http::request::Parts;
 use sqlx::{Postgres, Transaction};
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
+
+use crate::AppState;
+use crate::accounts;
+use crate::api::error::ApiError;
+use crate::auth::AuthenticatedSession;
 
 /// 审计动作名（同时作为 `backup_admin_actions_total{action}` 的标签）。
 pub mod action {
@@ -64,3 +73,32 @@ pub fn record_action(action: &'static str) {
 }
 
 pub use crate::accounts::format_quota;
+
+/// 管理员会话提取器（add-admin-console D3）。
+///
+/// 顺序很重要：
+/// 1. 未登录、非管理员、非 active → 404（与不存在的接口不可区分）；
+/// 2. 管理员但会话创建超过 12 小时 → 403 `reauth_required`。
+#[derive(Debug, Clone)]
+pub struct AdminSession(pub AuthenticatedSession);
+
+impl FromRequestParts<AppState> for AdminSession {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let session = AuthenticatedSession::from_request_parts(parts, state)
+            .await
+            .map_err(|_| ApiError::not_found())?;
+        if !session.is_admin || session.status != accounts::ACTIVE {
+            return Err(ApiError::not_found());
+        }
+        let deadline = OffsetDateTime::now_utc() - Duration::hours(ADMIN_REAUTH_HOURS);
+        if session.session_created_at < deadline {
+            return Err(ApiError::reauth_required());
+        }
+        Ok(Self(session))
+    }
+}

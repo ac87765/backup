@@ -5,6 +5,13 @@
 
 use utoipa::OpenApi;
 
+use crate::admin::routes::{
+    AdminAuditEntry, AdminAuditQuery, AdminAuditResponse, AdminHealth, AdminOkResponse,
+    AdminOverview, AdminQueueBacklog, AdminSessionSummary, AdminSettingsResponse,
+    AdminStatusCounts, AdminUserDetailResponse, AdminUserListResponse, AdminUserSummary,
+    AdminUsersQuery, ApproveUserRequest, ReasonRequest, UpdateQuotaRequest, UpdateQuotaResponse,
+    UpdateSettingsRequest,
+};
 use crate::api::error::ErrorBody;
 use crate::api::health::{HealthResponse, ReadyChecks, ReadyResponse};
 use crate::auth::routes::{
@@ -74,7 +81,19 @@ use crate::files::{NodeSummary, VersionSummary};
         crate::files::uploads::confirm_chunks,
         crate::files::uploads::commit_upload,
         crate::files::uploads::abort_upload,
-        crate::files::download::download_version
+        crate::files::download::download_version,
+        crate::admin::routes::overview,
+        crate::admin::routes::list_users,
+        crate::admin::routes::get_user,
+        crate::admin::routes::approve_user,
+        crate::admin::routes::reject_user,
+        crate::admin::routes::suspend_user,
+        crate::admin::routes::reactivate_user,
+        crate::admin::routes::update_quota,
+        crate::admin::routes::revoke_user_sessions,
+        crate::admin::routes::get_settings,
+        crate::admin::routes::update_settings,
+        crate::admin::routes::list_audit
     ),
     components(schemas(
         ErrorBody,
@@ -131,7 +150,26 @@ use crate::files::{NodeSummary, VersionSummary};
         CommitUploadResponse,
         AbortUploadResponse,
         DownloadChunk,
-        DownloadManifest
+        DownloadManifest,
+        AdminOkResponse,
+        AdminStatusCounts,
+        AdminQueueBacklog,
+        AdminHealth,
+        AdminOverview,
+        AdminUserSummary,
+        AdminUserListResponse,
+        AdminSessionSummary,
+        AdminAuditEntry,
+        AdminUserDetailResponse,
+        ApproveUserRequest,
+        ReasonRequest,
+        UpdateQuotaRequest,
+        UpdateQuotaResponse,
+        AdminUsersQuery,
+        AdminAuditQuery,
+        AdminAuditResponse,
+        AdminSettingsResponse,
+        UpdateSettingsRequest
     ))
 )]
 pub struct ApiDoc;
