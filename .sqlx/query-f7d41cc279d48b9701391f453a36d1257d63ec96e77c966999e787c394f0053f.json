@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users\n        SET recovery_wrapped_mk = $2,\n            recovery_auth_hash = $3,\n            recovery_pepper_version = $4,\n            failed_logins = 0,\n            locked_until = NULL,\n            updated_at = now()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f7d41cc279d48b9701391f453a36d1257d63ec96e77c966999e787c394f0053f"
+}
