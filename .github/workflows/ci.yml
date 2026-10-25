@@ -98,6 +98,17 @@ jobs:
       - name: 生成 OpenAPI 规范
         run: cargo run -p server -- openapi > openapi.json
 
+      # E2E 需要真实 server 二进制；与 WASM/规范一起作为 artifact 传给 e2e job。
+      - name: 构建 server 二进制
+        run: cargo build --release -p server
+
+      - name: 上传 server 二进制 artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: server-binary
+          path: target/release/server
+          if-no-files-found: error
+
       - name: 上传 WASM 绑定 artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -170,13 +181,16 @@ jobs:
           git -C .. diff --exit-code -- web/src/api/schema.d.ts
 
   e2e:
-    name: E2E (Playwright, strict CSP)
+    name: E2E (Playwright, real server, strict CSP)
     runs-on: ubuntu-24.04
-    # 依赖 rust job 上传的 WASM artifact。
+    # 依赖 rust job 上传的 WASM 与 server 二进制 artifact。
     needs: rust
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       SKIP_WASM_BUILD: "1"
+      E2E_SERVER_BIN: ${{ github.workspace }}/server-bin/server
+      E2E_DATABASE_URL: postgres://backup:backup-dev-password@127.0.0.1:5432/backup
+      E2E_STORAGE_ENDPOINT: http://127.0.0.1:9000
     defaults:
       run:
         working-directory: web
@@ -195,14 +209,41 @@ jobs:
           name: web-wasm
           path: web/src/generated/crypto-wasm
 
+      - name: 下载 server 二进制 artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: server-binary
+          path: server-bin
+
+      - name: 启动 PostgreSQL 与 MinIO
+        run: docker compose -f ${{ github.workspace }}/deploy/docker-compose.dev.yml up -d --wait postgres minio
+
+      - name: 创建 bucket 与 CORS
+        run: docker compose -f ${{ github.workspace }}/deploy/docker-compose.dev.yml run --rm --no-deps minio-init
+
       - name: 安装依赖
         run: npm ci
 
       - name: 安装 Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: 运行 CSP / WASM 冒烟用例
+      - name: 执行数据库迁移
+        env:
+          BACKUP_DATABASE_URL: postgres://backup:backup-dev-password@127.0.0.1:5432/backup
+        run: |
+          chmod +x "$E2E_SERVER_BIN"
+          "$E2E_SERVER_BIN" migrate
+
+      - name: 运行真实后端 E2E
         run: npm run test:e2e
+
+      - name: 失败时输出服务日志
+        if: failure()
+        run: docker compose -f ${{ github.workspace }}/deploy/docker-compose.dev.yml logs --no-color
+
+      - name: 清理
+        if: always()
+        run: docker compose -f ${{ github.workspace }}/deploy/docker-compose.dev.yml down -v
 
   spec:
     name: OpenSpec (validate --strict)
@@ -230,18 +271,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: 启动 PostgreSQL 与 MinIO
-        run: docker compose -f deploy/docker-compose.dev.yml up -d --wait postgres minio
+        run: docker compose -f ${{ github.workspace }}/deploy/docker-compose.dev.yml up -d --wait postgres minio
 
       - name: 创建 bucket 与 CORS
-        run: docker compose -f deploy/docker-compose.dev.yml run --rm --no-deps minio-init
+        run: docker compose -f ${{ github.workspace }}/deploy/docker-compose.dev.yml run --rm --no-deps minio-init
 
       - name: 输出服务健康状态
-        run: docker compose -f deploy/docker-compose.dev.yml ps
+        run: docker compose -f ${{ github.workspace }}/deploy/docker-compose.dev.yml ps
 
       - name: 失败时输出日志
         if: failure()
-        run: docker compose -f deploy/docker-compose.dev.yml logs --no-color
+        run: docker compose -f ${{ github.workspace }}/deploy/docker-compose.dev.yml logs --no-color
 
       - name: 清理
         if: always()
-        run: docker compose -f deploy/docker-compose.dev.yml down -v
+        run: docker compose -f ${{ github.workspace }}/deploy/docker-compose.dev.yml down -v
