@@ -11,6 +11,7 @@
 /web/test-results/
 /web/playwright-report/
 /web/blob-report/
+/web/e2e-tmp/
 
 # WASM 构建产物
 /crates/crypto-wasm/pkg/
