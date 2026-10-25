@@ -66,10 +66,11 @@ jobs:
       # cargo-deny-action 容器镜像一起删掉，导致 deny 步骤找不到镜像。
       - name: 清理测试容器镜像
         if: always()
+        # 尽力而为：清理失败不应阻断流水线。按镜像 ID 删除（MinIO 镜像按 digest 固定，没有 tag）。
         run: |
-          docker container prune -f
-          docker volume prune -f
-          docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'postgres|minio' | xargs -r docker rmi -f
+          docker container prune -f || true
+          docker volume prune -f || true
+          docker images --format '{{.ID}} {{.Repository}}' | grep -E 'postgres|minio' | awk '{print $1}' | sort -u | xargs -r docker rmi -f || true
           df -h /
 
       # 2.10：`aead::seal_with_nonce` 只允许出现在测试向量构建里。
