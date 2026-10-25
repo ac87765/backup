@@ -60,7 +60,7 @@ export class WasmCryptoBackend implements CryptoBackend {
     salt: Uint8Array,
   ): PreparedRegistrationView {
     const prepared = this.store.prepare_registration(password, kdfParamsJson, salt)
-    return {
+    const view = {
       display: prepared.display,
       wrappedMk: prepared.wrapped_mk,
       authKey: prepared.auth_key,
@@ -69,6 +69,8 @@ export class WasmCryptoBackend implements CryptoBackend {
       kdfParamsJson: prepared.kdf_params_json,
       kdfSalt: prepared.kdf_salt,
     }
+    prepared.free()
+    return view
   }
 
   preparePasswordChange(
@@ -83,13 +85,15 @@ export class WasmCryptoBackend implements CryptoBackend {
       currentSalt,
       newPassword,
     )
-    return {
+    const view = {
       oldAuthKey: prepared.old_auth_key,
       newAuthKey: prepared.new_auth_key,
       newKdfParamsJson: prepared.new_kdf_params_json,
       newKdfSalt: prepared.new_kdf_salt,
       newWrappedMk: prepared.new_wrapped_mk,
     }
+    prepared.free()
+    return view
   }
 
   prepareRecoveryReset(
@@ -102,13 +106,15 @@ export class WasmCryptoBackend implements CryptoBackend {
       recoveryWrappedMk,
       newPassword,
     )
-    return {
+    const view = {
       recoveryAuthKey: prepared.recovery_auth_key,
       newAuthKey: prepared.new_auth_key,
       newKdfParamsJson: prepared.new_kdf_params_json,
       newKdfSalt: prepared.new_kdf_salt,
       newWrappedMk: prepared.new_wrapped_mk,
     }
+    prepared.free()
+    return view
   }
 
   prepareRecoveryRotation(
@@ -121,12 +127,14 @@ export class WasmCryptoBackend implements CryptoBackend {
       currentKdfParamsJson,
       currentSalt,
     )
-    return {
+    const view = {
       currentAuthKey: prepared.current_auth_key,
       recoveryWrappedMk: prepared.recovery_wrapped_mk,
       recoveryAuthKey: prepared.recovery_auth_key,
       display: prepared.display,
     }
+    prepared.free()
+    return view
   }
 
   commitRegistration(): void {
