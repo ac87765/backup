@@ -1,22 +1,81 @@
 @import 'tailwindcss';
 
-html,
-body,
-#root {
-  height: 100%;
+/*
+ * design.md D2：全部设计令牌集中在这里，组件只使用令牌对应的工具类，
+ * 不再写零散色值。附加令牌（brand-700、ink-400、success 等）用于
+ * 悬停/焦点/危险/文件类型等状态，仍由本文件统一维护。
+ */
+@theme {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dbe7ff;
+  --color-brand-600: #0061fe;
+  --color-brand-700: #0052d9;
+
+  --color-ink-900: #1e1919;
+  --color-ink-600: #52525b;
+  --color-ink-400: #a1a1aa;
+
+  --color-line: #e7e5e4;
+  --color-line-strong: #d6d3d1;
+  --color-canvas: #f7f7f6;
+  --color-canvas-strong: #efeeec;
+
+  --color-danger-50: #fef2f2;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+
+  --color-success-50: #ecfdf5;
+  --color-success-600: #059669;
+
+  --color-warning-50: #fffbeb;
+  --color-warning-600: #d97706;
+
+  /* 文件类型图标颜色（D4）。 */
+  --color-file-folder: #0061fe;
+  --color-file-image: #059669;
+  --color-file-video: #7c3aed;
+  --color-file-audio: #db2777;
+  --color-file-pdf: #dc2626;
+  --color-file-doc: #2563eb;
+  --color-file-sheet: #16a34a;
+  --color-file-slides: #ea580c;
+  --color-file-archive: #a16207;
+  --color-file-code: #0891b2;
+  --color-file-text: #52525b;
+  --color-file-other: #71717a;
+
+  --radius-card: 12px;
+  --radius-control: 8px;
+
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.12);
 }
 
-body {
-  margin: 0;
-  background-color: var(--color-slate-50);
-  color: var(--color-slate-900);
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    'Helvetica Neue',
-    Arial,
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-canvas);
+    color: var(--color-ink-900);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: var(--color-brand-100);
+    color: var(--color-ink-900);
+  }
+
+  :focus-visible {
+    outline: none;
+  }
 }

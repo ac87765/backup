@@ -2,9 +2,9 @@
 
 ## 1. 设计令牌与基础组件
 
-- [ ] 1.1 在 `web/src/index.css` 用 Tailwind v4 `@theme` 定义 design D2 的全部令牌与系统字体栈；新增 `lucide-react` 依赖并记录打包体积增量（gzip）
-- [ ] 1.2 在 `web/src/ui/` 实现 `Button`、`IconButton`、`TextField`、`Spinner`、`ProgressBar`、`EmptyState`、`FileIcon`（扩展名 → 图标/颜色映射，含单测）
-- [ ] 1.3 实现 `Dialog`（原生 `<dialog>`，焦点进入与归还、Esc 关闭）、`Menu`（下拉与右键共用，方向键导航、Esc 与外部点击关闭）、`Toast`（`role="status"`，自动消失），并为焦点与键盘行为编写组件测试
+- [x] 1.1 在 `web/src/index.css` 用 Tailwind v4 `@theme` 定义 design D2 的全部令牌与系统字体栈；新增 `lucide-react` 依赖并记录打包体积增量（gzip）
+- [x] 1.2 在 `web/src/ui/` 实现 `Button`、`IconButton`、`TextField`、`Spinner`、`ProgressBar`、`EmptyState`、`FileIcon`（扩展名 → 图标/颜色映射，含单测）
+- [x] 1.3 实现 `Dialog`（原生 `<dialog>`，焦点进入与归还、Esc 关闭）、`Menu`（下拉与右键共用，方向键导航、Esc 与外部点击关闭）、`Toast`（`role="status"`，自动消失），并为焦点与键盘行为编写组件测试
 
 ## 2. 应用外壳与路由
 
