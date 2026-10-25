@@ -24,6 +24,14 @@ use serde::de::Deserializer;
 /// 所有配置环境变量的统一前缀。
 pub const ENV_PREFIX: &str = "BACKUP_";
 
+/// 每个已认证用户每分钟的写接口默认上限。
+///
+/// 估算（批量接口、4 MiB 块、100 MB/s 持续上传）：
+/// `100_000_000 / 4 MiB ≈ 24 块/秒`；每 32 块需要 1 次批量 presign + 1 次
+/// 批量 confirm，即约 `24 × 2 / 32 × 60 ≈ 90 请求/分钟`。默认 240 留出约
+/// 2.6 倍余量（约可支撑 260 MB/s 的持续上传）。README 记录完整推导。
+pub const DEFAULT_USER_WRITE_RATE_LIMIT_PER_MINUTE: u32 = 240;
+
 /// 配置项名称。错误信息与日志只使用这里的名字，不使用内部键名或配置值。
 pub mod keys {
     pub const BIND_ADDR: &str = "BACKUP_BIND_ADDR";
@@ -56,6 +64,7 @@ pub mod keys {
     pub const PUBLIC_APP_URL: &str = "BACKUP_PUBLIC_APP_URL";
     pub const TRUSTED_PROXIES: &str = "BACKUP_TRUSTED_PROXIES";
     pub const AUTH_RATE_LIMIT_PER_MINUTE: &str = "BACKUP_AUTH_RATE_LIMIT_PER_MINUTE";
+    pub const USER_WRITE_RATE_LIMIT_PER_MINUTE: &str = "BACKUP_USER_WRITE_RATE_LIMIT_PER_MINUTE";
 }
 
 /// 单个 pepper 的最小长度（字节）。
@@ -324,6 +333,9 @@ pub struct Config {
     pub trusted_proxies: Vec<IpNet>,
     /// 每个 IP 每分钟允许的认证类请求数（进程内令牌桶）。
     pub auth_rate_limit_per_minute: NonZeroU32,
+    /// 每个已认证用户每分钟允许的写接口请求数（进程内令牌桶）。
+    /// 批量 presign/confirm 各算一次请求，因此默认值按高吞吐上传估算。
+    pub user_write_rate_limit_per_minute: NonZeroU32,
 }
 
 impl Config {
@@ -394,6 +406,7 @@ impl Config {
         let public_app_url = parse_public_app_url(figment)?;
         let trusted_proxies = parse_trusted_proxies(figment)?;
         let auth_rate_limit_per_minute = parse_auth_rate_limit(figment)?;
+        let user_write_rate_limit_per_minute = parse_user_write_rate_limit(figment)?;
 
         Ok(Self {
             bind_addr,
@@ -416,6 +429,7 @@ impl Config {
             public_app_url,
             trusted_proxies,
             auth_rate_limit_per_minute,
+            user_write_rate_limit_per_minute,
         })
     }
 }
@@ -553,6 +567,20 @@ fn parse_auth_rate_limit(figment: &Figment) -> Result<NonZeroU32, ConfigError> {
     )?;
     NonZeroU32::new(value).ok_or(ConfigError::invalid(
         keys::AUTH_RATE_LIMIT_PER_MINUTE,
+        "必须是正整数",
+    ))
+}
+
+/// 每个已认证用户每分钟的写接口上限。
+fn parse_user_write_rate_limit(figment: &Figment) -> Result<NonZeroU32, ConfigError> {
+    let default = DEFAULT_USER_WRITE_RATE_LIMIT_PER_MINUTE.to_string();
+    let value = parse_u32(
+        &string_with_default(figment, keys::USER_WRITE_RATE_LIMIT_PER_MINUTE, &default)?,
+        keys::USER_WRITE_RATE_LIMIT_PER_MINUTE,
+        1..=1_000_000,
+    )?;
+    NonZeroU32::new(value).ok_or(ConfigError::invalid(
+        keys::USER_WRITE_RATE_LIMIT_PER_MINUTE,
         "必须是正整数",
     ))
 }
@@ -1492,6 +1520,31 @@ mod tests {
             err,
             ConfigError::Invalid {
                 key: keys::AUTH_RATE_LIMIT_PER_MINUTE,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn user_write_rate_limit_defaults_and_rejects_zero() {
+        let config = load(&complete_pairs()).expect("配置应当合法");
+        assert_eq!(
+            config.user_write_rate_limit_per_minute.get(),
+            DEFAULT_USER_WRITE_RATE_LIMIT_PER_MINUTE
+        );
+
+        let mut pairs = complete_pairs();
+        pairs.push(("user_write_rate_limit_per_minute", "2400"));
+        let config = load(&pairs).expect("显式配置应当生效");
+        assert_eq!(config.user_write_rate_limit_per_minute.get(), 2400);
+
+        let mut pairs = complete_pairs();
+        pairs.push(("user_write_rate_limit_per_minute", "0"));
+        let err = load(&pairs).expect_err("限流为 0 必须失败");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: keys::USER_WRITE_RATE_LIMIT_PER_MINUTE,
                 ..
             }
         ));

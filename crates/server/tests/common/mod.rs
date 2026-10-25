@@ -480,6 +480,7 @@ pub fn test_config(static_dir: std::path::PathBuf) -> server::Config {
         public_app_url: "http://127.0.0.1:8080".to_owned(),
         trusted_proxies: Vec::new(),
         auth_rate_limit_per_minute: std::num::NonZeroU32::new(60).expect("60"),
+        user_write_rate_limit_per_minute: std::num::NonZeroU32::new(600).expect("600"),
     }
 }
 

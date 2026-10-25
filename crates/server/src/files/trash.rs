@@ -247,6 +247,7 @@ pub async fn delete_node(
     session: AuthenticatedSession,
     Path(node_id): Path<Uuid>,
 ) -> Result<Json<TrashEntryResponse>, ApiError> {
+    state.auth.check_user_write(session.user_id)?;
     let node_id = validate_node_id(node_id)?;
     let mut tx = state
         .database
@@ -408,6 +409,7 @@ pub async fn restore_node(
     Path(node_id): Path<Uuid>,
     payload: Result<Json<RestoreNodeRequest>, JsonRejection>,
 ) -> Result<Json<NodeSummary>, ApiError> {
+    state.auth.check_user_write(session.user_id)?;
     let request = parse_body(payload)?;
     let node_id = validate_node_id(node_id)?;
     if request.new_parent_id.is_none() && request.name_token.is_some() {
@@ -564,6 +566,7 @@ pub async fn permanently_delete_node(
     session: AuthenticatedSession,
     Path(node_id): Path<Uuid>,
 ) -> Result<Json<PermanentDeleteResponse>, ApiError> {
+    state.auth.check_user_write(session.user_id)?;
     let node_id = validate_node_id(node_id)?;
     let mut tx = state
         .database

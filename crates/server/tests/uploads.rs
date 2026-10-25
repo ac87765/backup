@@ -21,6 +21,7 @@ use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::Row;
+use sqlx::postgres::PgPoolOptions;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -29,7 +30,9 @@ use common::{
 };
 use server::jobs::scan::{ScanOutcome, run_once};
 use server::jobs::uploads::{OrphanObjectScan, UploadSessionExpiry};
-use server::storage::{ObjectKey, Storage};
+use server::storage::{
+    FaultInjectionConfig, InjectedErrorKind, ObjectKey, ObjectOperation, Storage,
+};
 
 const CSRF_HEADER: &str = "x-requested-with";
 const CSRF_VALUE: &str = "backup-web";
@@ -45,13 +48,54 @@ struct TestApp {
     _dir: tempfile::TempDir,
 }
 
+#[derive(Clone, Copy)]
+struct TestOptions {
+    /// 每用户写限流值；默认放大，避免普通测试误触限流。
+    user_write_rate_limit: u32,
+    database_max_connections: u32,
+    /// 故障注入：让对象存储 `stat` 延迟指定时间（验证事务外 stat）。
+    stat_delay: Option<Duration>,
+}
+
+impl Default for TestOptions {
+    fn default() -> Self {
+        Self {
+            user_write_rate_limit: 600,
+            database_max_connections: 5,
+            stat_delay: None,
+        }
+    }
+}
+
 async fn setup() -> TestApp {
+    setup_with(TestOptions::default()).await
+}
+
+async fn setup_with(options: TestOptions) -> TestApp {
     let env = environment().await;
-    let (_test_db, database) = migrated_database(env).await;
+    let (test_db, _database) = migrated_database(env).await;
+    let pool = PgPoolOptions::new()
+        .max_connections(options.database_max_connections)
+        .connect(&test_db.url)
+        .await
+        .expect("连接测试数据库");
+    let database = server::Database::from_pool(pool);
+
     let (dir, root) = static_fixture();
     let mut config = integration_config(env, root);
     config.auth_rate_limit_per_minute = NonZeroU32::new(600).expect("限流必须为正");
+    config.user_write_rate_limit_per_minute =
+        NonZeroU32::new(options.user_write_rate_limit).expect("限流必须为正");
+    config.database.max_connections = options.database_max_connections;
     let storage = Storage::new(&config.storage).expect("构造 storage");
+    let storage = match options.stat_delay {
+        Some(delay) => storage.with_fault_injection(
+            FaultInjectionConfig::new(0, InjectedErrorKind::Unavailable)
+                .only(ObjectOperation::Stat)
+                .with_delay(delay),
+        ),
+        None => storage,
+    };
     let app = server::build_router(server::AppState::new(
         config,
         database.clone(),
@@ -378,6 +422,40 @@ async fn upload_and_confirm(
     key
 }
 
+async fn batch_presign(
+    app: &TestApp,
+    cookie: &str,
+    session_id: &str,
+    indices: Vec<i32>,
+) -> (StatusCode, Value) {
+    request(
+        app,
+        Method::POST,
+        &format!("/api/v1/upload-sessions/{session_id}/chunks/presign"),
+        Some(json!({ "indices": indices })),
+        cookie,
+        true,
+    )
+    .await
+}
+
+async fn batch_confirm(
+    app: &TestApp,
+    cookie: &str,
+    session_id: &str,
+    chunks: Vec<Value>,
+) -> (StatusCode, Value) {
+    request(
+        app,
+        Method::POST,
+        &format!("/api/v1/upload-sessions/{session_id}/chunks/confirm"),
+        Some(json!({ "chunks": chunks })),
+        cookie,
+        true,
+    )
+    .await
+}
+
 async fn delete_count(app: &TestApp, object_key: &str) -> i64 {
     sqlx::query_scalar("SELECT count(*) FROM object_deletions WHERE object_key = $1")
         .bind(object_key)
@@ -634,17 +712,56 @@ async fn chunk_layout_mismatch_is_rejected() {
 
 #[tokio::test]
 async fn per_user_write_rate_limit_returns_429() {
-    let app = setup().await;
-    let (_user, _root, cookie) = verified_user_with_session(&app).await;
-    // 请求体无效的请求在解析前就被每用户写限流计数，因此可以低成本地
-    // 打满 120 次/分钟的上限（见 auth::USER_WRITE_RATE_LIMIT_PER_MINUTE）。
-    for _ in 0..server::auth::USER_WRITE_RATE_LIMIT_PER_MINUTE {
-        let (status, _value) = create_session(&app, &cookie, json!({})).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+    // 用较低的上限（而不是默认 240）避免 governor 在测试循环期间补充令牌，
+    // 并让请求是合法请求：限流必须在参数校验之前生效。
+    let app = setup_with(TestOptions {
+        user_write_rate_limit: 2,
+        ..TestOptions::default()
+    })
+    .await;
+    let (_user, root, cookie) = verified_user_with_session(&app).await;
+    let valid_body = || {
+        new_file_body(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            root,
+            Uuid::new_v4(),
+            1,
+            100 + EMPTY_CHUNK,
+            70,
+        )
+    };
+
+    for _ in 0..2 {
+        let (status, value) = create_session(&app, &cookie, valid_body()).await;
+        assert_eq!(status, StatusCode::OK, "前两次合法请求应成功: {value}");
     }
-    let (status, value) = create_session(&app, &cookie, json!({})).await;
+
+    let (status, headers, value) = read(
+        send(
+            &app.app,
+            Method::POST,
+            "/api/v1/upload-sessions",
+            Some(valid_body()),
+            &cookie,
+            true,
+        )
+        .await,
+    )
+    .await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(error_code(&value), "rate_limited");
+    let retry_after = headers
+        .get(header::RETRY_AFTER)
+        .expect("限流响应必须带 Retry-After");
+    assert!(
+        retry_after
+            .to_str()
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .is_some_and(|seconds| seconds >= 1),
+        "Retry-After 必须是正整数秒: {retry_after:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -970,6 +1087,185 @@ async fn confirmed_chunk_list_supports_resume() {
     assert_eq!(status, StatusCode::OK, "{value}");
     assert_eq!(value["confirmed_count"], 2);
     assert_eq!(value["items"][1]["idx"], 1);
+}
+
+#[tokio::test]
+async fn batch_presign_and_confirm_support_partial_results() {
+    let app = setup().await;
+    let (_user, root, cookie) = verified_user_with_session(&app).await;
+    let tail = 100 + EMPTY_CHUNK;
+    let declared = FULL_CHUNK + tail;
+    let session = create_session_ok(
+        &app,
+        &cookie,
+        new_file_body(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            root,
+            Uuid::new_v4(),
+            2,
+            declared,
+            29,
+        ),
+    )
+    .await;
+    let session_id = session["id"].as_str().expect("会话 ID").to_owned();
+
+    // 批量 presign：两个块各得一个 URL。
+    let (status, presigned) = batch_presign(&app, &cookie, &session_id, vec![0, 1]).await;
+    assert_eq!(status, StatusCode::OK, "{presigned}");
+    assert_eq!(presigned["items"].as_array().expect("items").len(), 2);
+    assert_eq!(presigned["items"][0]["ok"], true);
+    assert_eq!(presigned["items"][0]["expected_size"], FULL_CHUNK);
+    assert_eq!(presigned["items"][1]["ok"], true);
+    assert_eq!(presigned["items"][1]["expected_size"], tail);
+    let first_url = presigned["items"][0]["url"]
+        .as_str()
+        .expect("第一块 URL")
+        .to_owned();
+    let second_url = presigned["items"][1]["url"]
+        .as_str()
+        .expect("第二块 URL")
+        .to_owned();
+
+    // 只上传第 0 块；第 1 块应独立返回 chunk_not_found，越界 idx 返回 invalid_request。
+    let first = vec![0xAB_u8; FULL_CHUNK as usize];
+    put_object(&first_url, &first).await;
+    let (status, confirmed) = batch_confirm(
+        &app,
+        &cookie,
+        &session_id,
+        vec![
+            json!({"idx": 0, "declared_size": FULL_CHUNK, "sha256": sha256_hex(&first)}),
+            json!({"idx": 1, "declared_size": tail, "sha256": sha256_hex(b"not-uploaded")}),
+            json!({"idx": 99, "declared_size": 1, "sha256": sha256_hex(b"x")}),
+        ],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{confirmed}");
+    let items = confirmed["items"].as_array().expect("items");
+    assert_eq!(items[0]["ok"], true);
+    assert_eq!(items[1]["ok"], false);
+    assert_eq!(items[1]["code"], "chunk_not_found");
+    assert_eq!(items[2]["ok"], false);
+    assert_eq!(items[2]["code"], "invalid_request");
+
+    // 上传第 1 块后批量确认成功，随后可以提交。
+    let second = vec![0xCD_u8; tail as usize];
+    put_object(&second_url, &second).await;
+    let (status, confirmed) = batch_confirm(
+        &app,
+        &cookie,
+        &session_id,
+        vec![json!({"idx": 1, "declared_size": tail, "sha256": sha256_hex(&second)})],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{confirmed}");
+    assert_eq!(confirmed["items"][0]["ok"], true);
+    let (status, value) = commit(&app, &cookie, &session_id).await;
+    assert_eq!(status, StatusCode::OK, "{value}");
+
+    // 单批最多 32 块；空列表也拒绝。
+    let too_many: Vec<i32> = (0..33).collect();
+    let (status, value) = batch_presign(&app, &cookie, &session_id, too_many).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error_code(&value), "invalid_request");
+    let (status, _value) = batch_confirm(&app, &cookie, &session_id, vec![]).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn slow_stat_does_not_hold_connections_or_block_commit() {
+    // 2 个连接 + 3 秒 stat 延迟：旧实现持事务 stat 会让两个连接全部被占住，
+    // ping/commit 只能等；新实现 stat 在事务外，连接应立即归还。
+    let stat_delay = Duration::from_secs(3);
+    let app = setup_with(TestOptions {
+        database_max_connections: 2,
+        stat_delay: Some(stat_delay),
+        ..TestOptions::default()
+    })
+    .await;
+    let (_user, root, cookie) = verified_user_with_session(&app).await;
+    let tail = 100 + EMPTY_CHUNK;
+    let declared = FULL_CHUNK + tail;
+    let session = create_session_ok(
+        &app,
+        &cookie,
+        new_file_body(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            root,
+            Uuid::new_v4(),
+            2,
+            declared,
+            30,
+        ),
+    )
+    .await;
+    let session_id = session["id"].as_str().expect("会话 ID").to_owned();
+
+    let (status, presigned) = batch_presign(&app, &cookie, &session_id, vec![0, 1]).await;
+    assert_eq!(status, StatusCode::OK, "{presigned}");
+    let first = vec![0xEF_u8; FULL_CHUNK as usize];
+    let second = vec![0x12_u8; tail as usize];
+    put_object(
+        presigned["items"][0]["url"].as_str().expect("URL 0"),
+        &first,
+    )
+    .await;
+    put_object(
+        presigned["items"][1]["url"].as_str().expect("URL 1"),
+        &second,
+    )
+    .await;
+
+    let pool = app.database.pool().clone();
+    let started = tokio::time::Instant::now();
+    let first_hash = sha256_hex(&first);
+    let second_hash = sha256_hex(&second);
+    let confirm_first = confirm(&app, &cookie, &session_id, 0, FULL_CHUNK, &first_hash);
+    let confirm_second = confirm(&app, &cookie, &session_id, 1, tail, &second_hash);
+    let ping = async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            sqlx::query_scalar::<_, i32>("SELECT 1").fetch_one(&pool),
+        )
+        .await
+    };
+    let concurrent_commit = async {
+        let commit_started = tokio::time::Instant::now();
+        let result = commit(&app, &cookie, &session_id).await;
+        (result, commit_started.elapsed())
+    };
+
+    let (first_result, second_result, ping_result, (commit_result, commit_elapsed)) =
+        tokio::join!(confirm_first, confirm_second, ping, concurrent_commit);
+    let elapsed = started.elapsed();
+
+    assert_eq!(first_result.0, StatusCode::OK, "{}", first_result.1);
+    assert_eq!(second_result.0, StatusCode::OK, "{}", second_result.1);
+    let ping = ping_result
+        .expect("stat 期间数据库连接不应被占满")
+        .expect("SELECT 1");
+    assert_eq!(ping, 1);
+    assert!(
+        commit_elapsed < Duration::from_secs(2),
+        "并发提交被慢 stat 阻塞了 {commit_elapsed:?}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "两个确认被串行化，总耗时 {elapsed:?}"
+    );
+
+    // 并发提交可能先看到“仍有块未确认”，重试必须成功且只产生一个版本。
+    let (status, value) = commit_result;
+    if status != StatusCode::OK {
+        assert_eq!(status, StatusCode::CONFLICT, "{value}");
+        assert_eq!(error_code(&value), "upload_incomplete");
+    }
+    let (status, value) = commit(&app, &cookie, &session_id).await;
+    assert_eq!(status, StatusCode::OK, "{value}");
 }
 
 // ---------------------------------------------------------------------------

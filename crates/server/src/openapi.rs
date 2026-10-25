@@ -21,9 +21,10 @@ use crate::files::trash::{
     PermanentDeleteResponse, RestoreNodeRequest, TrashEntryResponse, TrashQuery, TrashResponse,
 };
 use crate::files::uploads::{
-    AbortUploadResponse, CommitUploadResponse, ConfirmChunkRequest, ConfirmChunkResponse,
-    ConfirmedChunk, ConfirmedChunksResponse, CreateUploadSessionRequest, PresignChunkResponse,
-    UploadSessionResponse,
+    AbortUploadResponse, CommitUploadResponse, ConfirmChunkItem, ConfirmChunkItemResult,
+    ConfirmChunkRequest, ConfirmChunkResponse, ConfirmChunksRequest, ConfirmChunksResponse,
+    ConfirmedChunk, ConfirmedChunksResponse, CreateUploadSessionRequest, PresignChunkItemResult,
+    PresignChunkResponse, PresignChunksRequest, PresignChunksResponse, UploadSessionResponse,
 };
 use crate::files::usage::UsageResponse;
 use crate::files::versions::{RestoreVersionRequest, VersionQuery, VersionsResponse};
@@ -68,7 +69,9 @@ use crate::files::{NodeSummary, VersionSummary};
         crate::files::uploads::get_upload_session,
         crate::files::uploads::list_confirmed_chunks,
         crate::files::uploads::presign_chunk,
+        crate::files::uploads::presign_chunks,
         crate::files::uploads::confirm_chunk,
+        crate::files::uploads::confirm_chunks,
         crate::files::uploads::commit_upload,
         crate::files::uploads::abort_upload,
         crate::files::download::download_version
@@ -114,8 +117,15 @@ use crate::files::{NodeSummary, VersionSummary};
         CreateUploadSessionRequest,
         UploadSessionResponse,
         PresignChunkResponse,
+        PresignChunksRequest,
+        PresignChunkItemResult,
+        PresignChunksResponse,
         ConfirmChunkRequest,
         ConfirmChunkResponse,
+        ConfirmChunkItem,
+        ConfirmChunksRequest,
+        ConfirmChunkItemResult,
+        ConfirmChunksResponse,
         ConfirmedChunk,
         ConfirmedChunksResponse,
         CommitUploadResponse,

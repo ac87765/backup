@@ -56,12 +56,8 @@ pub const EMAIL_PURPOSE_VERIFY: &str = "verify_email";
 /// 重发验证邮件的账号维度节流窗口（分钟）。
 pub const RESEND_THROTTLE_MINUTES: i32 = 10;
 
-/// 每用户每分钟的写接口上限（service-operations spec「请求体与速率限制」）。
-///
-/// 与 IP 维度认证限流分开：已认证用户的写接口按用户计数，避免同一 NAT 后的
-/// 多个合法用户互相影响。常量而非配置项：MVP 只需要一个明确、可测试的上限。
-pub const USER_WRITE_RATE_LIMIT_PER_MINUTE: u32 = 120;
-
+/// 每用户每分钟的写接口上限由配置项
+/// `BACKUP_USER_WRITE_RATE_LIMIT_PER_MINUTE` 提供；批量上传接口各算一次请求。
 type KeyedLimiter =
     RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, governor::clock::DefaultClock>;
 type UserKeyedLimiter =
@@ -76,13 +72,15 @@ pub struct AuthContext {
 }
 
 impl AuthContext {
-    pub fn new(config: AuthConfig, per_minute: NonZeroU32) -> Self {
+    pub fn new(
+        config: AuthConfig,
+        per_minute: NonZeroU32,
+        user_write_per_minute: NonZeroU32,
+    ) -> Self {
         Self {
             config: Arc::new(config),
             limiter: Arc::new(IpRateLimiter::new(per_minute)),
-            user_write_limiter: Arc::new(UserWriteRateLimiter::new(
-                NonZeroU32::new(USER_WRITE_RATE_LIMIT_PER_MINUTE).unwrap_or(NonZeroU32::MIN),
-            )),
+            user_write_limiter: Arc::new(UserWriteRateLimiter::new(user_write_per_minute)),
         }
     }
 
@@ -493,7 +491,11 @@ mod tests {
 
     #[test]
     fn fake_salt_is_deterministic_and_email_specific() {
-        let context = AuthContext::new(test_auth_config(), NonZeroU32::new(60).expect("60"));
+        let context = AuthContext::new(
+            test_auth_config(),
+            NonZeroU32::new(60).expect("60"),
+            NonZeroU32::new(240).expect("240"),
+        );
         let first = context.fake_salt("user@example.com").expect("盐");
         let second = context.fake_salt("user@example.com").expect("盐");
         let other = context.fake_salt("other@example.com").expect("盐");
@@ -503,7 +505,11 @@ mod tests {
 
     #[test]
     fn fake_salt_uses_a_key_separate_from_pepper() {
-        let context = AuthContext::new(test_auth_config(), NonZeroU32::new(60).expect("60"));
+        let context = AuthContext::new(
+            test_auth_config(),
+            NonZeroU32::new(60).expect("60"),
+            NonZeroU32::new(240).expect("240"),
+        );
         let salt = context.fake_salt("user@example.com").expect("盐");
         let with_pepper = hmac_sha256(
             context.config().pepper.expose().as_bytes(),

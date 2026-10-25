@@ -128,6 +128,14 @@ cargo run -p server -- openapi   # 输出 OpenAPI 规范到 stdout（不需要�
 | `BACKUP_SMTP_PASSWORD` | TLS 模式必填 | SMTP 密码（密钥） |
 | `BACKUP_SMTP_TLS` | `starttls` | `starttls`、`implicit`（隐式 TLS/465）或 `none`（本地 mailpit 测试用） |
 | `BACKUP_SMTP_ALLOW_INSECURE` | `false` | 显式允许明文 SMTP（可无认证）；只用于本地测试 |
+| `BACKUP_AUTH_RATE_LIMIT_PER_MINUTE` | `60` | 每个 IP 每分钟的认证类请求上限 |
+| `BACKUP_USER_WRITE_RATE_LIMIT_PER_MINUTE` | `240` | 每个已认证用户每分钟的写接口上限；批量 presign/confirm 各算一次请求 |
+
+每用户写限流的默认值按“批量接口下 100 MB/s 持续上传不触发限流”估算：4 MiB 块下
+`100 MB/s ÷ 4 MiB ≈ 24 块/秒`；每 32 块需要一次批量 presign + 一次批量 confirm，
+即 `24 × 2 ÷ 32 × 60 ≈ 90 请求/分钟`。默认 240 留出约 2.6 倍余量（约可支撑
+260 MB/s 持续上传）。若调整块大小、批量上限或并发度，可按
+`(上传字节/秒 ÷ 4 MiB) × (2 ÷ 批量块数) × 60` 重新估算。
 
 密钥类配置在日志与 `Debug` 输出中固定显示为 `[REDACTED]`。缺项或非法值时进程以非零退出码
 退出，日志只指出配置项名称，不输出配置值。`BACKUP_MAIL_MODE=file` 启动时会输出一条

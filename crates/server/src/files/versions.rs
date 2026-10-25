@@ -190,6 +190,7 @@ pub async fn restore_version(
     Path(node_id): Path<Uuid>,
     payload: Result<Json<RestoreVersionRequest>, JsonRejection>,
 ) -> Result<Json<VersionSummary>, ApiError> {
+    state.auth.check_user_write(session.user_id)?;
     let request = payload
         .map(|Json(value)| value)
         .map_err(|_| ApiError::invalid_request())?;

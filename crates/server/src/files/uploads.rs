@@ -42,6 +42,8 @@ pub const CHUNK_CIPHERTEXT_SIZE: i64 = crypto_core::MAX_CHUNK_CIPHERTEXT_SIZE as
 pub const MIN_CHUNK_CIPHERTEXT_SIZE: i64 = crypto_core::FRAME_OVERHEAD as i64;
 /// 允许的最大块数（防止异常请求构造超大布局；默认 10 GiB 配额远低于此值）。
 pub const MAX_CHUNK_COUNT: i32 = 262_144;
+/// 批量 presign/confirm 单次请求允许的最大块数。
+pub const MAX_BATCH_CHUNKS: usize = 32;
 
 const KIND_NEW_FILE: &str = "new_file";
 const KIND_NEW_VERSION: &str = "new_version";
@@ -182,6 +184,68 @@ pub struct ConfirmChunkResponse {
     pub declared_size: i64,
     pub sha256: String,
     pub confirmed_at: String,
+}
+
+/// 批量 presign 请求。一次最多 [`MAX_BATCH_CHUNKS`] 个块。
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PresignChunksRequest {
+    pub indices: Vec<i32>,
+}
+
+/// 批量 presign 中的一项：成功时带 URL，失败时带 code/message。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PresignChunkItemResult {
+    pub idx: i32,
+    pub ok: bool,
+    pub url: Option<String>,
+    pub method: Option<String>,
+    pub expires_at: Option<String>,
+    pub expected_size: Option<i64>,
+    pub code: Option<String>,
+    pub message: Option<String>,
+}
+
+/// 批量 presign 响应。逐块独立结果，部分失败不影响其他块。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PresignChunksResponse {
+    pub session_id: Uuid,
+    pub items: Vec<PresignChunkItemResult>,
+}
+
+/// 批量确认中的一块。
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ConfirmChunkItem {
+    pub idx: i32,
+    pub declared_size: i64,
+    pub sha256: String,
+}
+
+/// 批量确认请求。一次最多 [`MAX_BATCH_CHUNKS`] 个块。
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ConfirmChunksRequest {
+    pub chunks: Vec<ConfirmChunkItem>,
+}
+
+/// 批量确认中的一项结果。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ConfirmChunkItemResult {
+    pub idx: i32,
+    pub ok: bool,
+    pub declared_size: Option<i64>,
+    pub sha256: Option<String>,
+    pub confirmed_at: Option<String>,
+    pub code: Option<String>,
+    pub message: Option<String>,
+}
+
+/// 批量确认响应。逐块独立结果，部分失败不影响其他块。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ConfirmChunksResponse {
+    pub session_id: Uuid,
+    pub items: Vec<ConfirmChunkItemResult>,
 }
 
 /// 已确认块列表中的一项。
@@ -752,14 +816,90 @@ pub async fn presign_chunk(
     Path((session_id, idx)): Path<(Uuid, i32)>,
 ) -> Result<Json<PresignChunkResponse>, ApiError> {
     state.auth.check_user_write(session.user_id)?;
+    Ok(Json(
+        presign_chunk_core(&state, session.user_id, session_id, idx).await?,
+    ))
+}
 
+/// `POST /api/v1/upload-sessions/{session_id}/chunks/presign`。
+///
+/// 一次为最多 [`MAX_BATCH_CHUNKS`] 个块生成 URL；逐块独立结果。
+#[utoipa::path(
+    post,
+    path = "/api/v1/upload-sessions/{session_id}/chunks/presign",
+    tag = "uploads",
+    params(("session_id" = Uuid, Path, description = "上传会话 ID")),
+    request_body = PresignChunksRequest,
+    responses(
+        (status = 200, body = PresignChunksResponse),
+        (status = 400, body = ErrorBody),
+        (status = 401, body = ErrorBody),
+        (status = 404, body = ErrorBody),
+        (status = 409, body = ErrorBody),
+        (status = 429, body = ErrorBody),
+        (status = 500, body = ErrorBody)
+    )
+)]
+pub async fn presign_chunks(
+    State(state): State<AppState>,
+    session: AuthenticatedSession,
+    Path(session_id): Path<Uuid>,
+    payload: Result<Json<PresignChunksRequest>, JsonRejection>,
+) -> Result<Json<PresignChunksResponse>, ApiError> {
+    state.auth.check_user_write(session.user_id)?;
+    let request = parse_body(payload)?;
+    if request.indices.is_empty() || request.indices.len() > MAX_BATCH_CHUNKS {
+        return Err(ApiError::invalid_request());
+    }
+
+    // 先确认会话归属与 open/未过期；逐块错误在 items 中返回。
+    let row = load_open_session(&state, session.user_id, session_id).await?;
+    let layout = ChunkLayout::parse(row.chunk_count, row.declared_size)
+        .map_err(|_| ApiError::internal("上传会话的分块布局无效"))?;
+
+    let mut items = Vec::with_capacity(request.indices.len());
+    for idx in request.indices {
+        if layout.size(idx).is_none() {
+            items.push(PresignChunkItemResult {
+                idx,
+                ok: false,
+                url: None,
+                method: None,
+                expires_at: None,
+                expected_size: None,
+                code: Some("invalid_request".to_owned()),
+                message: Some("块序号超出会话范围".to_owned()),
+            });
+            continue;
+        }
+        let presigned = presign_chunk_core(&state, session.user_id, session_id, idx).await?;
+        items.push(PresignChunkItemResult {
+            idx,
+            ok: true,
+            url: Some(presigned.url),
+            method: Some(presigned.method),
+            expires_at: Some(presigned.expires_at),
+            expected_size: Some(presigned.expected_size),
+            code: None,
+            message: None,
+        });
+    }
+    Ok(Json(PresignChunksResponse { session_id, items }))
+}
+
+async fn presign_chunk_core(
+    state: &AppState,
+    user_id: Uuid,
+    session_id: Uuid,
+    idx: i32,
+) -> Result<PresignChunkResponse, ApiError> {
     let mut tx = state
         .database
         .pool()
         .begin()
         .await
         .map_err(ApiError::internal)?;
-    let row = load_session_for_update(&mut tx, session.user_id, session_id)
+    let row = load_session_for_update(&mut tx, user_id, session_id)
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(ApiError::not_found)?;
@@ -768,7 +908,7 @@ pub async fn presign_chunk(
     let layout = ChunkLayout::parse(row.chunk_count, row.declared_size)
         .map_err(|_| ApiError::internal("上传会话的分块布局无效"))?;
     let expected_size = layout.size(idx).ok_or_else(ApiError::invalid_request)?;
-    let object_key = ObjectKey::generate(session.user_id);
+    let object_key = ObjectKey::generate(user_id);
 
     sqlx::query!(
         r#"
@@ -786,7 +926,7 @@ pub async fn presign_chunk(
             updated_at = now()
         "#,
         session_id,
-        session.user_id,
+        user_id,
         idx,
         object_key.as_str(),
         expected_size,
@@ -803,13 +943,34 @@ pub async fn presign_chunk(
         .presign_write(&object_key, MAX_PRESIGN_TTL)
         .await
         .map_err(ApiError::internal)?;
-    Ok(Json(PresignChunkResponse {
+    Ok(PresignChunkResponse {
         idx,
         method: presigned.method().to_owned(),
         url: presigned.url().to_owned(),
         expires_at: format_time(OffsetDateTime::now_utc() + time::Duration::minutes(15)),
         expected_size,
-    }))
+    })
+}
+
+/// 读取一个归属当前用户、open 且未过期的会话（短事务，不持有锁）。
+async fn load_open_session(
+    state: &AppState,
+    user_id: Uuid,
+    session_id: Uuid,
+) -> Result<SessionRow, ApiError> {
+    let mut tx = state
+        .database
+        .pool()
+        .begin()
+        .await
+        .map_err(ApiError::internal)?;
+    let row = load_session(&mut tx, user_id, session_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(ApiError::not_found)?;
+    require_open(&row)?;
+    tx.rollback().await.map_err(ApiError::internal)?;
+    Ok(row)
 }
 
 /// 会话必须处于 open 且未过期。
@@ -852,26 +1013,240 @@ pub async fn confirm_chunk(
     state.auth.check_user_write(session.user_id)?;
     let request = parse_body(payload)?;
     let sha256 = decode_hex_array::<32>(&request.sha256).ok_or_else(ApiError::invalid_request)?;
+    let outcome = confirm_chunk_core(
+        &state,
+        session.user_id,
+        session_id,
+        idx,
+        request.declared_size,
+        sha256,
+    )
+    .await?;
+    match outcome {
+        ConfirmOutcome::Confirmed(response) => Ok(Json(response)),
+        ConfirmOutcome::ChunkNotFound => Err(ApiError::chunk_not_found()),
+        ConfirmOutcome::SizeMismatch => Err(ApiError::chunk_size_mismatch()),
+        ConfirmOutcome::Conflict => Err(ApiError::conflict()),
+    }
+}
 
+/// `POST /api/v1/upload-sessions/{session_id}/chunks/confirm`。
+///
+/// 一次确认最多 [`MAX_BATCH_CHUNKS`] 个块；逐块独立结果，部分失败不影响其他块。
+#[utoipa::path(
+    post,
+    path = "/api/v1/upload-sessions/{session_id}/chunks/confirm",
+    tag = "uploads",
+    params(("session_id" = Uuid, Path, description = "上传会话 ID")),
+    request_body = ConfirmChunksRequest,
+    responses(
+        (status = 200, body = ConfirmChunksResponse),
+        (status = 400, body = ErrorBody),
+        (status = 401, body = ErrorBody),
+        (status = 404, body = ErrorBody),
+        (status = 409, body = ErrorBody),
+        (status = 429, body = ErrorBody),
+        (status = 500, body = ErrorBody)
+    )
+)]
+pub async fn confirm_chunks(
+    State(state): State<AppState>,
+    session: AuthenticatedSession,
+    Path(session_id): Path<Uuid>,
+    payload: Result<Json<ConfirmChunksRequest>, JsonRejection>,
+) -> Result<Json<ConfirmChunksResponse>, ApiError> {
+    state.auth.check_user_write(session.user_id)?;
+    let request = parse_body(payload)?;
+    if request.chunks.is_empty() || request.chunks.len() > MAX_BATCH_CHUNKS {
+        return Err(ApiError::invalid_request());
+    }
+
+    let row = load_open_session(&state, session.user_id, session_id).await?;
+    let layout = ChunkLayout::parse(row.chunk_count, row.declared_size)
+        .map_err(|_| ApiError::internal("上传会话的分块布局无效"))?;
+
+    let mut items = Vec::with_capacity(request.chunks.len());
+    for chunk in request.chunks {
+        let Some(sha256) = decode_hex_array::<32>(&chunk.sha256) else {
+            items.push(ConfirmChunkItemResult {
+                idx: chunk.idx,
+                ok: false,
+                declared_size: None,
+                sha256: None,
+                confirmed_at: None,
+                code: Some("invalid_request".to_owned()),
+                message: Some("SHA-256 格式无效".to_owned()),
+            });
+            continue;
+        };
+        let Some(expected_size) = layout.size(chunk.idx) else {
+            items.push(ConfirmChunkItemResult {
+                idx: chunk.idx,
+                ok: false,
+                declared_size: None,
+                sha256: None,
+                confirmed_at: None,
+                code: Some("invalid_request".to_owned()),
+                message: Some("块序号超出会话范围".to_owned()),
+            });
+            continue;
+        };
+        if chunk.declared_size != expected_size {
+            items.push(ConfirmChunkItemResult {
+                idx: chunk.idx,
+                ok: false,
+                declared_size: Some(chunk.declared_size),
+                sha256: Some(encode_hex(&sha256)),
+                confirmed_at: None,
+                code: Some("chunk_size_mismatch".to_owned()),
+                message: Some("块大小与声明不一致".to_owned()),
+            });
+            continue;
+        }
+
+        // 每块独立完成“短读 → 事务外 stat → 短写”，互不占用连接与行锁。
+        let outcome = confirm_chunk_core(
+            &state,
+            session.user_id,
+            session_id,
+            chunk.idx,
+            chunk.declared_size,
+            sha256,
+        )
+        .await?;
+        items.push(match outcome {
+            ConfirmOutcome::Confirmed(response) => ConfirmChunkItemResult {
+                idx: chunk.idx,
+                ok: true,
+                declared_size: Some(response.declared_size),
+                sha256: Some(response.sha256),
+                confirmed_at: Some(response.confirmed_at),
+                code: None,
+                message: None,
+            },
+            ConfirmOutcome::ChunkNotFound => ConfirmChunkItemResult {
+                idx: chunk.idx,
+                ok: false,
+                declared_size: None,
+                sha256: None,
+                confirmed_at: None,
+                code: Some("chunk_not_found".to_owned()),
+                message: Some("块对象不存在".to_owned()),
+            },
+            ConfirmOutcome::SizeMismatch => ConfirmChunkItemResult {
+                idx: chunk.idx,
+                ok: false,
+                declared_size: Some(chunk.declared_size),
+                sha256: Some(encode_hex(&sha256)),
+                confirmed_at: None,
+                code: Some("chunk_size_mismatch".to_owned()),
+                message: Some("块大小与声明不一致".to_owned()),
+            },
+            ConfirmOutcome::Conflict => ConfirmChunkItemResult {
+                idx: chunk.idx,
+                ok: false,
+                declared_size: None,
+                sha256: None,
+                confirmed_at: None,
+                code: Some("conflict".to_owned()),
+                message: Some("块对象已被重新 presign，请重试".to_owned()),
+            },
+        });
+    }
+    Ok(Json(ConfirmChunksResponse { session_id, items }))
+}
+
+/// 单块确认的逐块结果。
+enum ConfirmOutcome {
+    Confirmed(ConfirmChunkResponse),
+    ChunkNotFound,
+    SizeMismatch,
+    Conflict,
+}
+
+/// 单块确认核心：短读校验 → 事务外 stat → 短事务复核并写入。
+///
+/// 绝不在持有连接/事务/会话行锁时调用对象存储；慢 OSS 只会拖慢当前请求，
+/// 不会占住连接池或阻塞同一会话的其他块。
+async fn confirm_chunk_core(
+    state: &AppState,
+    user_id: Uuid,
+    session_id: Uuid,
+    idx: i32,
+    declared_size: i64,
+    sha256: [u8; 32],
+) -> Result<ConfirmOutcome, ApiError> {
+    // 1. 短读：归属、open、布局与当前对象键。读完立即归还连接。
     let mut tx = state
         .database
         .pool()
         .begin()
         .await
         .map_err(ApiError::internal)?;
-    let row = load_session_for_update(&mut tx, session.user_id, session_id)
+    let row = load_session(&mut tx, user_id, session_id)
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(ApiError::not_found)?;
     require_open(&row)?;
-
     let layout = ChunkLayout::parse(row.chunk_count, row.declared_size)
         .map_err(|_| ApiError::internal("上传会话的分块布局无效"))?;
     let expected_size = layout.size(idx).ok_or_else(ApiError::invalid_request)?;
-    if request.declared_size != expected_size {
-        return Err(ApiError::chunk_size_mismatch());
+    if declared_size != expected_size {
+        tx.rollback().await.map_err(ApiError::internal)?;
+        return Ok(ConfirmOutcome::SizeMismatch);
+    }
+    let chunk = sqlx::query!(
+        r#"
+        SELECT object_key
+        FROM upload_chunks
+        WHERE user_id = $1 AND session_id = $2 AND idx = $3
+        "#,
+        user_id,
+        session_id,
+        idx,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(ApiError::internal)?;
+    let Some(chunk) = chunk else {
+        tx.rollback().await.map_err(ApiError::internal)?;
+        return Ok(ConfirmOutcome::ChunkNotFound);
+    };
+    let object_key = chunk.object_key;
+    tx.rollback().await.map_err(ApiError::internal)?;
+
+    // 2. 事务外 stat：慢 OSS 不占用数据库连接，也不持有任何行锁。
+    let metadata = state
+        .storage
+        .stat(&object_key)
+        .await
+        .map_err(ApiError::internal)?;
+    let Some(metadata) = metadata else {
+        return Ok(ConfirmOutcome::ChunkNotFound);
+    };
+    if metadata.size != expected_size as u64 {
+        return Ok(ConfirmOutcome::SizeMismatch);
     }
 
+    // 3. 短写事务：FOR UPDATE 复核对象键未变、会话仍 open，再写入确认。
+    let mut tx = state
+        .database
+        .pool()
+        .begin()
+        .await
+        .map_err(ApiError::internal)?;
+    let row = load_session_for_update(&mut tx, user_id, session_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(ApiError::not_found)?;
+    require_open(&row)?;
+    let layout = ChunkLayout::parse(row.chunk_count, row.declared_size)
+        .map_err(|_| ApiError::internal("上传会话的分块布局无效"))?;
+    let expected_size = layout.size(idx).ok_or_else(ApiError::invalid_request)?;
+    if declared_size != expected_size {
+        tx.rollback().await.map_err(ApiError::internal)?;
+        return Ok(ConfirmOutcome::SizeMismatch);
+    }
     let chunk = sqlx::query!(
         r#"
         SELECT object_key, declared_size, sha256, confirmed_at
@@ -879,24 +1254,21 @@ pub async fn confirm_chunk(
         WHERE user_id = $1 AND session_id = $2 AND idx = $3
         FOR UPDATE
         "#,
-        session.user_id,
+        user_id,
         session_id,
         idx,
     )
     .fetch_optional(&mut *tx)
     .await
-    .map_err(ApiError::internal)?
-    .ok_or_else(ApiError::chunk_not_found)?;
-
-    // stat 与后续写入在同一事务中：会话在确认过程中不会被提交。
-    let metadata = state
-        .storage
-        .stat(&chunk.object_key)
-        .await
-        .map_err(ApiError::internal)?
-        .ok_or_else(ApiError::chunk_not_found)?;
-    if metadata.size != expected_size as u64 {
-        return Err(ApiError::chunk_size_mismatch());
+    .map_err(ApiError::internal)?;
+    let Some(chunk) = chunk else {
+        tx.rollback().await.map_err(ApiError::internal)?;
+        return Ok(ConfirmOutcome::ChunkNotFound);
+    };
+    if chunk.object_key != object_key {
+        // stat 期间该块被重新 presign：旧对象的确认不能覆盖新对象。
+        tx.rollback().await.map_err(ApiError::internal)?;
+        return Ok(ConfirmOutcome::Conflict);
     }
 
     if let (Some(confirmed_at), Some(stored_sha)) = (chunk.confirmed_at, chunk.sha256.as_deref()) {
@@ -907,10 +1279,11 @@ pub async fn confirm_chunk(
                 sha256: encode_hex(stored_sha),
                 confirmed_at: format_time(confirmed_at),
             };
-            tx.commit().await.map_err(ApiError::internal)?;
-            return Ok(Json(response));
+            tx.rollback().await.map_err(ApiError::internal)?;
+            return Ok(ConfirmOutcome::Confirmed(response));
         }
-        return Err(ApiError::conflict());
+        tx.rollback().await.map_err(ApiError::internal)?;
+        return Ok(ConfirmOutcome::Conflict);
     }
 
     let confirmed_at = sqlx::query_scalar!(
@@ -923,7 +1296,7 @@ pub async fn confirm_chunk(
         WHERE user_id = $1 AND session_id = $2 AND idx = $3
         RETURNING confirmed_at
         "#,
-        session.user_id,
+        user_id,
         session_id,
         idx,
         sha256.as_slice(),
@@ -935,7 +1308,7 @@ pub async fn confirm_chunk(
     .ok_or_else(|| ApiError::internal("确认时间写入失败"))?;
 
     tx.commit().await.map_err(ApiError::internal)?;
-    Ok(Json(ConfirmChunkResponse {
+    Ok(ConfirmOutcome::Confirmed(ConfirmChunkResponse {
         idx,
         declared_size: expected_size,
         sha256: encode_hex(&sha256),

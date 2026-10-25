@@ -508,6 +508,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/upload-sessions/{session_id}/chunks/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/v1/upload-sessions/{session_id}/chunks/confirm`。
+         * @description 一次确认最多 [`MAX_BATCH_CHUNKS`] 个块；逐块独立结果，部分失败不影响其他块。
+         */
+        post: operations["confirm_chunks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload-sessions/{session_id}/chunks/presign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/v1/upload-sessions/{session_id}/chunks/presign`。
+         * @description 一次为最多 [`MAX_BATCH_CHUNKS`] 个块生成 URL；逐块独立结果。
+         */
+        post: operations["presign_chunks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/upload-sessions/{session_id}/chunks/{idx}/confirm": {
         parameters: {
             query?: never;
@@ -644,6 +684,26 @@ export interface components {
             chunk_count: number;
             committed_at: string;
         };
+        /** @description 批量确认中的一块。 */
+        ConfirmChunkItem: {
+            /** Format: int32 */
+            idx: number;
+            /** Format: int64 */
+            declared_size: number;
+            sha256: string;
+        };
+        /** @description 批量确认中的一项结果。 */
+        ConfirmChunkItemResult: {
+            /** Format: int32 */
+            idx: number;
+            ok: boolean;
+            /** Format: int64 */
+            declared_size?: number | null;
+            sha256?: string | null;
+            confirmed_at?: string | null;
+            code?: string | null;
+            message?: string | null;
+        };
         /** @description 块确认请求。 */
         ConfirmChunkRequest: {
             /**
@@ -662,6 +722,16 @@ export interface components {
             declared_size: number;
             sha256: string;
             confirmed_at: string;
+        };
+        /** @description 批量确认请求。一次最多 [`MAX_BATCH_CHUNKS`] 个块。 */
+        ConfirmChunksRequest: {
+            chunks: components["schemas"]["ConfirmChunkItem"][];
+        };
+        /** @description 批量确认响应。逐块独立结果，部分失败不影响其他块。 */
+        ConfirmChunksResponse: {
+            /** Format: uuid */
+            session_id: string;
+            items: components["schemas"]["ConfirmChunkItemResult"][];
         };
         /** @description 已确认块列表中的一项。 */
         ConfirmedChunk: {
@@ -907,6 +977,19 @@ export interface components {
             kdf_params: components["schemas"]["KdfParams"];
             kdf_salt: string;
         };
+        /** @description 批量 presign 中的一项：成功时带 URL，失败时带 code/message。 */
+        PresignChunkItemResult: {
+            /** Format: int32 */
+            idx: number;
+            ok: boolean;
+            url?: string | null;
+            method?: string | null;
+            expires_at?: string | null;
+            /** Format: int64 */
+            expected_size?: number | null;
+            code?: string | null;
+            message?: string | null;
+        };
         /** @description presign 响应。`url` 含签名，客户端只能用于单次 PUT；服务端不记录日志。 */
         PresignChunkResponse: {
             /** Format: int32 */
@@ -920,6 +1003,16 @@ export interface components {
              * @description 该块的期望密文大小；客户端必须上传恰好这么多字节。
              */
             expected_size: number;
+        };
+        /** @description 批量 presign 请求。一次最多 [`MAX_BATCH_CHUNKS`] 个块。 */
+        PresignChunksRequest: {
+            indices: number[];
+        };
+        /** @description 批量 presign 响应。逐块独立结果，部分失败不影响其他块。 */
+        PresignChunksResponse: {
+            /** Format: uuid */
+            session_id: string;
+            items: components["schemas"]["PresignChunkItemResult"][];
         };
         /** @description 就绪检查各子项状态。 */
         ReadyChecks: {
@@ -2679,6 +2772,154 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    confirm_chunks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 上传会话 ID */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmChunksRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmChunksResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    presign_chunks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 上传会话 ID */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresignChunksRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresignChunksResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

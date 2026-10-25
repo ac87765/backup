@@ -42,6 +42,7 @@ impl AppState {
         let auth = Arc::new(crate::auth::AuthContext::new(
             config.auth.clone(),
             config.auth_rate_limit_per_minute,
+            config.user_write_rate_limit_per_minute,
         ));
         Self {
             config: Arc::new(config),
@@ -150,6 +151,14 @@ pub fn build_router_with(state: AppState, extra: Router<AppState>) -> Router {
         .route(
             "/v1/upload-sessions/{session_id}/chunks",
             get(crate::files::uploads::list_confirmed_chunks),
+        )
+        .route(
+            "/v1/upload-sessions/{session_id}/chunks/presign",
+            post(crate::files::uploads::presign_chunks),
+        )
+        .route(
+            "/v1/upload-sessions/{session_id}/chunks/confirm",
+            post(crate::files::uploads::confirm_chunks),
         )
         .route(
             "/v1/upload-sessions/{session_id}/chunks/{idx}/presign",

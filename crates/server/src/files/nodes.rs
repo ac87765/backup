@@ -201,6 +201,7 @@ pub async fn create_folder(
     session: AuthenticatedSession,
     payload: Result<Json<CreateFolderRequest>, JsonRejection>,
 ) -> Result<Json<NodeSummary>, ApiError> {
+    state.auth.check_user_write(session.user_id)?;
     let request = parse_body(payload)?;
     let node_id = validate_node_id(request.id)?;
     let parent_id = validate_node_id(request.parent_id)?;
@@ -341,6 +342,7 @@ pub async fn rename_node(
     Path(node_id): Path<Uuid>,
     payload: Result<Json<RenameNodeRequest>, JsonRejection>,
 ) -> Result<Json<NodeSummary>, ApiError> {
+    state.auth.check_user_write(session.user_id)?;
     let request = parse_body(payload)?;
     let node_id = validate_node_id(node_id)?;
     let encrypted_meta = decode_encrypted_meta(&request.encrypted_meta)?;
@@ -430,6 +432,7 @@ pub async fn move_node(
     Path(node_id): Path<Uuid>,
     payload: Result<Json<MoveNodeRequest>, JsonRejection>,
 ) -> Result<Json<NodeSummary>, ApiError> {
+    state.auth.check_user_write(session.user_id)?;
     let request = parse_body(payload)?;
     let node_id = validate_node_id(node_id)?;
     let new_parent_id = validate_node_id(request.new_parent_id)?;
