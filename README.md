@@ -137,6 +137,12 @@ cargo run -p server -- openapi   # 输出 OpenAPI 规范到 stdout（不需要�
 260 MB/s 持续上传）。若调整块大小、批量上限或并发度，可按
 `(上传字节/秒 ÷ 4 MiB) × (2 ÷ 批量块数) × 60` 重新估算。
 
+文件夹备份（`add-folder-backup`）的生产模板 `deploy/oss/production.env.example`
+把 `BACKUP_USER_WRITE_RATE_LIMIT_PER_MINUTE` 设为 `1200`：一个小文件约 4 次写请求，
+1000 个小文件约 4000 次请求，默认 240 会持续触发 429。客户端会按 `Retry-After`
+自动退避，不把限流当作文件失败；具体上线步骤见
+[`docs/folder-backup-runbook.md`](docs/folder-backup-runbook.md)。
+
 密钥类配置在日志与 `Debug` 输出中固定显示为 `[REDACTED]`。缺项或非法值时进程以非零退出码
 退出，日志只指出配置项名称，不输出配置值。`BACKUP_MAIL_MODE=file` 启动时会输出一条
 WARN，提示邮件未真正发送。
