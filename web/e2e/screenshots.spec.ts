@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
@@ -112,6 +113,41 @@ async function finishUpload(page: Page, name: string): Promise<void> {
   await page.unroute('**/backup/v1/**')
 }
 
+/** 按住文件夹任务的对象 PUT，截取分组进度面板。 */
+async function startSlowFolderUpload(
+  page: Page,
+  directory: string,
+): Promise<() => void> {
+  let released = false
+  let release: () => void = () => undefined
+  const gate = new Promise<void>((resolve) => {
+    release = () => {
+      released = true
+      resolve()
+    }
+  })
+  await page.route('**/backup/v1/**', async (route) => {
+    if (!released) {
+      await gate
+    }
+    await route.continue()
+  })
+  await page.setInputFiles('[data-testid="folder-upload-input"]', directory)
+  await expect(
+    page.locator('[data-testid="folder-job"]').last(),
+  ).toHaveAttribute('data-status', 'running', { timeout: 60_000 })
+  return release
+}
+
+async function finishFolderUpload(page: Page): Promise<void> {
+  await expect(page.locator('[data-testid="folder-job"]').last()).toHaveAttribute(
+    'data-status',
+    'done',
+    { timeout: 180_000 },
+  )
+  await page.unroute('**/backup/v1/**')
+}
+
 async function clearCompletedTransfers(page: Page): Promise<void> {
   const clear = page.getByTestId('transfer-clear-completed')
   if (await clear.isVisible().catch(() => false)) {
@@ -217,6 +253,21 @@ test('桌面与手机两种视口截图', async ({ page }) => {
   releaseDesktop()
   await finishUpload(page, transferDesktop)
   await clearCompletedTransfers(page)
+
+  // 文件夹任务分组（design D6 / add-folder-backup 5.3 截图）。
+  const screenshotFolder = await mkdtemp(
+    path.join(tmpdir(), 'backup-shots-folder-'),
+  )
+  const folderRoot = path.join(screenshotFolder, `备份文件夹-${randomUUID()}`)
+  await mkdir(folderRoot, { recursive: true })
+  await writeFile(path.join(folderRoot, 'a.txt'), 'screenshot a')
+  await writeFile(path.join(folderRoot, 'b.txt'), 'screenshot b')
+  const releaseFolder = await startSlowFolderUpload(page, folderRoot)
+  await capture(page, 'folder-job-desktop')
+  releaseFolder()
+  await finishFolderUpload(page)
+  await clearCompletedTransfers(page)
+  await rm(screenshotFolder, { recursive: true, force: true })
 
   // 回收站。
   await openFileMenu(page, photoFolder)

@@ -57,6 +57,14 @@ const env = {
   BACKUP_AUTH_PEPPER_VERSION: '1',
   BACKUP_AUTH_PEPPER: 'e2e-pepper-value-0123456789abcdef',
   BACKUP_AUTH_FAKE_SALT_KEY: 'e2e-fake-salt-key-0123456789abcdef',
+  // 只在 E2E 显式要求时降低每用户写限流（用于 1000 小文件 429 退避场景）；
+  // 不设置时沿用服务端默认值。
+  ...(process.env.E2E_USER_WRITE_RATE_LIMIT
+    ? {
+        BACKUP_USER_WRITE_RATE_LIMIT_PER_MINUTE:
+          process.env.E2E_USER_WRITE_RATE_LIMIT,
+      }
+    : {}),
 }
 
 const migrated = spawnSync(serverBinary, ['migrate'], {

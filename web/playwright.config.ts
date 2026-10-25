@@ -47,6 +47,9 @@ export default defineConfig({
       ...(process.env.SKIP_WASM_BUILD
         ? { SKIP_WASM_BUILD: process.env.SKIP_WASM_BUILD }
         : {}),
+      ...(process.env.E2E_USER_WRITE_RATE_LIMIT
+        ? { E2E_USER_WRITE_RATE_LIMIT: process.env.E2E_USER_WRITE_RATE_LIMIT }
+        : {}),
     },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
