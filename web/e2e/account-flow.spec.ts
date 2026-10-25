@@ -150,6 +150,7 @@ test('注册 → 验证 → 登录 → 刷新解锁 → 改密 → 恢复重置 
   await page.getByTestId('unlock-password').fill(OLD_PASSWORD)
   await page.getByTestId('unlock-submit').click()
   await expect(page.getByTestId('change-old-password')).toBeVisible()
+  await expect(page).toHaveURL(/\/settings#password$/)
 
   // 修改密码：旧密码错误时拒绝，正确时成功。
   await page.getByTestId('change-old-password').fill('wrong password')
@@ -162,10 +163,9 @@ test('注册 → 验证 → 登录 → 刷新解锁 → 改密 → 恢复重置 
   await page.getByTestId('change-submit').click()
   await expect(page.getByRole('status')).toContainText('密码已修改')
 
-  // 退出后用旧恢复密钥重置密码（页面切换使用应用内链接）。
-  await page.getByRole('link', { name: '返回主页' }).click()
-  await expect(page.getByTestId('home-email')).toHaveText(email)
-  await page.getByRole('button', { name: '退出登录' }).click()
+  // 退出后用旧恢复密钥重置密码（通过账号菜单退出）。
+  await page.getByRole('button', { name: `账号菜单 ${email}` }).click()
+  await page.getByRole('menuitem', { name: '退出登录' }).click()
   await expect(
     page.getByRole('heading', { name: '端对端加密备份' }),
   ).toBeVisible()
@@ -186,7 +186,9 @@ test('注册 → 验证 → 登录 → 刷新解锁 → 改密 → 恢复重置 
   await expect(page.getByTestId('home-email')).toHaveText(email)
 
   // 轮换恢复密钥：需要当前密码，确认后旧恢复密钥失效。
-  await page.getByRole('link', { name: '轮换恢复密钥' }).click()
+  await page.getByRole('button', { name: `账号菜单 ${email}` }).click()
+  await page.getByRole('menuitem', { name: '账号设置' }).click()
+  await page.getByRole('tab', { name: '恢复密钥' }).click()
   await page.getByTestId('rotate-current-password').fill(RESET_PASSWORD)
   await page.getByTestId('rotate-prepare').click()
   await expect(page.getByTestId('recovery-display')).toBeVisible()

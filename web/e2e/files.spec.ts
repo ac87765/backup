@@ -56,6 +56,7 @@ function fileRow(page: Page, name: string) {
 }
 
 async function createFolder(page: Page, name: string): Promise<void> {
+  await page.getByTestId('upload-menu').click()
   await page.getByTestId('new-folder').click()
   await page.getByTestId('folder-name').fill(name)
   await page.getByTestId('create-folder-submit').click()
@@ -147,8 +148,10 @@ test('文件浏览器：多级文件夹 → 重命名 → 移动 → 同名冲�
   const folderRenamed = `${secretPrefix}-C2`
 
   await registerVerifyAndLogin(page, email)
-  await page.getByRole('link', { name: '文件管理' }).click()
-  await expect(page.getByRole('heading', { name: '文件管理' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
+  await expect(
+    page.getByRole('link', { name: '全部文件' }),
+  ).toHaveAttribute('aria-current', 'page')
   await expect(page.getByTestId('usage-summary')).toContainText('已用')
 
   await createFolder(page, folderA)
@@ -162,8 +165,9 @@ test('文件浏览器：多级文件夹 → 重命名 → 移动 → 同名冲�
 
   // 重命名 C → C2。
   await fileRow(page, folderC)
-    .getByRole('button', { name: `重命名 ${folderC}` })
+    .getByRole('button', { name: `更多 ${folderC}` })
     .click()
+  await page.getByRole('menuitem', { name: `重命名 ${folderC}` }).click()
   await page.getByTestId('rename-name').fill(folderRenamed)
   await page.getByTestId('rename-submit').click()
   await expect(page.getByTestId('rename-name')).toHaveCount(0)
@@ -172,8 +176,9 @@ test('文件浏览器：多级文件夹 → 重命名 → 移动 → 同名冲�
 
   // 把 C2 移动到 A：选择器从根开始，进入 A 后选择当前文件夹。
   await fileRow(page, folderRenamed)
-    .getByRole('button', { name: `移动 ${folderRenamed}` })
+    .getByRole('button', { name: `更多 ${folderRenamed}` })
     .click()
+  await page.getByRole('menuitem', { name: `移动 ${folderRenamed}` }).click()
   await expect(page.getByTestId('folder-picker')).toBeVisible()
   await page
     .locator(`[data-testid="picker-folder"][data-name="${folderA}"]`)
@@ -190,6 +195,7 @@ test('文件浏览器：多级文件夹 → 重命名 → 移动 → 同名冲�
   await expect(fileRow(page, folderRenamed)).toBeVisible()
 
   // 同名冲突：在 A 下再创建 C2，服务端名称令牌冲突，页面显示“同名”。
+  await page.getByTestId('upload-menu').click()
   await page.getByTestId('new-folder').click()
   await page.getByTestId('folder-name').fill(folderRenamed)
   await page.getByTestId('create-folder-submit').click()
@@ -198,8 +204,9 @@ test('文件浏览器：多级文件夹 → 重命名 → 移动 → 同名冲�
 
   // 移入回收站 → 恢复。
   await fileRow(page, folderRenamed)
-    .getByRole('button', { name: `删除 ${folderRenamed}` })
+    .getByRole('button', { name: `更多 ${folderRenamed}` })
     .click()
+  await page.getByRole('menuitem', { name: `删除 ${folderRenamed}` }).click()
   await expect(fileRow(page, folderRenamed)).toHaveCount(0)
   await page.getByTestId('open-trash').click()
   await expect(trashItem(page, folderRenamed)).toBeVisible()
@@ -207,12 +214,17 @@ test('文件浏览器：多级文件夹 → 重命名 → 移动 → 同名冲�
     .getByRole('button', { name: `恢复 ${folderRenamed}` })
     .click()
   await expect(trashItem(page, folderRenamed)).toHaveCount(0)
+  // 回收站是独立视图：回到文件页并重新进入 A 验证恢复后的位置。
+  await page.getByRole('link', { name: '全部文件' }).click()
+  await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
+  await openFolder(page, folderA)
   await expect(fileRow(page, folderRenamed)).toBeVisible()
 
   // 再删除并永久删除。
   await fileRow(page, folderRenamed)
-    .getByRole('button', { name: `删除 ${folderRenamed}` })
+    .getByRole('button', { name: `更多 ${folderRenamed}` })
     .click()
+  await page.getByRole('menuitem', { name: `删除 ${folderRenamed}` }).click()
   await expect(fileRow(page, folderRenamed)).toHaveCount(0)
   await page.getByTestId('open-trash').click()
   await trashItem(page, folderRenamed)

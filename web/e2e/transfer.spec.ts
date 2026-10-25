@@ -49,8 +49,7 @@ async function registerVerifyAndLogin(page: Page, email: string): Promise<void> 
   await page.getByTestId('login-password').fill(PASSWORD)
   await page.getByTestId('login-submit').click()
   await expect(page.getByTestId('home-email')).toHaveText(email)
-  await page.getByRole('link', { name: '文件管理' }).click()
-  await expect(page.getByRole('heading', { name: '文件管理' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
 }
 
 async function installDownloadFallback(page: Page): Promise<void> {
@@ -294,8 +293,9 @@ test('上传新版本 → 恢复旧版本 → 下载旧内容', async ({ page })
   await uploadFile(page, name, oldContent)
 
   await fileRow(page, name)
-    .getByRole('button', { name: `上传新版本 ${name}` })
+    .getByRole('button', { name: `更多 ${name}` })
     .click()
+  await page.getByRole('menuitem', { name: `上传新版本 ${name}` }).click()
   await page.setInputFiles('[data-testid="version-input"]', {
     name,
     mimeType: 'text/plain',
@@ -307,8 +307,9 @@ test('上传新版本 → 恢复旧版本 → 下载旧内容', async ({ page })
   })
 
   await fileRow(page, name)
-    .getByRole('button', { name: `版本历史 ${name}` })
+    .getByRole('button', { name: `更多 ${name}` })
     .click()
+  await page.getByRole('menuitem', { name: `版本历史 ${name}` }).click()
   const restoreButtons = page.locator('[data-testid^="restore-version-"]')
   await expect(restoreButtons).toHaveCount(1)
   await restoreButtons.last().click()

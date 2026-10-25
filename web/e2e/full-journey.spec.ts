@@ -87,6 +87,7 @@ async function fillRecoveryConfirmation(page: Page): Promise<void> {
 }
 
 async function createFolder(page: Page, name: string): Promise<void> {
+  await page.getByTestId('upload-menu').click()
   await page.getByTestId('new-folder').click()
   await page.getByTestId('folder-name').fill(name)
   await page.getByTestId('create-folder-submit').click()
@@ -249,8 +250,7 @@ test('容器化全链路：注册 → 验证 → 登录 → 文件夹 → 上传
     await captureSessionCookie(page)
 
     // 4. 文件夹 + 上传 + 下载 SHA-256 比对。
-    await page.getByRole('link', { name: '文件管理' }).click()
-    await expect(page.getByRole('heading', { name: '文件管理' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
     await createFolder(page, folderName)
     await uploadFile(page, fileName, oldContent)
     const downloaded = await downloadCurrentFile(page, fileName)
@@ -259,8 +259,9 @@ test('容器化全链路：注册 → 验证 → 登录 → 文件夹 → 上传
 
     // 5. 上传新版本 → 版本历史 → 恢复旧版本 → 下载旧内容。
     await fileRow(page, fileName)
-      .getByRole('button', { name: `上传新版本 ${fileName}` })
+      .getByRole('button', { name: `更多 ${fileName}` })
       .click()
+    await page.getByRole('menuitem', { name: `上传新版本 ${fileName}` }).click()
     await page.setInputFiles('[data-testid="version-input"]', {
       name: fileName,
       mimeType: 'application/octet-stream',
@@ -271,8 +272,9 @@ test('容器化全链路：注册 → 验证 → 登录 → 文件夹 → 上传
       timeout: 120_000,
     })
     await fileRow(page, fileName)
-      .getByRole('button', { name: `版本历史 ${fileName}` })
+      .getByRole('button', { name: `更多 ${fileName}` })
       .click()
+    await page.getByRole('menuitem', { name: `版本历史 ${fileName}` }).click()
     const restoreButtons = page.locator('[data-testid^="restore-version-"]')
     await expect(restoreButtons).toHaveCount(1)
     await restoreButtons.last().click()
@@ -291,8 +293,9 @@ test('容器化全链路：注册 → 验证 → 登录 → 文件夹 → 上传
 
     // 6. 回收站：删除 → 列表中可见 → 恢复。
     await fileRow(page, fileName)
-      .getByRole('button', { name: `删除 ${fileName}` })
+      .getByRole('button', { name: `更多 ${fileName}` })
       .click()
+    await page.getByRole('menuitem', { name: `删除 ${fileName}` }).click()
     await expect(fileRow(page, fileName)).toHaveCount(0)
     await page.getByTestId('open-trash').click()
     await expect(trashItem(page, fileName)).toBeVisible()
@@ -300,18 +303,19 @@ test('容器化全链路：注册 → 验证 → 登录 → 文件夹 → 上传
       .getByRole('button', { name: `恢复 ${fileName}` })
       .click()
     await expect(trashItem(page, fileName)).toHaveCount(0)
+    await page.getByRole('link', { name: '全部文件' }).click()
     await expect(fileRow(page, fileName)).toBeVisible()
 
     // 7. 修改密码（旧密码证明 + 新密码），成功后仍能继续使用。
-    await page.getByRole('link', { name: '返回主页' }).click()
-    await page.getByRole('link', { name: '修改密码' }).click()
+    await page.getByRole('button', { name: `账号菜单 ${email}` }).click()
+    await page.getByRole('menuitem', { name: '账号设置' }).click()
     await page.getByTestId('change-old-password').fill(PASSWORD)
     await page.getByTestId('change-new-password').fill(NEW_PASSWORD)
     await page.getByTestId('change-confirm-password').fill(NEW_PASSWORD)
     await page.getByTestId('change-submit').click()
     await expect(page.getByRole('status')).toContainText('密码已修改')
-    await page.getByRole('link', { name: '返回主页' }).click()
-    await page.getByRole('button', { name: '退出登录' }).click()
+    await page.getByRole('button', { name: `账号菜单 ${email}` }).click()
+    await page.getByRole('menuitem', { name: '退出登录' }).click()
     await expect(
       page.getByRole('heading', { name: '端对端加密备份' }),
     ).toBeVisible()
@@ -333,7 +337,7 @@ test('容器化全链路：注册 → 验证 → 登录 → 文件夹 → 上传
     await captureSessionCookie(page)
 
     // 9. 重置后数据仍可解密：文件与文件夹都在，下载当前版本（已恢复的旧内容）比对。
-    await page.getByRole('link', { name: '文件管理' }).click()
+    await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
     await expect(fileRow(page, folderName)).toBeVisible()
     await expect(fileRow(page, fileName)).toBeVisible()
     const afterReset = await downloadCurrentFile(page, fileName)
