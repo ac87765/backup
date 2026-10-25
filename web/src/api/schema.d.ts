@@ -217,6 +217,204 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/v1/folders`。
+         * @description 同一客户端 ID + 同一内容重复提交返回同一结果；同一 ID 不同内容返回
+         *     `conflict`。同名冲突由部分唯一索引兜底。
+         */
+        post: operations["create_folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/v1/me/usage`。 */
+        get: operations["get_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** `DELETE /api/v1/nodes/{node_id}`：把节点及其子树移入回收站。 */
+        delete: operations["delete_node"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node_id}/children": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/v1/nodes/{node_id}/children`。 */
+        get: operations["list_children"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node_id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * `PATCH /api/v1/nodes/{node_id}/move`。
+         * @description 事务内先锁 `users` 行，使同一用户的移动串行化；再用递归 CTE 检查目标
+         *     不是自身或后代。这样并发 A→B 与 B→A 最多只有一个成功，不会形成环。
+         */
+        patch: operations["move_node"];
+        trace?: never;
+    };
+    "/api/v1/nodes/{node_id}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** `PATCH /api/v1/nodes/{node_id}/rename`。 */
+        patch: operations["rename_node"];
+        trace?: never;
+    };
+    "/api/v1/nodes/{node_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/v1/nodes/{node_id}/versions`。 */
+        get: operations["list_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node_id}/versions/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/v1/nodes/{node_id}/versions/restore`。
+         * @description 恢复会新建一个指向原 content 的版本并把它设为当前版本；旧版本仍保留。
+         */
+        post: operations["restore_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/v1/trash`：只列每个 batch 的顶层项。 */
+        get: operations["list_trash"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/trash/{node_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** `DELETE /api/v1/trash/{node_id}`：永久删除一个回收站项目。 */
+        delete: operations["permanently_delete_node"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/trash/{node_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** `POST /api/v1/trash/{node_id}/restore`。 */
+        post: operations["restore_node"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -262,6 +460,28 @@ export interface components {
             new_kdf_salt: string;
             new_wrapped_mk: string;
         };
+        /** @description 列目录响应。客户端解密名称后在本地排序。 */
+        ChildrenResponse: {
+            items: components["schemas"]["NodeSummary"][];
+            /**
+             * Format: uuid
+             * @description 为 `null` 表示没有更多页。
+             */
+            next_cursor?: string | null;
+        };
+        /** @description 创建文件夹请求。`id` 是客户端生成的幂等键。 */
+        CreateFolderRequest: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            parent_id: string;
+            /** @description 包裹的节点密钥（hex）。 */
+            wrapped_key: string;
+            /** @description 加密元数据（hex）。 */
+            encrypted_meta: string;
+            /** @description 名称令牌（hex）。 */
+            name_token: string;
+        };
         /** @description API 错误响应体（对外契约）。 */
         ErrorBody: {
             /** @description 稳定的机器可读错误码。 */
@@ -295,6 +515,16 @@ export interface components {
              */
             p_cost: number;
         };
+        /** @description 列目录查询参数。 */
+        ListChildrenQuery: {
+            /** @description 上一页返回的 `next_cursor`；只编码排序键（节点 ID）。 */
+            cursor?: string | null;
+            /**
+             * Format: int64
+             * @description 页大小（1–1000，默认 200）。
+             */
+            limit?: number | null;
+        };
         LoginRequest: {
             email: string;
             auth_key: string;
@@ -319,9 +549,50 @@ export interface components {
             kdf_salt: string;
             wrapped_mk: string;
         };
+        /** @description 移动请求。名称令牌必须由客户端针对新父节点重新计算。 */
+        MoveNodeRequest: {
+            /** Format: uuid */
+            new_parent_id: string;
+            /** Format: int32 */
+            row_version: number;
+            name_token: string;
+        };
+        /** @description 节点摘要。所有二进制字段都用 hex 传输。 */
+        NodeSummary: {
+            /** Format: uuid */
+            id: string;
+            kind: string;
+            /** Format: uuid */
+            parent_id?: string | null;
+            wrapped_key?: string | null;
+            encrypted_meta?: string | null;
+            name_token?: string | null;
+            /** Format: int32 */
+            row_version: number;
+            current_version?: components["schemas"]["VersionSummary"] | null;
+            created_at: string;
+            updated_at: string;
+            /** @description 回收站中的节点才非空。 */
+            deleted_at?: string | null;
+            /** Format: uuid */
+            trash_batch_id?: string | null;
+        };
         /** @description 通用成功响应。 */
         OkResponse: {
             ok: boolean;
+        };
+        /** @description 永久删除统计。 */
+        PermanentDeleteResponse: {
+            /** Format: int64 */
+            deleted_nodes: number;
+            /** Format: int64 */
+            deleted_versions: number;
+            /** Format: int64 */
+            deleted_contents: number;
+            /** Format: int64 */
+            freed_bytes: number;
+            /** Format: int64 */
+            queued_objects: number;
         };
         /** @description `POST /api/v1/auth/prelogin`。 */
         PreloginRequest: {
@@ -368,8 +639,41 @@ export interface components {
             recovery_wrapped_mk: string;
             recovery_auth_key: string;
         };
+        /** @description 重命名请求。`row_version` 是乐观锁版本号。 */
+        RenameNodeRequest: {
+            /** Format: int32 */
+            row_version: number;
+            encrypted_meta: string;
+            name_token: string;
+        };
         ResendVerificationRequest: {
             email: string;
+        };
+        /**
+         * @description 恢复请求。
+         *
+         *     不指定 `new_parent_id` 时恢复到原父节点并沿用原名称令牌；指定时必须同时
+         *     提交客户端针对新父节点重新计算的 `name_token`。
+         */
+        RestoreNodeRequest: {
+            /** Format: uuid */
+            new_parent_id?: string | null;
+            name_token?: string | null;
+        };
+        /** @description 恢复旧版本请求。 */
+        RestoreVersionRequest: {
+            /**
+             * Format: uuid
+             * @description 被恢复的历史版本 ID。
+             */
+            source_version_id: string;
+            /**
+             * Format: uuid
+             * @description 客户端生成的新版本 ID（幂等键，必须为 UUIDv4）。
+             */
+            new_version_id: string;
+            /** @description 客户端用同一 content_id 重新加密的版本元数据（hex）。 */
+            encrypted_meta: string;
         };
         RotateRecoveryKeyRequest: {
             /** @description 当前密码派生出的认证密钥，用于证明知道当前密码。 */
@@ -391,9 +695,70 @@ export interface components {
         SessionsResponse: {
             sessions: components["schemas"]["SessionSummary"][];
         };
+        /** @description 软删除响应。重复删除同一节点返回同一个 `trash_batch_id`。 */
+        TrashEntryResponse: {
+            /** Format: uuid */
+            node_id: string;
+            /** Format: uuid */
+            trash_batch_id: string;
+        };
+        /** @description 回收站列表参数。 */
+        TrashQuery: {
+            /** Format: int64 */
+            limit?: number | null;
+        };
+        /** @description 回收站列表响应（只含每个 batch 的顶层项）。 */
+        TrashResponse: {
+            items: components["schemas"]["NodeSummary"][];
+        };
+        /** @description 已用 / 预留 / 总额（字节）。 */
+        UsageResponse: {
+            /**
+             * Format: int64
+             * @description 所有保留版本（含回收站）引用 content 的密文字节数之和。
+             */
+            used_bytes: number;
+            /**
+             * Format: int64
+             * @description 进行中上传会话预留的字节数（第 8 组使用）。
+             */
+            reserved_bytes: number;
+            /**
+             * Format: int64
+             * @description 账号配额上限。
+             */
+            quota_bytes: number;
+        };
         VerifyEmailRequest: {
             /** @description 前端从邮件链接的 `#token=` 片段读取后提交，绝不放在 URL 路径里。 */
             token: string;
+        };
+        /** @description 版本列表参数。 */
+        VersionQuery: {
+            /** Format: int64 */
+            limit?: number | null;
+        };
+        /** @description 当前节点的版本摘要（当前版本与历史版本共用）。 */
+        VersionSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            content_id: string;
+            /** @description 版本元数据密文（hex）。 */
+            encrypted_meta: string;
+            /**
+             * Format: int64
+             * @description 该版本所引用 content 的密文字节数。
+             */
+            ciphertext_size: number;
+            /** Format: int32 */
+            chunk_count: number;
+            is_current: boolean;
+            created_at: string;
+        };
+        /** @description 版本列表响应（按创建时间倒序，含当前版本标记）。 */
+        VersionsResponse: {
+            items: components["schemas"]["VersionSummary"][];
         };
     };
     responses: never;
@@ -1025,6 +1390,670 @@ export interface operations {
                 };
             };
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_folder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFolderRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeSummary"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_usage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_node: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 节点 ID */
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrashEntryResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_children: {
+        parameters: {
+            query?: {
+                /** @description 上一页的 next_cursor */
+                cursor?: string;
+                /** @description 页大小 1–1000，默认 200 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description 文件夹节点 ID */
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChildrenResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    move_node: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 节点 ID */
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveNodeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeSummary"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    rename_node: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 节点 ID */
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameNodeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeSummary"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_versions: {
+        parameters: {
+            query?: {
+                /** @description 最多返回条数，默认 200 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description 文件节点 ID */
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionsResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    restore_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 文件节点 ID */
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreVersionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionSummary"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_trash: {
+        parameters: {
+            query?: {
+                /** @description 最多返回条数，默认 200 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrashResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    permanently_delete_node: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 回收站顶层节点 ID */
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermanentDeleteResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    restore_node: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 回收站顶层节点 ID */
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreNodeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeSummary"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
