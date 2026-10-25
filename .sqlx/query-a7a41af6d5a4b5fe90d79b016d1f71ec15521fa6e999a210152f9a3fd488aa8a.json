@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE upload_sessions\n        SET status = 'committed',\n            committed_at = now()\n        WHERE id = $1 AND user_id = $2 AND status = 'open'\n        RETURNING committed_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "committed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a7a41af6d5a4b5fe90d79b016d1f71ec15521fa6e999a210152f9a3fd488aa8a"
+}

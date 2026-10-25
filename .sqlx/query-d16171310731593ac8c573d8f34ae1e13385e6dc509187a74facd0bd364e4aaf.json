@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT idx, declared_size, sha256, confirmed_at\n        FROM upload_chunks\n        WHERE user_id = $1 AND session_id = $2 AND confirmed_at IS NOT NULL\n        ORDER BY idx\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "idx",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "declared_size",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "sha256",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "confirmed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "d16171310731593ac8c573d8f34ae1e13385e6dc509187a74facd0bd364e4aaf"
+}

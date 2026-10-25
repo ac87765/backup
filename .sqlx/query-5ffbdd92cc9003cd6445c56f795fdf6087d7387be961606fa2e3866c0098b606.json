@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT object_key, superseded_object_keys\n        FROM upload_chunks\n        WHERE user_id = $1 AND session_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "object_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "superseded_object_keys",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "5ffbdd92cc9003cd6445c56f795fdf6087d7387be961606fa2e3866c0098b606"
+}

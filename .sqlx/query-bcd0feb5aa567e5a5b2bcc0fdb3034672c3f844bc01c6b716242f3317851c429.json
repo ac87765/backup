@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT uc.object_key, uc.superseded_object_keys\n                FROM upload_chunks uc\n                JOIN upload_sessions us\n                    ON us.id = uc.session_id AND us.user_id = uc.user_id\n                WHERE us.status = 'open'\n                  AND (\n                      uc.object_key = ANY($1::text[])\n                      OR uc.superseded_object_keys && $1::text[]\n                  )\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "object_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "superseded_object_keys",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "bcd0feb5aa567e5a5b2bcc0fdb3034672c3f844bc01c6b716242f3317851c429"
+}

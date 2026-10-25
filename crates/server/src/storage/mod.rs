@@ -21,7 +21,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::Once;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use opendal::Operator;
@@ -98,6 +98,9 @@ pub struct ObjectEntry {
     pub key: String,
     pub size: u64,
     pub is_dir: bool,
+    /// 对象最后修改时间。孤儿巡检据此只处理超过 48 小时的对象；
+    /// 后端未提供时为 `None`，巡检会保守地跳过该对象。
+    pub last_modified: Option<SystemTime>,
 }
 
 /// 预签名请求。
@@ -198,6 +201,13 @@ impl FaultInjectionConfig {
 pub trait ObjectBackend: Send + Sync {
     async fn stat(&self, object_key: &str) -> Result<Option<ObjectMetadata>, StorageError>;
     async fn list(&self, prefix: &str, limit: usize) -> Result<Vec<ObjectEntry>, StorageError>;
+    /// 带 `start_after` 游标的分页列举，供大 bucket 的增量巡检使用。
+    async fn list_page(
+        &self,
+        prefix: &str,
+        start_after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ObjectEntry>, StorageError>;
     /// 仅供后台删除队列使用；请求处理路径不得调用。
     async fn delete(&self, object_key: &str) -> Result<(), StorageError>;
     async fn presign_write(
@@ -268,6 +278,18 @@ impl Storage {
         limit: usize,
     ) -> Result<Vec<ObjectEntry>, StorageError> {
         self.backend.list(prefix, limit).await
+    }
+
+    /// 带游标的分页列举：返回至多 `limit` 条，`start_after` 是上一页最后一条的键。
+    ///
+    /// 调用方（孤儿巡检）必须持久化游标，保证大 bucket 可以跨多次运行逐步扫完。
+    pub async fn list_prefix_page(
+        &self,
+        prefix: &str,
+        start_after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ObjectEntry>, StorageError> {
+        self.backend.list_page(prefix, start_after, limit).await
     }
 
     /// 生成预签名 PUT URL；有效期必须在 `(0, 15 分钟]` 内。
@@ -398,6 +420,17 @@ impl ObjectBackend for FaultInjector {
         self.inner.list(prefix, limit).await
     }
 
+    async fn list_page(
+        &self,
+        prefix: &str,
+        start_after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ObjectEntry>, StorageError> {
+        self.maybe_fail(ObjectOperation::List)?;
+        self.maybe_delay(ObjectOperation::List).await;
+        self.inner.list_page(prefix, start_after, limit).await
+    }
+
     async fn delete(&self, object_key: &str) -> Result<(), StorageError> {
         self.maybe_fail(ObjectOperation::Delete)?;
         self.maybe_delay(ObjectOperation::Delete).await;
@@ -455,17 +488,32 @@ impl ObjectBackend for OpenDalBackend {
     }
 
     async fn list(&self, prefix: &str, limit: usize) -> Result<Vec<ObjectEntry>, StorageError> {
+        self.list_page(prefix, None, limit).await
+    }
+
+    async fn list_page(
+        &self,
+        prefix: &str,
+        start_after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ObjectEntry>, StorageError> {
         if limit == 0 {
             return Ok(Vec::new());
         }
         // 不能用 `list_with(..).limit(n)`：那只是每页大小的提示，底层仍会翻完所有分页
         // 并把结果全部物化到内存。`lister_with` 是流式的，读取到 n 条后立即停止。
-        let mut lister = self
+        //
+        // `recursive(true)` 让 `v1/` 这类前缀也能看到用户目录下的对象；
+        // `start_after` 让孤儿巡检从上次游标继续，而不是每次从头扫。
+        let mut request = self
             .internal
             .lister_with(prefix)
-            .limit(limit)
-            .await
-            .map_err(StorageError::Operation)?;
+            .recursive(true)
+            .limit(limit);
+        if let Some(start_after) = start_after {
+            request = request.start_after(start_after);
+        }
+        let mut lister = request.await.map_err(StorageError::Operation)?;
         let mut entries = Vec::with_capacity(limit.min(128));
         while let Some(entry) = lister.next().await {
             let entry = entry.map_err(StorageError::Operation)?;
@@ -474,6 +522,7 @@ impl ObjectBackend for OpenDalBackend {
                 key: entry.path().to_owned(),
                 size: metadata.content_length(),
                 is_dir: metadata.is_dir(),
+                last_modified: metadata.last_modified().map(SystemTime::from),
             });
             if entries.len() >= limit {
                 break;
@@ -576,6 +625,16 @@ mod tests {
         async fn list(
             &self,
             _prefix: &str,
+            _limit: usize,
+        ) -> Result<Vec<ObjectEntry>, StorageError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(Vec::new())
+        }
+
+        async fn list_page(
+            &self,
+            _prefix: &str,
+            _start_after: Option<&str>,
             _limit: usize,
         ) -> Result<Vec<ObjectEntry>, StorageError> {
             self.calls.fetch_add(1, Ordering::SeqCst);

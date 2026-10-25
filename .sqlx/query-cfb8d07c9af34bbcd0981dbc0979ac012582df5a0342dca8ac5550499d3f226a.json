@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT object_key\n                FROM object_deletions\n                WHERE object_key = ANY($1::text[])\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "object_key",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cfb8d07c9af34bbcd0981dbc0979ac012582df5a0342dca8ac5550499d3f226a"
+}

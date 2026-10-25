@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            id, user_id, content_id, kind, node_id, parent_id,\n            wrapped_key, encrypted_meta, name_token,\n            version_id, version_meta, chunk_count, declared_size, reserved_bytes,\n            status, expires_at, created_at, committed_at\n        FROM upload_sessions\n        WHERE content_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "content_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "node_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "parent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "wrapped_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "encrypted_meta",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "name_token",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 9,
+        "name": "version_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 10,
+        "name": "version_meta",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 11,
+        "name": "chunk_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "declared_size",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "reserved_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "committed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "1de5595044448ff535c45f16693277bdab5788f677ae001818c5a40d1de9e6f9"
+}

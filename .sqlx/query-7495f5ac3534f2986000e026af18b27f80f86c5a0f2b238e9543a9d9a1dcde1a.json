@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT idx, object_key, ciphertext_size, sha256\n        FROM chunks\n        WHERE user_id = $1 AND content_id = $2\n        ORDER BY idx\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "idx",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "object_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext_size",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "sha256",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7495f5ac3534f2986000e026af18b27f80f86c5a0f2b238e9543a9d9a1dcde1a"
+}

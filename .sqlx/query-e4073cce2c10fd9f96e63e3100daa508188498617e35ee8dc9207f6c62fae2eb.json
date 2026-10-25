@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO nodes (\n                id, user_id, parent_id, kind, wrapped_key, encrypted_meta,\n                name_token, current_version_id\n            )\n            VALUES ($1, $2, $3, 'file', $4, $5, $6, $7)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e4073cce2c10fd9f96e63e3100daa508188498617e35ee8dc9207f6c62fae2eb"
+}

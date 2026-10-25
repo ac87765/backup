@@ -364,6 +364,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/{node_id}/versions/{version_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/v1/nodes/{node_id}/versions/{version_id}/download`。 */
+        get: operations["download_version"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/trash": {
         parameters: {
             query?: never;
@@ -415,6 +432,141 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/upload-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/v1/upload-sessions`。
+         * @description 创建时在同一事务内锁定用户行、检查邮箱验证状态并预留配额。
+         *     `content_id` 是幂等键：同一请求重复提交返回同一会话且不重复预留；
+         *     同一 `content_id` 不同内容返回 `conflict`。
+         */
+        post: operations["create_upload_session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload-sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/v1/upload-sessions/{session_id}`。 */
+        get: operations["get_upload_session"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload-sessions/{session_id}/abort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** `POST /api/v1/upload-sessions/{session_id}/abort`。 */
+        post: operations["abort_upload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload-sessions/{session_id}/chunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/v1/upload-sessions/{session_id}/chunks`。
+         * @description 只返回已确认的块；客户端据此只上传缺失块（断点续传）。
+         */
+        get: operations["list_confirmed_chunks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload-sessions/{session_id}/chunks/{idx}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/v1/upload-sessions/{session_id}/chunks/{idx}/confirm`。
+         * @description 服务端向对象存储 `stat` 实际大小，必须等于该块期望大小；相同块、相同哈希
+         *     的重复确认幂等成功。
+         */
+        post: operations["confirm_chunk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload-sessions/{session_id}/chunks/{idx}/presign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/v1/upload-sessions/{session_id}/chunks/{idx}/presign`。
+         * @description 每次调用都生成新的服务端对象键；旧键写入 `superseded_object_keys`，
+         *     在提交/中止/过期时统一进入删除队列。已确认状态会被重置（新键尚未上传）。
+         */
+        post: operations["presign_chunk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload-sessions/{session_id}/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** `POST /api/v1/upload-sessions/{session_id}/commit`。 */
+        post: operations["commit_upload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -453,6 +605,12 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description 中止上传响应。 */
+        AbortUploadResponse: {
+            /** Format: uuid */
+            session_id: string;
+            status: string;
+        };
         ChangePasswordRequest: {
             old_auth_key: string;
             new_auth_key: string;
@@ -469,6 +627,61 @@ export interface components {
              */
             next_cursor?: string | null;
         };
+        /** @description 提交上传响应。重复提交返回完全相同的字段。 */
+        CommitUploadResponse: {
+            /** Format: uuid */
+            session_id: string;
+            status: string;
+            /** Format: uuid */
+            node_id: string;
+            /** Format: uuid */
+            version_id: string;
+            /** Format: uuid */
+            content_id: string;
+            /** Format: int64 */
+            ciphertext_size: number;
+            /** Format: int32 */
+            chunk_count: number;
+            committed_at: string;
+        };
+        /** @description 块确认请求。 */
+        ConfirmChunkRequest: {
+            /**
+             * Format: int64
+             * @description 客户端声明的密文字节数，必须等于服务端推出的期望大小。
+             */
+            declared_size: number;
+            /** @description 客户端计算的密文 SHA-256（hex，32 字节）。 */
+            sha256: string;
+        };
+        /** @description 块确认响应。 */
+        ConfirmChunkResponse: {
+            /** Format: int32 */
+            idx: number;
+            /** Format: int64 */
+            declared_size: number;
+            sha256: string;
+            confirmed_at: string;
+        };
+        /** @description 已确认块列表中的一项。 */
+        ConfirmedChunk: {
+            /** Format: int32 */
+            idx: number;
+            /** Format: int64 */
+            declared_size: number;
+            sha256: string;
+            confirmed_at: string;
+        };
+        /** @description 已确认块列表响应（供断点续传）。 */
+        ConfirmedChunksResponse: {
+            /** Format: uuid */
+            session_id: string;
+            /** Format: int32 */
+            chunk_count: number;
+            /** Format: int64 */
+            confirmed_count: number;
+            items: components["schemas"]["ConfirmedChunk"][];
+        };
         /** @description 创建文件夹请求。`id` 是客户端生成的幂等键。 */
         CreateFolderRequest: {
             /** Format: uuid */
@@ -482,6 +695,85 @@ export interface components {
             /** @description 名称令牌（hex）。 */
             name_token: string;
         };
+        /** @description 创建上传会话请求。 */
+        CreateUploadSessionRequest: {
+            /**
+             * Format: uuid
+             * @description 客户端生成的内容 ID（UUIDv4），创建请求的幂等键。
+             */
+            content_id: string;
+            /** @description `new_file` 或 `new_version`。 */
+            kind: string;
+            /**
+             * Format: uuid
+             * @description 新文件：即将创建的节点 ID；新版本：已有文件的节点 ID。
+             */
+            node_id: string;
+            /**
+             * Format: uuid
+             * @description 仅新文件：目标父文件夹 ID。
+             */
+            parent_id?: string | null;
+            /** @description 仅新文件：包裹的节点密钥（hex）。 */
+            wrapped_key?: string | null;
+            /** @description 仅新文件：加密节点元数据（hex）。 */
+            encrypted_meta?: string | null;
+            /** @description 仅新文件：名称令牌（hex）。 */
+            name_token?: string | null;
+            /**
+             * Format: uuid
+             * @description 客户端生成的版本 ID。
+             */
+            version_id: string;
+            /** @description 加密版本元数据（hex）。 */
+            version_meta: string;
+            /** Format: int32 */
+            chunk_count: number;
+            /**
+             * Format: int64
+             * @description 密文字节总数（各块密文大小之和）。
+             */
+            declared_size: number;
+        };
+        /** @description 下载清单中的一块。 */
+        DownloadChunk: {
+            /** Format: int32 */
+            idx: number;
+            /**
+             * Format: int64
+             * @description 密文字节数（解密后应等于 4 MiB 或更小）。
+             */
+            ciphertext_size: number;
+            /** @description 密文 SHA-256（hex），客户端逐块校验。 */
+            sha256: string;
+            method: string;
+            /** @description 预签名 GET URL（≤ 15 分钟，含签名，禁止日志）。 */
+            url: string;
+        };
+        /**
+         * @description 下载清单。客户端 MUST 先解密 `encrypted_meta` 并校验其中的 content_id
+         *     等于本响应的 `content_id`，再逐块解密（client-encryption spec）。
+         */
+        DownloadManifest: {
+            /** Format: uuid */
+            node_id: string;
+            /** Format: uuid */
+            version_id: string;
+            /** Format: uuid */
+            content_id: string;
+            /** @description 加密版本元数据（hex）。 */
+            encrypted_meta: string;
+            /**
+             * Format: int64
+             * @description 该 content 的密文字节总数。
+             */
+            ciphertext_size: number;
+            /** Format: int32 */
+            chunk_count: number;
+            /** @description 所有 URL 的过期时间（同一批次生成，≤ 15 分钟）。 */
+            expires_at: string;
+            chunks: components["schemas"]["DownloadChunk"][];
+        };
         /** @description API 错误响应体（对外契约）。 */
         ErrorBody: {
             /** @description 稳定的机器可读错误码。 */
@@ -490,6 +782,8 @@ export interface components {
             message: string;
             /** @description 服务端为本请求生成的 ID，便于运维检索日志。 */
             request_id: string;
+            /** @description 仅 `upload_incomplete` 携带：尚未确认的块序号（升序）。 */
+            missing_chunks?: number[] | null;
         };
         /** @description 存活检查响应。 */
         HealthResponse: {
@@ -613,6 +907,20 @@ export interface components {
             kdf_params: components["schemas"]["KdfParams"];
             kdf_salt: string;
         };
+        /** @description presign 响应。`url` 含签名，客户端只能用于单次 PUT；服务端不记录日志。 */
+        PresignChunkResponse: {
+            /** Format: int32 */
+            idx: number;
+            method: string;
+            url: string;
+            /** @description 预签名 URL 的过期时间（不超过 15 分钟）。 */
+            expires_at: string;
+            /**
+             * Format: int64
+             * @description 该块的期望密文大小；客户端必须上传恰好这么多字节。
+             */
+            expected_size: number;
+        };
         /** @description 就绪检查各子项状态。 */
         ReadyChecks: {
             database: string;
@@ -720,6 +1028,32 @@ export interface components {
         /** @description 回收站列表响应（只含每个 batch 的顶层项）。 */
         TrashResponse: {
             items: components["schemas"]["NodeSummary"][];
+        };
+        /** @description 上传会话摘要。 */
+        UploadSessionResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            content_id: string;
+            kind: string;
+            status: string;
+            /** Format: uuid */
+            node_id: string;
+            /** Format: uuid */
+            parent_id?: string | null;
+            /** Format: uuid */
+            version_id: string;
+            /** Format: int32 */
+            chunk_count: number;
+            /** Format: int64 */
+            declared_size: number;
+            /**
+             * Format: int64
+             * @description 已确认块数（续传时与 `GET .../chunks` 配合使用）。
+             */
+            confirmed_chunks: number;
+            expires_at: string;
+            created_at: string;
         };
         /** @description 已用 / 预留 / 总额（字节）。 */
         UsageResponse: {
@@ -1907,6 +2241,62 @@ export interface operations {
             };
         };
     };
+    download_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 文件节点 ID */
+                node_id: string;
+                /** @description 版本 ID */
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadManifest"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_trash: {
         parameters: {
             query?: {
@@ -2064,6 +2454,457 @@ export interface operations {
                 };
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_upload_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUploadSessionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadSessionResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_upload_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 上传会话 ID */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadSessionResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    abort_upload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 上传会话 ID */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AbortUploadResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_confirmed_chunks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 上传会话 ID */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmedChunksResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    confirm_chunk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 上传会话 ID */
+                session_id: string;
+                /** @description 块序号（从 0 开始） */
+                idx: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmChunkRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmChunkResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    presign_chunk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 上传会话 ID */
+                session_id: string;
+                /** @description 块序号（从 0 开始） */
+                idx: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresignChunkResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    commit_upload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 上传会话 ID */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitUploadResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

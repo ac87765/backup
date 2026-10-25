@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT object_key\n                FROM chunks\n                WHERE object_key = ANY($1::text[])\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "object_key",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ff94873d09bc73fa7b05766f73a1eb43aa3af1921f29c8c760fd06ab19ac4904"
+}

@@ -1,7 +1,8 @@
 //! 后台任务指标（service-operations spec：指标）。
 //!
 //! - `jobs_executions_total{job}` / `jobs_failures_total{job}`；
-//! - `queue_backlog{queue}` / `queue_oldest_age_seconds{queue}`（定时采样）。
+//! - `queue_backlog{queue}` / `queue_oldest_age_seconds{queue}`（定时采样）；
+//! - `upload_sessions{status}`（按状态采样的上传会话数量，第 8 组）。
 
 use std::time::Duration;
 
@@ -42,6 +43,20 @@ pub async fn record_queue_metrics(pool: &PgPool) -> Result<(), sqlx::Error> {
         .set(row.deletions_oldest);
     metrics::gauge!("queue_backlog", "queue" => "email_outbox").set(row.mail_count as f64);
     metrics::gauge!("queue_oldest_age_seconds", "queue" => "email_outbox").set(row.mail_oldest);
+
+    // 上传会话按状态采样；状态集合固定（open/committed/aborted/expired）。
+    let sessions = sqlx::query!(
+        r#"
+        SELECT status, count(*) AS "count!"
+        FROM upload_sessions
+        GROUP BY status
+        "#
+    )
+    .fetch_all(pool)
+    .await?;
+    for session in sessions {
+        metrics::gauge!("upload_sessions", "status" => session.status).set(session.count as f64);
+    }
     Ok(())
 }
 

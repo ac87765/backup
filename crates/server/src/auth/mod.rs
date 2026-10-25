@@ -56,14 +56,23 @@ pub const EMAIL_PURPOSE_VERIFY: &str = "verify_email";
 /// 重发验证邮件的账号维度节流窗口（分钟）。
 pub const RESEND_THROTTLE_MINUTES: i32 = 10;
 
+/// 每用户每分钟的写接口上限（service-operations spec「请求体与速率限制」）。
+///
+/// 与 IP 维度认证限流分开：已认证用户的写接口按用户计数，避免同一 NAT 后的
+/// 多个合法用户互相影响。常量而非配置项：MVP 只需要一个明确、可测试的上限。
+pub const USER_WRITE_RATE_LIMIT_PER_MINUTE: u32 = 120;
+
 type KeyedLimiter =
     RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, governor::clock::DefaultClock>;
+type UserKeyedLimiter =
+    RateLimiter<Uuid, DefaultKeyedStateStore<Uuid>, governor::clock::DefaultClock>;
 
-/// 认证共享状态：pepper 版本链 + IP 限流器。
+/// 认证共享状态：pepper 版本链 + IP 限流器 + 每用户写限流器。
 #[derive(Clone)]
 pub struct AuthContext {
     config: Arc<AuthConfig>,
     limiter: Arc<IpRateLimiter>,
+    user_write_limiter: Arc<UserWriteRateLimiter>,
 }
 
 impl AuthContext {
@@ -71,6 +80,9 @@ impl AuthContext {
         Self {
             config: Arc::new(config),
             limiter: Arc::new(IpRateLimiter::new(per_minute)),
+            user_write_limiter: Arc::new(UserWriteRateLimiter::new(
+                NonZeroU32::new(USER_WRITE_RATE_LIMIT_PER_MINUTE).unwrap_or(NonZeroU32::MIN),
+            )),
         }
     }
 
@@ -134,6 +146,45 @@ impl AuthContext {
     /// 检查并消耗该 IP 的一次认证类请求配额。
     pub fn check_ip(&self, ip: IpAddr) -> Result<(), ApiError> {
         self.limiter.check(ip).map_err(ApiError::too_many_requests)
+    }
+
+    /// 检查并消耗该已认证用户的一次写接口配额。
+    pub fn check_user_write(&self, user_id: Uuid) -> Result<(), ApiError> {
+        self.user_write_limiter
+            .check(user_id)
+            .map_err(ApiError::too_many_requests)
+    }
+}
+
+/// 进程内每用户写限流器（与 IP 限流器同一套 governor 语义）。
+struct UserWriteRateLimiter {
+    limiter: UserKeyedLimiter,
+    checks: AtomicU64,
+}
+
+impl UserWriteRateLimiter {
+    fn new(per_minute: NonZeroU32) -> Self {
+        Self {
+            limiter: RateLimiter::keyed(Quota::per_minute(per_minute)),
+            checks: AtomicU64::new(0),
+        }
+    }
+
+    fn check(&self, user_id: Uuid) -> Result<(), u64> {
+        if self
+            .checks
+            .fetch_add(1, Ordering::Relaxed)
+            .is_multiple_of(RATE_LIMITER_CLEANUP_INTERVAL)
+        {
+            self.limiter.retain_recent();
+        }
+        match self.limiter.check_key(&user_id) {
+            Ok(()) => Ok(()),
+            Err(not_until) => {
+                let wait = not_until.wait_time_from(self.limiter.clock().now());
+                Err(wait.as_secs().max(1))
+            }
+        }
     }
 }
 
@@ -565,6 +616,21 @@ mod tests {
         assert!(limiter.check(ip).is_ok());
         let retry = limiter.check(ip).expect_err("第三次必须被限流");
         assert!(retry >= 1);
+    }
+
+    #[test]
+    fn per_user_write_limiter_is_keyed_by_user() {
+        let limiter = UserWriteRateLimiter::new(NonZeroU32::new(2).expect("2"));
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+        assert!(limiter.check(first).is_ok());
+        assert!(limiter.check(first).is_ok());
+        assert!(
+            limiter.check(first).is_err(),
+            "同一用户的第三次写请求必须被限流"
+        );
+        // 另一个用户不受影响（按用户而不是全局计数）。
+        assert!(limiter.check(second).is_ok());
     }
 
     fn test_auth_config() -> AuthConfig {

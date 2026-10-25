@@ -138,6 +138,39 @@ pub fn build_router_with(state: AppState, extra: Router<AppState>) -> Router {
             post(crate::files::versions::restore_version),
         )
         .route("/v1/me/usage", get(crate::files::usage::get_usage))
+        // 文件传输（第 8 组）
+        .route(
+            "/v1/upload-sessions",
+            post(crate::files::uploads::create_upload_session),
+        )
+        .route(
+            "/v1/upload-sessions/{session_id}",
+            get(crate::files::uploads::get_upload_session),
+        )
+        .route(
+            "/v1/upload-sessions/{session_id}/chunks",
+            get(crate::files::uploads::list_confirmed_chunks),
+        )
+        .route(
+            "/v1/upload-sessions/{session_id}/chunks/{idx}/presign",
+            post(crate::files::uploads::presign_chunk),
+        )
+        .route(
+            "/v1/upload-sessions/{session_id}/chunks/{idx}/confirm",
+            post(crate::files::uploads::confirm_chunk),
+        )
+        .route(
+            "/v1/upload-sessions/{session_id}/commit",
+            post(crate::files::uploads::commit_upload),
+        )
+        .route(
+            "/v1/upload-sessions/{session_id}/abort",
+            post(crate::files::uploads::abort_upload),
+        )
+        .route(
+            "/v1/nodes/{node_id}/versions/{version_id}/download",
+            get(crate::files::download::download_version),
+        )
         .layer(from_fn(csrf::require_custom_header))
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_method_not_allowed);

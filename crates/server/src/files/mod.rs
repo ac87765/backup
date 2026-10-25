@@ -9,8 +9,10 @@
 //! - 日志不记录加密元数据、包裹密钥或名称令牌。
 //! - 所有改变状态的接口都在事务内完成，可安全重试。
 
+pub mod download;
 pub mod nodes;
 pub mod trash;
+pub mod uploads;
 pub mod usage;
 pub mod versions;
 
@@ -204,6 +206,13 @@ pub fn validate_node_id(id: Uuid) -> Result<Uuid, ApiError> {
 /// 校验客户端生成的版本 ID。
 pub fn validate_version_id(id: Uuid) -> Result<Uuid, ApiError> {
     crypto_core::VersionId::parse(&id.to_string())
+        .map(|_| id)
+        .map_err(|_| ApiError::invalid_request())
+}
+
+/// 校验客户端生成的内容 ID（UUIDv4 且非 nil，见 crypto-core 契约）。
+pub fn validate_content_id(id: Uuid) -> Result<Uuid, ApiError> {
+    crypto_core::ContentId::parse(&id.to_string())
         .map(|_| id)
         .map_err(|_| ApiError::invalid_request())
 }

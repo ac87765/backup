@@ -21,6 +21,9 @@ pub struct ErrorBody {
     pub message: String,
     /// 服务端为本请求生成的 ID，便于运维检索日志。
     pub request_id: String,
+    /// 仅 `upload_incomplete` 携带：尚未确认的块序号（升序）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub missing_chunks: Option<Vec<i32>>,
 }
 
 /// 领域错误 → HTTP 响应的统一封装。
@@ -30,6 +33,7 @@ pub struct ApiError {
     code: &'static str,
     message: &'static str,
     retry_after: Option<u64>,
+    missing_chunks: Option<Vec<i32>>,
 }
 
 impl ApiError {
@@ -39,6 +43,7 @@ impl ApiError {
             code,
             message,
             retry_after: None,
+            missing_chunks: None,
         }
     }
 
@@ -100,6 +105,46 @@ impl ApiError {
     /// 目标父文件夹不存在、已删除或不可作为父节点。
     pub fn target_unavailable() -> Self {
         Self::new(StatusCode::CONFLICT, "target_unavailable", "目标位置不可用")
+    }
+
+    /// 邮箱尚未验证，不能创建上传会话（user-accounts spec）。
+    pub fn email_not_verified() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "email_not_verified", "邮箱尚未验证")
+    }
+
+    /// 已用 + 已预留 + 本次声明超过配额。
+    pub fn quota_exceeded() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "quota_exceeded", "存储配额不足")
+    }
+
+    /// 上传会话已提交、中止或过期，不能再 presign/确认/提交。
+    pub fn upload_session_closed() -> Self {
+        Self::new(
+            StatusCode::CONFLICT,
+            "upload_session_closed",
+            "上传会话已关闭",
+        )
+    }
+
+    /// 块对象不存在（客户端尚未成功上传，或对象键已被替换）。
+    pub fn chunk_not_found() -> Self {
+        Self::new(StatusCode::NOT_FOUND, "chunk_not_found", "块对象不存在")
+    }
+
+    /// 块声明大小与对象实际大小、或与服务端推出的期望大小不一致。
+    pub fn chunk_size_mismatch() -> Self {
+        Self::new(
+            StatusCode::BAD_REQUEST,
+            "chunk_size_mismatch",
+            "块大小与声明不一致",
+        )
+    }
+
+    /// 仍有块未确认；响应同时携带缺失块序号列表。
+    pub fn upload_incomplete(missing_chunks: Vec<i32>) -> Self {
+        let mut error = Self::new(StatusCode::CONFLICT, "upload_incomplete", "仍有块未确认");
+        error.missing_chunks = Some(missing_chunks);
+        error
     }
 
     /// 把文件夹移动到自身或其后代。
@@ -204,6 +249,7 @@ impl IntoResponse for ApiError {
             code: self.code.to_owned(),
             message: self.message.to_owned(),
             request_id: request_id::current(),
+            missing_chunks: self.missing_chunks,
         };
         let mut response = (self.status, Json(body)).into_response();
         if let Some(seconds) = self.retry_after

@@ -17,6 +17,7 @@ pub mod email;
 pub mod metrics;
 pub mod retry;
 pub mod scan;
+pub mod uploads;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -109,7 +110,7 @@ pub fn start(
     let token = shutdown.token();
     drop(shutdown.spawn(deletion::worker_loop(
         database.clone(),
-        storage,
+        storage.clone(),
         token.clone(),
     )));
     drop(shutdown.spawn(email::worker_loop(
@@ -119,12 +120,15 @@ pub fn start(
         public_app_url,
         token.clone(),
     )));
-    // 扫描型任务：第 6 组起注册过期会话/邮件令牌清理；第 7 组加入文件清理与配额对账。
+    // 扫描型任务：第 6 组起注册过期会话/邮件令牌清理；第 7 组加入文件清理与配额对账；
+    // 第 8 组加入上传会话过期与孤儿对象巡检（依赖对象存储）。
     let scan_jobs: Vec<Arc<dyn scan::ScanJob>> = vec![
         Arc::new(scan::ExpiredTokenCleanup),
         Arc::new(content::VersionRetentionCleanup),
         Arc::new(content::TrashCleanup),
         Arc::new(content::QuotaReconciliation),
+        Arc::new(uploads::UploadSessionExpiry),
+        Arc::new(uploads::OrphanObjectScan::new(storage)),
     ];
     drop(shutdown.spawn(scan::run_loop(database.clone(), scan_jobs, token.clone())));
     drop(shutdown.spawn(metrics::sampler_loop(database, token)));

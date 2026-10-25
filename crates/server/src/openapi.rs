@@ -13,11 +13,17 @@ use crate::auth::routes::{
     RecoveryPreloginResponse, RegisterRequest, ResendVerificationRequest, RotateRecoveryKeyRequest,
     SessionSummary, SessionsResponse, VerifyEmailRequest,
 };
+use crate::files::download::{DownloadChunk, DownloadManifest};
 use crate::files::nodes::{
     ChildrenResponse, CreateFolderRequest, ListChildrenQuery, MoveNodeRequest, RenameNodeRequest,
 };
 use crate::files::trash::{
     PermanentDeleteResponse, RestoreNodeRequest, TrashEntryResponse, TrashQuery, TrashResponse,
+};
+use crate::files::uploads::{
+    AbortUploadResponse, CommitUploadResponse, ConfirmChunkRequest, ConfirmChunkResponse,
+    ConfirmedChunk, ConfirmedChunksResponse, CreateUploadSessionRequest, PresignChunkResponse,
+    UploadSessionResponse,
 };
 use crate::files::usage::UsageResponse;
 use crate::files::versions::{RestoreVersionRequest, VersionQuery, VersionsResponse};
@@ -57,7 +63,15 @@ use crate::files::{NodeSummary, VersionSummary};
         crate::files::trash::permanently_delete_node,
         crate::files::versions::list_versions,
         crate::files::versions::restore_version,
-        crate::files::usage::get_usage
+        crate::files::usage::get_usage,
+        crate::files::uploads::create_upload_session,
+        crate::files::uploads::get_upload_session,
+        crate::files::uploads::list_confirmed_chunks,
+        crate::files::uploads::presign_chunk,
+        crate::files::uploads::confirm_chunk,
+        crate::files::uploads::commit_upload,
+        crate::files::uploads::abort_upload,
+        crate::files::download::download_version
     ),
     components(schemas(
         ErrorBody,
@@ -96,7 +110,18 @@ use crate::files::{NodeSummary, VersionSummary};
         VersionQuery,
         VersionsResponse,
         RestoreVersionRequest,
-        UsageResponse
+        UsageResponse,
+        CreateUploadSessionRequest,
+        UploadSessionResponse,
+        PresignChunkResponse,
+        ConfirmChunkRequest,
+        ConfirmChunkResponse,
+        ConfirmedChunk,
+        ConfirmedChunksResponse,
+        CommitUploadResponse,
+        AbortUploadResponse,
+        DownloadChunk,
+        DownloadManifest
     ))
 )]
 pub struct ApiDoc;

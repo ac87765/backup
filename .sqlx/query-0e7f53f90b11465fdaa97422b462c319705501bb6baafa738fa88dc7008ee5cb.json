@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO job_state (job_id, cursor, updated_at)\n            VALUES ($1, $2, now())\n            ON CONFLICT (job_id) DO UPDATE\n            SET cursor = EXCLUDED.cursor,\n                updated_at = now()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0e7f53f90b11465fdaa97422b462c319705501bb6baafa738fa88dc7008ee5cb"
+}
