@@ -9,6 +9,7 @@ import {
   createFolder,
   fileRow,
   registerVerifyAndLogin,
+  unlockWithPassword,
 } from './session'
 import { grantAdmin } from './admin'
 
@@ -347,20 +348,22 @@ test('桌面与手机两种视口截图', async ({ page }) => {
   // 管理后台（桌面 1440×900）：概览、用户、设置、审计日志。
   await page.setViewportSize({ width: 1440, height: 900 })
   grantAdmin(email)
-  await page.reload()
+  // 整页导航会清空 Worker 内存中的密钥：只解锁一次，之后用应用内导航切换页面。
   await page.goto('/admin')
+  await unlockWithPassword(page)
   await expect(page.getByTestId('admin-overview')).toBeVisible()
   await capture(page, 'admin-overview-desktop')
 
-  await page.goto('/admin/users')
+  const adminNav = page.getByRole('navigation', { name: '管理后台导航' })
+  await adminNav.getByRole('link', { name: '用户' }).click()
   await expect(page.getByTestId('admin-users')).toBeVisible()
   await capture(page, 'admin-users-desktop')
 
-  await page.goto('/admin/settings')
+  await adminNav.getByRole('link', { name: '设置' }).click()
   await expect(page.getByTestId('admin-settings')).toBeVisible()
   await capture(page, 'admin-settings-desktop')
 
-  await page.goto('/admin/audit')
+  await adminNav.getByRole('link', { name: '审计日志' }).click()
   await expect(page.getByTestId('admin-audit')).toBeVisible()
   await capture(page, 'admin-audit-desktop')
 })

@@ -52,5 +52,19 @@ export default defineConfig({
         : {}),
     },
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: /admin-console\.spec\.ts/,
+    },
+    // 管理后台测试会临时修改全局注册模式；必须在其他场景全部结束后单独运行，
+    // 否则并行注册的测试账号会落入待审核状态。
+    {
+      name: 'admin',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: /admin-console\.spec\.ts/,
+      dependencies: ['chromium'],
+    },
+  ],
 })
