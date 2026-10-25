@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 import { Client } from 'pg'
@@ -56,6 +58,14 @@ async function installDownloadFallback(page: Page): Promise<void> {
     ;(
       window as unknown as { __BACKUP_FORCE_DOWNLOAD_FALLBACK__?: string }
     ).__BACKUP_FORCE_DOWNLOAD_FALLBACK__ = 'blob'
+  })
+}
+
+async function installServiceWorkerFallback(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    ;(
+      window as unknown as { __BACKUP_FORCE_DOWNLOAD_FALLBACK__?: string }
+    ).__BACKUP_FORCE_DOWNLOAD_FALLBACK__ = 'service-worker'
   })
 }
 
@@ -238,6 +248,18 @@ test('多块文件上传 → 下载 SHA-256 一致；数据库与对象存储不
   expect(leaks).toEqual([])
 })
 
+test('Service Worker 流式下载多块文件 SHA-256 一致', async ({ page }) => {
+  await installServiceWorkerFallback(page)
+  const email = `sw-${Date.now()}-${randomUUID()}@example.com`
+  const name = `sw-${randomUUID()}.bin`
+  const buffer = Buffer.alloc(4 * 1024 * 1024 + 100, 0x44)
+  Buffer.from('SERVICE-WORKER-PLAINTEXT', 'utf8').copy(buffer, 0)
+  await registerVerifyAndLogin(page, email)
+  await uploadFile(page, name, buffer)
+  const downloaded = await downloadCurrentFile(page, name)
+  expect(sha256(downloaded)).toBe(sha256(buffer))
+})
+
 test('上传过程中断网再恢复，最终完成', async ({ page, context }) => {
   await installDownloadFallback(page)
   const email = `offline-${Date.now()}-${randomUUID()}@example.com`
@@ -319,28 +341,32 @@ test('取消上传后配额预留释放', async ({ page }) => {
   await registerVerifyAndLogin(page, email)
   // 人为放慢对象 PUT，确保取消按钮在会话创建后仍有机会点击。
   await page.route(BUCKET_ROUTE, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 200))
+    await new Promise((resolve) => setTimeout(resolve, 500))
     await route.continue()
   })
 
-  await page.setInputFiles('[data-testid="upload-input"]', {
-    name,
-    mimeType: 'application/octet-stream',
-    buffer: Buffer.alloc(64 * 1024 * 1024, 0x43),
-  })
-  const item = page
-    .locator(`[data-testid="transfer-item"][data-name="${name}"]`)
-    .last()
-  await expect(item).toHaveAttribute('data-status', 'uploading', {
-    timeout: 60_000,
-  })
-  await expect(item.getByTestId('transfer-cancel')).toBeVisible()
-  await item.getByTestId('transfer-cancel').click()
-  await expect(item).toHaveAttribute('data-status', 'cancelled', {
-    timeout: 60_000,
-  })
-  await expect(fileRow(page, name)).toHaveCount(0)
-  await expect(page.getByTestId('usage-summary')).toContainText('预留 0 B', {
-    timeout: 60_000,
-  })
+  // setInputFiles 不允许直接传 >50 MB 的 buffer；写入临时文件后传路径。
+  const directory = await mkdtemp(join(tmpdir(), 'backup-e2e-cancel-'))
+  const filePath = join(directory, name)
+  await writeFile(filePath, Buffer.alloc(64 * 1024 * 1024, 0x43))
+  try {
+    await page.setInputFiles('[data-testid="upload-input"]', filePath)
+    const item = page
+      .locator(`[data-testid="transfer-item"][data-name="${name}"]`)
+      .last()
+    await expect(item).toHaveAttribute('data-status', 'uploading', {
+      timeout: 60_000,
+    })
+    await expect(item.getByTestId('transfer-cancel')).toBeVisible()
+    await item.getByTestId('transfer-cancel').click()
+    await expect(item).toHaveAttribute('data-status', 'cancelled', {
+      timeout: 60_000,
+    })
+    await expect(fileRow(page, name)).toHaveCount(0)
+    await expect(page.getByTestId('usage-summary')).toContainText('预留 0 B', {
+      timeout: 60_000,
+    })
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 })
