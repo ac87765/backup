@@ -28,8 +28,14 @@ test('注册 → 验证 → 登录 → 刷新解锁 → 改密 → 恢复重置 
   // Comlink 边界探针：记录主线程 → Worker 的消息，最后断言没有 32 字节 Uint8Array。
   await page.addInitScript(() => {
     const messages: unknown[] = []
+    const violations: string[] = []
     ;(window as unknown as { __workerMessages: unknown[] }).__workerMessages =
       messages
+    ;(window as unknown as { __cspViolations: string[] }).__cspViolations =
+      violations
+    document.addEventListener('securitypolicyviolation', (event) => {
+      violations.push(`${event.violatedDirective} ${event.blockedURI}`)
+    })
     // eslint-disable-next-line @typescript-eslint/unbound-method
     const original = Worker.prototype.postMessage
     Worker.prototype.postMessage = function postMessage(
@@ -165,4 +171,9 @@ test('注册 → 验证 → 登录 → 刷新解锁 → 改密 → 恢复重置 
     return leaks
   })
   expect(keyLeaks).toEqual([])
+
+  const cspViolations = await page.evaluate(
+    () => (window as unknown as { __cspViolations: string[] }).__cspViolations,
+  )
+  expect(cspViolations).toEqual([])
 })
