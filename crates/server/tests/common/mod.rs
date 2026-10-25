@@ -6,14 +6,18 @@
 //! - MinIO 镜像与 `deploy/docker-compose.dev.yml` 使用同一个 digest，测试
 //!   `tests/test_harness.rs` 会断言两处一致。
 //!
-//! 容器会泄漏到进程结束（`Box::leak`），因为 testcontainers 的容器在 Drop 时会停止；
-//! 进程退出后由 Docker 侧的容器清理机制兜底。
+//! 容器在进程内共享（`static OnceCell`），因此不会依赖 `Drop`：进程退出时由
+//! `atexit` 钩子按 `backup-test` + `backup-test-process=<pid>` 标签删除本进程
+//! 启动的容器。多个测试二进制并行时，各进程只删自己的容器；异常崩溃的残留
+//! 容器见 README 的手动清理命令。
 
 #![allow(dead_code)]
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use std::path::Path;
 use std::process::Command;
+use std::sync::Once;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use sqlx::PgPool;
@@ -23,6 +27,75 @@ use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 use tokio::sync::OnceCell;
 use uuid::Uuid;
+
+/// 所有测试容器的统一标签（`docker ps -a --filter label=backup-test`）。
+pub const CONTAINER_LABEL: &str = "backup-test";
+/// 记录启动容器的测试进程 ID，用于进程退出时只删除自己的容器。
+pub const CONTAINER_PROCESS_LABEL: &str = "backup-test-process";
+
+/// 是否已经成功启动过容器；没有 Docker 的进程不执行清理命令。
+static CONTAINERS_STARTED: AtomicBool = AtomicBool::new(false);
+/// 只注册一次 atexit 回调（每个测试二进制一个进程）。
+static CLEANUP_REGISTERED: Once = Once::new();
+
+#[allow(unsafe_code)]
+unsafe extern "C" {
+    /// libc / UCRT 的退出钩子；只在测试进程退出时安排一次 best-effort 清理。
+    fn atexit(callback: extern "C" fn()) -> i32;
+}
+
+/// 注册进程退出清理钩子。
+///
+/// 使用 `atexit` 而不是 `Drop`：容器句柄被 `Box::leak` 到 static，
+/// `ContainerAsync` 的 Drop 永远不会运行。回调只按本进程 PID 标签删除
+/// 自己启动的容器。
+#[allow(unsafe_code)]
+fn register_test_container_cleanup() {
+    CLEANUP_REGISTERED.call_once(|| {
+        // SAFETY: 回调是 `extern "C" fn`，不跨 FFI 传播 panic；atexit 是
+        // C 运行时提供的线程安全注册函数，失败时只是不执行清理。
+        let _ = unsafe { atexit(cleanup_test_containers) };
+    });
+}
+
+/// 进程退出时删除本进程创建的测试容器（含匿名卷）。
+///
+/// 容器句柄被 `Box::leak`，`ContainerAsync` 的 Drop 不会运行；这里按标签
+/// 列出并 `docker rm -f -v`。只匹配本进程 PID 标签，不碰其他测试进程的容器。
+extern "C" fn cleanup_test_containers() {
+    if !CONTAINERS_STARTED.load(Ordering::SeqCst) {
+        return;
+    }
+    let process_filter = format!("label={CONTAINER_PROCESS_LABEL}={}", std::process::id());
+    let label_filter = format!("label={CONTAINER_LABEL}");
+    let Ok(list) = Command::new("docker")
+        .args([
+            "ps",
+            "-aq",
+            "--filter",
+            &label_filter,
+            "--filter",
+            &process_filter,
+        ])
+        .output()
+    else {
+        return;
+    };
+    if !list.status.success() {
+        return;
+    }
+    let ids: Vec<String> = String::from_utf8_lossy(&list.stdout)
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect();
+    if ids.is_empty() {
+        return;
+    }
+    let _ = Command::new("docker")
+        .args(["rm", "-f", "-v"])
+        .args(&ids)
+        .output();
+}
 
 /// 与 `deploy/docker-compose.dev.yml` 的 `postgres` 服务保持一致。
 pub const POSTGRES_IMAGE: &str = "postgres";
@@ -76,17 +149,23 @@ fn docker_unavailable(context: &str, error: &dyn std::fmt::Display) -> ! {
 }
 
 async fn start_environment() -> TestEnvironment {
+    register_test_container_cleanup();
+    let process_label = std::process::id().to_string();
     let postgres = GenericImage::new(POSTGRES_IMAGE, POSTGRES_TAG)
         .with_exposed_port(5432.tcp())
         .with_wait_for(WaitFor::message_on_stderr(
             "database system is ready to accept connections",
         ))
+        .with_label(CONTAINER_LABEL, "1")
+        .with_label(CONTAINER_PROCESS_LABEL, process_label.clone())
         .with_env_var("POSTGRES_DB", POSTGRES_DB)
         .with_env_var("POSTGRES_USER", POSTGRES_USER)
         .with_env_var("POSTGRES_PASSWORD", POSTGRES_PASSWORD)
         .start()
         .await
         .unwrap_or_else(|error| docker_unavailable("启动 PostgreSQL 容器", &error));
+    // PostgreSQL 已经启动：无论后续 MinIO 是否失败，退出时都要清理。
+    CONTAINERS_STARTED.store(true, Ordering::SeqCst);
     let postgres = Box::leak(Box::new(postgres));
     let postgres_port = postgres
         .get_host_port_ipv4(5432.tcp())
@@ -101,6 +180,8 @@ async fn start_environment() -> TestEnvironment {
         // Bitnami 镜像在 setup 阶段先后台启动 MinIO、建默认 bucket，再停掉并前台启动；
         // 等到 setup 完成，避免测试命中“后台实例即将停止”的窗口。
         .with_wait_for(WaitFor::message_on_either_std("MinIO setup finished"))
+        .with_label(CONTAINER_LABEL, "1")
+        .with_label(CONTAINER_PROCESS_LABEL, process_label)
         .with_env_var("MINIO_ROOT_USER", MINIO_ACCESS_KEY)
         .with_env_var("MINIO_ROOT_PASSWORD", MINIO_SECRET_KEY)
         .with_env_var("MINIO_DEFAULT_BUCKETS", MINIO_BUCKET)

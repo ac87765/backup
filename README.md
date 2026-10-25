@@ -135,7 +135,15 @@ WARN，提示邮件未真正发送。
 
 服务端集成测试使用 testcontainers 启动真实 PostgreSQL 与 MinIO，因此运行
 `cargo test --workspace` 需要可用的 Docker（Windows 本机没有原生 Docker，请在有 Docker 的
-WSL 里执行；测试不会在缺少 Docker 时静默跳过，而是明确失败）。
+WSL 里执行；测试不会在缺少 Docker 时静默跳过，而是明确失败）。测试进程退出时会按
+`backup-test` 标签删除自己启动的容器；如果进程被强制杀死而留下残留容器，可用：
+
+```bash
+docker ps -a --filter label=backup-test
+docker ps -aq --filter label=backup-test | xargs -r docker rm -f -v
+```
+
+手动清理（只影响测试容器；其他进程的测试容器也会被这一命令一并删除）。
 
 ### 3. 前端
 
