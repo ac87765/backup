@@ -603,11 +603,12 @@ async fn suspend_revokes_sessions_aborts_uploads_and_releases_reservation() {
     let (_admin_id, admin_cookie) =
         user_session(&app, "suspend-admin@example.com", 0x10, true).await;
     let (user_id, user_cookie) = user_session(&app, "suspend-me@example.com", 0x20, false).await;
-    sqlx::query("UPDATE users SET email_verified_at = now() WHERE id = $1")
+    // 被停用的必须是已开通（active）的用户：默认注册模式下新用户是 pending，不能上传。
+    sqlx::query("UPDATE users SET email_verified_at = now(), status = 'active' WHERE id = $1")
         .bind(user_id)
         .execute(app.database.pool())
         .await
-        .expect("验证邮箱");
+        .expect("验证邮箱并开通");
     let root: Uuid = sqlx::query_scalar("SELECT root_node_id FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_one(app.database.pool())

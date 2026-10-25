@@ -75,17 +75,21 @@ async fn migration_0006_marks_existing_users_active() {
             .unwrap_or_else(|error| panic!("应用迁移 {} 失败：{error}", migration.version));
     }
 
+    // 与注册事务一样：同一事务内插入用户与根节点（users → nodes 的外键是 DEFERRABLE）。
     let user_id = uuid::Uuid::new_v4();
+    let root_id = uuid::Uuid::new_v4();
+    let mut tx = pool.begin().await.expect("开始事务");
     sqlx::query(
         r#"
         INSERT INTO users (
             id, email, kdf_params, kdf_salt, auth_hash, pepper_version,
-            recovery_auth_hash, recovery_pepper_version, wrapped_mk, recovery_wrapped_mk
+            recovery_auth_hash, recovery_pepper_version, wrapped_mk, recovery_wrapped_mk,
+            root_node_id
         )
         VALUES (
             $1, $2::text::citext,
             '{"algorithm":"argon2id","m_cost_kib":65536,"t_cost":3,"p_cost":1}'::jsonb,
-            $3, $4, 1, $4, 1, $5, $5
+            $3, $4, 1, $4, 1, $5, $5, $6
         )
         "#,
     )
@@ -94,9 +98,17 @@ async fn migration_0006_marks_existing_users_active() {
     .bind(vec![0_u8; 16])
     .bind(vec![0_u8; 32])
     .bind(vec![1_u8; 73])
-    .execute(&pool)
+    .bind(root_id)
+    .execute(&mut *tx)
     .await
     .expect("插入升级前用户");
+    sqlx::query("INSERT INTO nodes (id, user_id, parent_id, kind) VALUES ($1, $2, NULL, 'folder')")
+        .bind(root_id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .expect("插入根节点");
+    tx.commit().await.expect("提交升级前用户");
 
     // 再执行 0006（升级迁移）。
     let admin_migration = server::db::MIGRATOR
