@@ -88,7 +88,7 @@ export function SessionsSection() {
                   到期 {new Date(session.expiresAt).toLocaleString('zh-CN')}
                 </p>
                 {session.userAgent && (
-                  <p className="break-all text-xs leading-5 text-ink-400">
+                  <p className="break-all text-xs leading-5 text-ink-500">
                     {session.userAgent}
                   </p>
                 )}

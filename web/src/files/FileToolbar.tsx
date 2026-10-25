@@ -20,16 +20,16 @@ export function FileToolbar({
 }: FileToolbarProps) {
   return (
     <div className="flex items-center gap-1.5 sm:gap-2">
-      <TextField
-        aria-label="筛选当前文件夹"
-        data-testid="file-filter"
-        placeholder="筛选当前文件夹"
-        value={filter}
-        onChange={(event) => onFilterChange(event.target.value)}
-        leading={<Search size={16} />}
-        containerClassName="w-36 sm:w-56"
-        inputClassName="h-9"
-      />
+      <div className="w-36 shrink-0 sm:w-56">
+        <TextField
+          aria-label="筛选当前文件夹"
+          data-testid="file-filter"
+          placeholder="筛选当前文件夹"
+          value={filter}
+          onChange={(event) => onFilterChange(event.target.value)}
+          leading={<Search size={16} />}
+        />
+      </div>
       <div
         role="group"
         aria-label="视图切换"
@@ -66,14 +66,15 @@ export function FileToolbar({
           <LayoutGrid size={16} aria-hidden="true" />
         </button>
       </div>
-      <IconButton
-        label="刷新"
-        data-testid="refresh-files"
-        className="hidden sm:inline-flex"
-        onClick={onRefresh}
-      >
-        <RotateCw size={16} />
-      </IconButton>
+      <div className="hidden sm:block">
+        <IconButton
+          label="刷新"
+          data-testid="refresh-files"
+          onClick={onRefresh}
+        >
+          <RotateCw size={16} />
+        </IconButton>
+      </div>
     </div>
   )
 }

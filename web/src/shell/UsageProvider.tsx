@@ -12,7 +12,7 @@ import { UsageContext } from './usage-context'
 
 /** 外壳级用量状态：侧边栏展示，文件/回收站操作后可刷新。 */
 export function UsageProvider({ children }: { children: ReactNode }) {
-  const { api } = useAuth()
+  const { api, user } = useAuth()
   const [usage, setUsage] = useState<UsageView | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
 
@@ -21,7 +21,7 @@ export function UsageProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!api) {
+    if (!api || !user) {
       return
     }
     let cancelled = false
@@ -38,7 +38,7 @@ export function UsageProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [api, reloadToken])
+  }, [api, reloadToken, user])
 
   const value = useMemo(
     () => ({ usage, refreshUsage }),

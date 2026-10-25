@@ -9,7 +9,7 @@ const VARIANTS: Record<IconButtonVariant, string> = {
   ghost: 'text-ink-600 hover:bg-canvas hover:text-ink-900',
   secondary:
     'border border-line bg-white text-ink-600 hover:border-line-strong hover:bg-canvas hover:text-ink-900',
-  danger: 'text-danger-600 hover:bg-danger-50',
+  danger: 'text-danger-600 hover:bg-danger-50 hover:text-danger-700',
 }
 
 const SIZES: Record<IconButtonSize, string> = {

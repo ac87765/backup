@@ -37,8 +37,9 @@ interface Point {
 const MENU_WIDTH = 208
 
 function clampPoint(left: number, top: number): Point {
+  // 预留约 280px 的菜单高度（最多 6 项 + 分隔线 + 账号信息），避免贴近底部时溢出。
   return {
-    top: Math.max(8, Math.min(top, window.innerHeight - 72)),
+    top: Math.max(8, Math.min(top, window.innerHeight - 280)),
     left: Math.max(8, Math.min(left, window.innerWidth - MENU_WIDTH - 8)),
   }
 }
@@ -165,7 +166,7 @@ function MenuSurface({
             className={cx(
               'flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm transition-colors',
               item.tone === 'danger'
-                ? 'text-danger-600 hover:bg-danger-50'
+                ? 'text-danger-700 hover:bg-danger-50'
                 : 'text-ink-900 hover:bg-canvas',
               'focus-visible:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
               'disabled:cursor-not-allowed disabled:opacity-40',

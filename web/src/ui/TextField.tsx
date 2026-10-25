@@ -57,11 +57,12 @@ export function TextField({
         <input
           id={inputId}
           aria-invalid={error ? true : undefined}
+          data-invalid={error ? 'true' : undefined}
           aria-describedby={describedBy}
           className={cx(
-            'h-10 w-full rounded-control border border-line bg-white px-3 text-sm text-ink-900 transition-colors placeholder:text-ink-400 focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-50 disabled:cursor-not-allowed disabled:bg-canvas disabled:text-ink-600',
-            leading ? 'pl-9' : undefined,
-            error && 'border-danger-600 focus:border-danger-600 focus:ring-danger-50',
+            'h-10 w-full rounded-control border border-line bg-white pr-3 text-sm text-ink-900 transition-colors placeholder:text-ink-500 focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-50 disabled:cursor-not-allowed disabled:bg-canvas disabled:text-ink-600',
+            'data-[invalid=true]:border-danger-600 data-[invalid=true]:focus:border-danger-600 data-[invalid=true]:focus:ring-danger-50',
+            leading ? 'pl-9' : 'pl-3',
             inputClassName,
           )}
           {...rest}

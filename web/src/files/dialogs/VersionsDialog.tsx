@@ -48,7 +48,7 @@ export function VersionsDialog({
                   <p className="flex flex-wrap items-center gap-2 font-medium text-ink-900">
                     {formatTimestamp(version.createdAt)}
                     {version.isCurrent && (
-                      <span className="rounded-full bg-success-50 px-2 py-0.5 text-xs font-medium text-success-600">
+                      <span className="rounded-full bg-success-50 px-2 py-0.5 text-xs font-medium text-success-700">
                         当前版本
                       </span>
                     )}

@@ -144,7 +144,7 @@ export function TrashView() {
 
         {loading ? (
           <div
-            role="status"
+            aria-live="polite"
             className="rounded-card border border-line bg-white px-6 py-16 text-center text-sm text-ink-600"
           >
             加载中…
@@ -231,10 +231,9 @@ export function TrashView() {
                     </Button>
                     <Button
                       size="sm"
-                      variant="ghost"
+                      variant="dangerGhost"
                       icon={<Trash2 size={14} />}
                       aria-label={`永久删除 ${item.name}`}
-                      className="text-danger-600 hover:bg-danger-50 hover:text-danger-600"
                       disabled={busy !== null}
                       onClick={() => setConfirmItem(item)}
                     >

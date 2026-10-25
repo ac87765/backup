@@ -260,11 +260,11 @@ export function TransferPanel({
 
                 <div className="flex flex-wrap items-center justify-end gap-1">
                   {item.direction === 'upload' ? (
-                    <span className="mr-auto text-xs text-ink-400">
+                    <span className="mr-auto text-xs text-ink-500">
                       上传
                     </span>
                   ) : (
-                    <span className="mr-auto text-xs text-ink-400">
+                    <span className="mr-auto text-xs text-ink-500">
                       下载
                     </span>
                   )}
@@ -301,9 +301,8 @@ export function TransferPanel({
                   {(active || paused) && canCancel && (
                     <Button
                       size="sm"
-                      variant="ghost"
+                      variant="dangerGhost"
                       data-testid="transfer-cancel"
-                      className="text-danger-600 hover:bg-danger-50 hover:text-danger-600"
                       onClick={() => onCancel(item)}
                     >
                       取消

@@ -104,7 +104,7 @@ export function FolderPicker({
       <FormError message={error} />
       <div className="max-h-64 space-y-1 overflow-y-auto rounded-card border border-line p-1.5">
         {loading && (
-          <p role="status" className="px-2 py-3 text-sm text-ink-600">
+          <p aria-live="polite" className="px-2 py-3 text-sm text-ink-600">
             加载中…
           </p>
         )}

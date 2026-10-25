@@ -956,7 +956,7 @@ export function FileBrowser() {
 
         {loading ? (
           <div
-            role="status"
+            aria-live="polite"
             className="rounded-card border border-line bg-white px-6 py-16 text-center text-sm text-ink-600"
           >
             加载中…
@@ -985,7 +985,7 @@ export function FileBrowser() {
         )}
 
         {!loading && loadingMore && (
-          <p role="status" className="text-sm text-ink-600">
+          <p aria-live="polite" className="text-sm text-ink-600">
             加载更多…
           </p>
         )}
@@ -1054,14 +1054,14 @@ export function FileBrowser() {
       {dragActive && current && (
         <div
           data-testid="drop-overlay"
-          className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-brand-600/90 p-6 backdrop-blur-sm"
+          className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-brand-600 p-6 backdrop-blur-sm"
         >
           <div className="flex max-w-lg flex-col items-center gap-3 rounded-card border-2 border-dashed border-white/80 bg-white/10 px-10 py-12 text-center text-white">
             <UploadCloud size={48} aria-hidden="true" />
             <p className="text-lg font-semibold">
               松开以上传到“{current.name}”
             </p>
-            <p className="text-sm text-white/80">
+            <p className="text-sm text-white">
               文件会在本机加密后上传
             </p>
           </div>

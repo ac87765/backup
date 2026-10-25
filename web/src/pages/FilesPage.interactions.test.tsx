@@ -164,6 +164,24 @@ describe('文件列表交互', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
+  it('通过更多菜单删除文件并提示已移入回收站', async () => {
+    const user = userEvent.setup()
+    const deleteNode = vi.fn().mockResolvedValue(undefined)
+    const listFolder = vi.fn().mockResolvedValue({
+      items: ITEMS,
+      nextCursor: null,
+    })
+    renderPage(api({ deleteNode, listFolder }))
+    await screen.findByText('b.txt')
+
+    await user.click(screen.getByTestId('more-b'))
+    await user.click(screen.getByRole('menuitem', { name: '删除 b.txt' }))
+    await waitFor(() => expect(deleteNode).toHaveBeenCalledWith('b'))
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      '已移入回收站',
+    )
+  })
+
   it('拖入文件时显示覆盖层，松开后上传到当前文件夹', async () => {
     const uploadFile = vi.fn().mockResolvedValue({
       nodeId: 'node-1',

@@ -2,7 +2,12 @@ import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
 
 import { cx } from './cx'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
+export type ButtonVariant =
+  | 'primary'
+  | 'secondary'
+  | 'ghost'
+  | 'danger'
+  | 'dangerGhost'
 export type ButtonSize = 'sm' | 'md'
 
 const VARIANTS: Record<ButtonVariant, string> = {
@@ -11,6 +16,8 @@ const VARIANTS: Record<ButtonVariant, string> = {
     'border border-line bg-white text-ink-900 hover:border-line-strong hover:bg-canvas active:bg-canvas-strong',
   ghost: 'text-ink-600 hover:bg-canvas hover:text-ink-900 active:bg-canvas-strong',
   danger: 'bg-danger-600 text-white hover:bg-danger-700 active:bg-danger-700',
+  dangerGhost:
+    'text-danger-600 hover:bg-danger-50 hover:text-danger-700 active:bg-danger-50',
 }
 
 const SIZES: Record<ButtonSize, string> = {

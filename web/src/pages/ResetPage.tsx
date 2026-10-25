@@ -59,7 +59,7 @@ export function ResetPage() {
               返回登录
             </Link>
           </p>
-          <p className="text-xs text-ink-400">
+          <p className="text-xs text-ink-500">
             同时丢失密码与恢复密钥时，数据无法恢复。
           </p>
         </div>

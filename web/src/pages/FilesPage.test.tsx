@@ -108,6 +108,7 @@ describe('文件浏览器页面', () => {
     await waitFor(() => expect(listFolder).toHaveBeenCalled())
     fireEvent.click(screen.getByTestId('upload-menu'))
     fireEvent.click(await screen.findByTestId('new-folder'))
+    expect(screen.getByTestId('folder-name')).toHaveFocus()
     fireEvent.click(screen.getByTestId('create-folder-submit'))
     expect(await screen.findByRole('alert')).toHaveTextContent('名称不能为空')
     expect(createFolder).not.toHaveBeenCalled()
