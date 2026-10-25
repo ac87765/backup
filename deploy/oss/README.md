@@ -175,7 +175,7 @@ bucket/CORS/SSE/生命周期建议使用控制台配置；不同版本的 `ossut
 | 配置 | 谁访问 | 地址形态 | 说明 |
 |---|---|---|---|
 | `BACKUP_STORAGE_INTERNAL_ENDPOINT` | 服务端进程 | `https://oss-<region>-internal.aliyuncs.com` | 阿里云 VPC 内网地址，通常不解析公网；走内网可降低流量费用与延迟 |
-| `BACKUP_STORAGE_PUBLIC_ENDPOINT` | 用户浏览器 | `https://oss-<region>.aliyuncs.com` | 只用于生成预签名 URL；其 origin 会追加到 CSP `connect-src` |
+| `BACKUP_STORAGE_PUBLIC_ENDPOINT` | 用户浏览器 | `https://oss-<region>.aliyuncs.com` | 只用于生成预签名 URL；CSP 实际追加的是 bucket 子域名 origin（见下） |
 
 注意事项：
 
@@ -184,7 +184,16 @@ bucket/CORS/SSE/生命周期建议使用控制台配置；不同版本的 `ossut
 - 内网 endpoint 只在同地域 VPC/ECS/ACK 中可解析。若后端部署在阿里云之外（例如自建机房），
   把 internal endpoint 也设为公网 endpoint；这不是最佳实践，但功能上可行。
 - 预签名 URL 的签名基于公网 endpoint 生成；不要在前端再做 URL 重写。
-- 切换 endpoint 后必须重启 `server serve` 使 CSP 的 `connect-src` 更新。
+- **CSP 的 `connect-src` 追加的是 bucket 子域名 origin，而不是 endpoint 本身**：
+  OSS 预签名 URL 使用虚拟主机风格，实际 host 是
+  `https://<bucket>.oss-<region>.aliyuncs.com`（带端口时保留端口）。服务端从
+  `BACKUP_STORAGE_PUBLIC_ENDPOINT` 的 host 自动拼接 bucket，得到并写入 CSP 的正是这个 origin。
+  因此不要填 `https://<bucket>.oss-<region>.aliyuncs.com`——启动期会拒绝带 bucket 子域名的
+  配置，避免变成 `bucket.bucket.host`。这里选择拒绝而不是自动去掉前缀，是因为自定义域名
+  无法可靠判断该前缀是否真的是 bucket 子域名，静默去重会掩盖配置错误。
+- 切换 endpoint 后必须重启 `server serve` 使 CSP 的 `connect-src` 更新。若浏览器控制台报
+  CSP 拦截 `https://<bucket>.oss-<region>.aliyuncs.com`，先确认填的是不带 bucket 的标准
+  endpoint；不要用 `https://*.aliyuncs.com` 通配符放宽 CSP。
 - `BACKUP_STORAGE_ALLOW_HTTP=false` 时两个 endpoint 都必须是 https。
 
 ## 7. 逐步 Runbook（用户本人在阿里云执行）

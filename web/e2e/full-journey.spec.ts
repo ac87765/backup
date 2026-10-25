@@ -185,17 +185,22 @@ test('容器化全链路：注册 → 验证 → 登录 → 文件夹 → 上传
     } catch {
       return
     }
-    const signatures = [
-      'X-Amz-Signature',
-      'X-Amz-Credential',
-      'X-Amz-Security-Token',
-      'Signature',
-      'OSSAccessKeyId',
-    ]
+    const signatureNames = new Set(
+      [
+        'X-Amz-Signature',
+        'X-Amz-Credential',
+        'X-Amz-Security-Token',
+        'Signature',
+        'OSSAccessKeyId',
+        'x-oss-signature',
+        'x-oss-credential',
+        'x-oss-security-token',
+      ].map((name) => name.toLowerCase()),
+    )
     let matched = false
-    for (const name of signatures) {
-      const value = url.searchParams.get(name)
-      if (value) {
+    // OSS 的查询参数大小写不固定（x-oss-signature / OSSAccessKeyId 等），统一小写匹配。
+    for (const [name, value] of url.searchParams) {
+      if (signatureNames.has(name.toLowerCase()) && value) {
         record(value)
         matched = true
       }

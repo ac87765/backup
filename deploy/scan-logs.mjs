@@ -9,7 +9,7 @@
  * 断言日志中不出现：
  *   - 清单中的会话 Cookie 值、邮件令牌、明文文件名/文件夹名/内容片段、测试密码；
  *   - 清单中记录的预签名签名参数值；
- *   - 预签名 URL 的签名参数名（X-Amz-Signature / Signature / OSSAccessKeyId 等）；
+ *   - 预签名 URL 的签名参数名（X-Amz-* / Signature / OSSAccessKeyId / x-oss-* 等）；
  *   - auth_key、包裹密钥、恢复密钥等密钥字段名；
  *   - 64 位十六进制令牌/密钥（会话令牌、auth_key、邮件令牌的通用形态）；
  *   - URL 片段中的 #token= 邮件令牌。
@@ -61,7 +61,7 @@ const FORBIDDEN_PATTERNS = [
   {
     name: '预签名 URL 签名参数名',
     regex:
-      /(?:X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|OSSAccessKeyId|Signature)\s*[=:]/i,
+      /(?:X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|OSSAccessKeyId|x-oss-signature|x-oss-credential|x-oss-security-token|Signature)\s*[=:]/i,
   },
   {
     name: '密钥字段名（auth_key/rk_auth/wrapped_mk/recovery_wrapped_mk）',

@@ -3,7 +3,8 @@
 //! CSP 的基础策略只有一份：仓库根目录的 `csp/base-policy.txt`。
 //! - 服务端用 `include_str!` 编进二进制；
 //! - `web/vite.config.ts` 在构建/预览时读取同一个文件；
-//! - 服务端启动时从配置读出对象存储公网 origin，追加到 `connect-src`。
+//! - 服务端启动时从 [`crate::Storage::browser_origin`] 取对象存储浏览器 origin，
+//!   追加到 `connect-src`（OSS 为 bucket 子域名，S3/MinIO 为 endpoint origin）。
 
 use axum::extract::Request;
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
@@ -128,9 +129,10 @@ mod tests {
 
     #[test]
     fn storage_origin_is_appended_to_connect_src() {
-        let policy = content_security_policy("https://bucket.oss-cn-hangzhou.aliyuncs.com/");
+        // 标准 OSS endpoint 不带 bucket；bucket 子域名由 Storage 层推导后传入。
+        let policy = content_security_policy("https://oss-cn-hangzhou.aliyuncs.com/");
         assert!(
-            policy.contains("connect-src 'self' https://bucket.oss-cn-hangzhou.aliyuncs.com"),
+            policy.contains("connect-src 'self' https://oss-cn-hangzhou.aliyuncs.com"),
             "实际策略: {policy}"
         );
         // 只应该出现一次 connect-src。

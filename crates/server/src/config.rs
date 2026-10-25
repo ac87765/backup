@@ -225,9 +225,52 @@ pub struct StorageConfig {
 }
 
 impl StorageConfig {
-    /// 追加到 CSP `connect-src` 的对象存储公网 origin（`scheme://authority`）。
-    pub fn public_origin(&self) -> String {
-        origin_of(&self.public_endpoint)
+    /// 浏览器直接访问对象存储时实际使用的 origin（`scheme://authority`）。
+    ///
+    /// OSS 的预签名 URL 使用虚拟主机风格：`https://<bucket>.<endpoint host>/...`，
+    /// 因此浏览器访问 origin 必须带 bucket 子域名；S3/MinIO 使用 path-style，
+    /// 浏览器访问 origin 就是公网 endpoint 的 origin。
+    ///
+    /// 这里是该 origin 的唯一推导入口：CSP 使用 [`crate::storage::Storage::browser_origin`]，
+    /// 而 Storage 在启动时缓存本函数的结果，避免两处各自猜测。
+    ///
+    /// 若公网 endpoint 已带 `<bucket>.` 前缀，这里选择**启动期拒绝**而不是静默规范化：
+    /// 自定义域名无法可靠判断该前缀是否真是 bucket 子域名，静默去重会掩盖配置错误；
+    /// 要求填写标准 `https://oss-<region>.aliyuncs.com` 更可预测。
+    pub(crate) fn browser_origin(&self) -> Result<String, ConfigError> {
+        let uri: axum::http::Uri = self.public_endpoint.parse().map_err(|_| {
+            ConfigError::invalid(keys::STORAGE_PUBLIC_ENDPOINT, "必须是合法的 http(s) URL")
+        })?;
+        let scheme = match uri.scheme_str() {
+            Some("http") => "http",
+            Some("https") => "https",
+            _ => {
+                return Err(ConfigError::invalid(
+                    keys::STORAGE_PUBLIC_ENDPOINT,
+                    "只支持 http:// 或 https:// 的 endpoint",
+                ));
+            }
+        };
+        let authority = uri
+            .authority()
+            .ok_or_else(|| ConfigError::invalid(keys::STORAGE_PUBLIC_ENDPOINT, "缺少主机名"))?;
+        if self.kind == StorageKind::S3 {
+            return Ok(origin_of(&self.public_endpoint));
+        }
+
+        let host = authority.host().to_ascii_lowercase();
+        let bucket_prefix = format!("{}.", self.bucket.to_ascii_lowercase());
+        if host.starts_with(&bucket_prefix) {
+            return Err(ConfigError::invalid(
+                keys::STORAGE_PUBLIC_ENDPOINT,
+                "OSS endpoint 不能包含 bucket 子域名；请填写 https://oss-<region>.aliyuncs.com，由服务端自动拼接 bucket",
+            ));
+        }
+        let host = format!("{}.{}", self.bucket, authority.host());
+        match authority.port_u16() {
+            Some(port) => Ok(format!("{scheme}://{host}:{port}")),
+            None => Ok(format!("{scheme}://{host}")),
+        }
     }
 }
 
@@ -408,21 +451,26 @@ impl Config {
         let auth_rate_limit_per_minute = parse_auth_rate_limit(figment)?;
         let user_write_rate_limit_per_minute = parse_user_write_rate_limit(figment)?;
 
+        // 启动期校验浏览器访问 origin：OSS 的 public endpoint 必须是不带 bucket
+        // 的标准 endpoint，否则预签名 URL 的 host 会变成 bucket.bucket.host。
+        let storage = StorageConfig {
+            kind,
+            bucket,
+            region,
+            internal_endpoint,
+            public_endpoint,
+            access_key_id,
+            secret_access_key,
+            allow_http,
+        };
+        storage.browser_origin()?;
+
         Ok(Self {
             bind_addr,
             metrics_addr,
             static_dir,
             database,
-            storage: StorageConfig {
-                kind,
-                bucket,
-                region,
-                internal_endpoint,
-                public_endpoint,
-                access_key_id,
-                secret_access_key,
-                allow_http,
-            },
+            storage,
             jobs_enabled,
             mail,
             auth,
@@ -917,7 +965,10 @@ mod tests {
         assert_eq!(config.metrics_addr.to_string(), "127.0.0.1:9091");
         assert_eq!(config.database.max_connections, 10);
         assert_eq!(config.storage.kind, StorageKind::S3);
-        assert_eq!(config.storage.public_origin(), "http://127.0.0.1:9000");
+        assert_eq!(
+            config.storage.browser_origin().expect("S3 origin 应合法"),
+            "http://127.0.0.1:9000"
+        );
         assert_eq!(config.storage.internal_endpoint, "http://127.0.0.1:9000");
     }
 
@@ -1046,6 +1097,46 @@ mod tests {
                 key: keys::STORAGE_REGION
             }
         );
+    }
+
+    fn oss_pairs() -> Vec<(&'static str, &'static str)> {
+        let mut pairs = complete_pairs();
+        pairs.push(("storage_kind", "oss"));
+        pairs.push(("storage_region", "oss-cn-hangzhou"));
+        pairs.push((
+            "storage_public_endpoint",
+            "https://oss-cn-hangzhou.aliyuncs.com",
+        ));
+        pairs
+    }
+
+    #[test]
+    fn oss_browser_origin_uses_bucket_subdomain() {
+        let config = load(&oss_pairs()).expect("OSS 配置应当合法");
+        assert_eq!(
+            config.storage.browser_origin().expect("OSS origin 应合法"),
+            "https://backup.oss-cn-hangzhou.aliyuncs.com"
+        );
+    }
+
+    #[test]
+    fn oss_rejects_public_endpoint_with_bucket_prefix() {
+        let mut pairs = oss_pairs();
+        pairs.push((
+            "storage_public_endpoint",
+            "https://backup.oss-cn-hangzhou.aliyuncs.com",
+        ));
+        let err = load(&pairs).expect_err("带 bucket 子域名的 endpoint 必须被拒绝");
+        match err {
+            ConfigError::Invalid { key, reason } => {
+                assert_eq!(key, keys::STORAGE_PUBLIC_ENDPOINT);
+                assert!(
+                    reason.contains("bucket 子域名"),
+                    "错误原因应说明 bucket 子域名问题：{reason}"
+                );
+            }
+            other => panic!("应为配置错误，实际: {other:?}"),
+        }
     }
 
     #[test]

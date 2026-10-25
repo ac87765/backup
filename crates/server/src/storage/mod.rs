@@ -29,7 +29,7 @@ use opendal::layers::TimeoutLayer;
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
-use crate::config::{StorageConfig, StorageKind};
+use crate::config::{ConfigError, StorageConfig, StorageKind};
 
 /// 预签名 URL 的最长有效期（15 分钟）。
 pub const MAX_PRESIGN_TTL: Duration = Duration::from_secs(15 * 60);
@@ -52,6 +52,8 @@ pub const PROBE_PREFIX: &str = "v1/";
 pub enum StorageError {
     #[error("对象存储配置无效")]
     Config(#[source] opendal::Error),
+    #[error("对象存储浏览器访问 origin 配置无效")]
+    BrowserOrigin(#[source] ConfigError),
     #[error("对象存储操作失败")]
     Operation(#[source] opendal::Error),
     #[error("预签名有效期非法：必须在 1 秒到 15 分钟之间")]
@@ -227,6 +229,7 @@ pub trait ObjectBackend: Send + Sync {
 pub struct Storage {
     backend: Arc<dyn ObjectBackend>,
     bucket: String,
+    browser_origin: String,
 }
 
 impl fmt::Debug for Storage {
@@ -241,10 +244,14 @@ impl Storage {
     /// 根据配置构造内网 + 公网两个 operator。
     pub fn new(config: &StorageConfig) -> Result<Self, StorageError> {
         ensure_http_stack();
+        let browser_origin = config
+            .browser_origin()
+            .map_err(StorageError::BrowserOrigin)?;
         let backend = OpenDalBackend::new(config)?;
         Ok(Self {
             backend: Arc::new(backend),
             bucket: config.bucket.clone(),
+            browser_origin,
         })
     }
 
@@ -252,11 +259,20 @@ impl Storage {
         &self.bucket
     }
 
+    /// 浏览器直连对象存储时实际使用的 origin。
+    ///
+    /// 这是 CSP `connect-src` 的唯一来源；OSS 会带 bucket 子域名，S3/MinIO 则与
+    /// public endpoint 的 origin 相同。调用方不得自行从 endpoint 推导。
+    pub fn browser_origin(&self) -> &str {
+        &self.browser_origin
+    }
+
     /// 返回包装了故障注入的新句柄（共享同一后端）。
     pub fn with_fault_injection(&self, config: FaultInjectionConfig) -> Self {
         Self {
             backend: Arc::new(FaultInjector::new(self.backend.clone(), config)),
             bucket: self.bucket.clone(),
+            browser_origin: self.browser_origin.clone(),
         }
     }
 
@@ -782,5 +798,88 @@ mod tests {
     #[test]
     fn operation_timeout_is_thirty_seconds() {
         assert_eq!(OPERATION_TIMEOUT, Duration::from_secs(30));
+    }
+
+    fn presign_test_config(kind: StorageKind, public_endpoint: &str) -> StorageConfig {
+        StorageConfig {
+            kind,
+            bucket: "backup".to_owned(),
+            region: "oss-cn-hangzhou".to_owned(),
+            internal_endpoint: "http://127.0.0.1:9000".to_owned(),
+            public_endpoint: public_endpoint.to_owned(),
+            access_key_id: crate::config::Secret::new("test-access-key-id"),
+            secret_access_key: crate::config::Secret::new("test-secret-access-key"),
+            allow_http: public_endpoint.starts_with("http://"),
+        }
+    }
+
+    fn url_origin(url: &str) -> String {
+        let uri: axum::http::Uri = url.parse().expect("预签名 URL 应可解析");
+        let scheme = uri.scheme_str().expect("预签名 URL 应有 scheme");
+        let authority = uri.authority().expect("预签名 URL 应有 authority");
+        format!("{scheme}://{authority}")
+    }
+
+    #[tokio::test]
+    async fn presigned_url_origins_match_csp_for_oss_and_s3() {
+        // 不访问网络：OpenDAL 的预签名只在本地计算签名。
+        let cases = [
+            (
+                StorageKind::Oss,
+                "https://oss-cn-hangzhou.aliyuncs.com",
+                "https://backup.oss-cn-hangzhou.aliyuncs.com",
+            ),
+            (
+                StorageKind::S3,
+                "https://s3.example.invalid",
+                "https://s3.example.invalid",
+            ),
+        ];
+
+        for (kind, endpoint, expected_origin) in cases {
+            let storage = Storage::new(&presign_test_config(kind, endpoint))
+                .expect("构造预签名测试用 Storage");
+            assert_eq!(
+                storage.browser_origin(),
+                expected_origin,
+                "Storage 的浏览器 origin 不正确（{kind:?}）"
+            );
+
+            let policy = crate::api::security::content_security_policy(storage.browser_origin());
+            let connect_src = policy
+                .split(';')
+                .map(str::trim)
+                .find(|directive| directive.starts_with("connect-src"))
+                .expect("CSP 必须包含 connect-src");
+            let tokens: Vec<&str> = connect_src.split_whitespace().collect();
+            assert_eq!(
+                tokens,
+                vec!["connect-src", "'self'", expected_origin],
+                "CSP connect-src 追加的 origin 与 Storage 不一致（{kind:?}）"
+            );
+
+            let key = ObjectKey::generate(Uuid::new_v4());
+            let put = storage
+                .presign_write(&key, Duration::from_secs(60))
+                .await
+                .expect("生成预签名 PUT 不应访问网络");
+            let get = storage
+                .presign_read(key.as_str(), Duration::from_secs(60))
+                .await
+                .expect("生成预签名 GET 不应访问网络");
+
+            assert_eq!(
+                url_origin(put.url()),
+                expected_origin,
+                "预签名 PUT origin 与 CSP 不一致（{kind:?}）：{}",
+                put.url()
+            );
+            assert_eq!(
+                url_origin(get.url()),
+                expected_origin,
+                "预签名 GET origin 与 CSP 不一致（{kind:?}）：{}",
+                get.url()
+            );
+        }
     }
 }

@@ -38,7 +38,7 @@ pub fn classify_storage_error(error: &StorageError) -> &'static str {
             crate::storage::InjectedErrorKind::PermissionDenied => "permission_denied",
             crate::storage::InjectedErrorKind::Timeout => "timeout",
         },
-        StorageError::Config(_) => "config",
+        StorageError::Config(_) | StorageError::BrowserOrigin(_) => "config",
         StorageError::InvalidPresignTtl => "invalid_ttl",
         StorageError::Operation(error) => match error.kind() {
             opendal::ErrorKind::PermissionDenied => "permission_denied",

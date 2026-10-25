@@ -184,7 +184,7 @@ pub fn build_router_with(state: AppState, extra: Router<AppState>) -> Router {
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_method_not_allowed);
 
-    let security_headers = security::SecurityHeaders::new(&state.config.storage.public_origin());
+    let security_headers = security::SecurityHeaders::new(state.storage.browser_origin());
 
     Router::new()
         .route("/healthz", get(health::healthz))
