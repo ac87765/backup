@@ -63,6 +63,8 @@ test('安全与隐私页面可访问，并列出服务端可见信息、Web E2EE
 })
 
 test('减少动态效果时原理图静止，页面没有运行中的动画', async ({ page }) => {
+  // 显式开启，不依赖各 Playwright 配置（容器化配置未全局开启 reducedMotion）。
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/security')
   await expect(
     page.getByRole('heading', { name: '安全与隐私' }),
