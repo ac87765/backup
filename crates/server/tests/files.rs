@@ -1981,4 +1981,15 @@ async fn cross_user_relative_foreign_keys_are_rejected_by_the_database() {
         cross_current.is_err(),
         "current_version_id 指向他人版本必须被复合外键拒绝"
     );
+
+    // users.root_node_id 必须指向该用户自己的根节点。
+    let cross_root = sqlx::query("UPDATE users SET root_node_id = $1 WHERE id = $2")
+        .bind(owner_root)
+        .bind(attacker)
+        .execute(app.database.pool())
+        .await;
+    assert!(
+        cross_root.is_err(),
+        "users.root_node_id 指向他人节点必须被复合外键拒绝"
+    );
 }

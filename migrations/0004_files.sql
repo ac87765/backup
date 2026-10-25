@@ -183,6 +183,6 @@ ALTER TABLE users ALTER COLUMN root_node_id SET NOT NULL;
 
 ALTER TABLE users
     ADD CONSTRAINT users_root_node_fkey
-    FOREIGN KEY (root_node_id) REFERENCES nodes (id)
+    FOREIGN KEY (id, root_node_id) REFERENCES nodes (user_id, id)
     ON DELETE RESTRICT
     DEFERRABLE INITIALLY DEFERRED;
