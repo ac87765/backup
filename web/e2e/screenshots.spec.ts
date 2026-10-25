@@ -35,9 +35,10 @@ async function openFolder(page: Page, name: string): Promise<void> {
 async function backToRoot(page: Page): Promise<void> {
   await page
     .getByTestId('breadcrumb')
-    .getByRole('button', { name: '我的文件' })
+    .getByRole('button', { name: '全部文件' })
     .click()
-  await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
+  // 手机端 H1 视觉隐藏、标题在顶部栏，因此只断言面包屑已回到根。
+  await expect(page.getByTestId('breadcrumb')).toContainText('全部文件')
 }
 
 async function openFileMenu(page: Page, name: string): Promise<void> {
@@ -46,9 +47,45 @@ async function openFileMenu(page: Page, name: string): Promise<void> {
     .click()
 }
 
-async function startSlowUpload(page: Page, name: string): Promise<void> {
+/**
+ * 按住对象 PUT，直到截图完成后再放行；不再依赖固定 sleep。
+ * 返回释放函数。
+ */
+/** 按住目录请求以截取骨架屏，返回释放函数。 */
+async function holdListRequests(page: Page): Promise<() => void> {
+  let released = false
+  let release: () => void = () => undefined
+  const gate = new Promise<void>((resolve) => {
+    release = () => {
+      released = true
+      resolve()
+    }
+  })
+  await page.route('**/api/v1/nodes/**', async (route) => {
+    if (route.request().method() === 'GET' && !released) {
+      await gate
+    }
+    await route.continue()
+  })
+  return release
+}
+
+async function startSlowUpload(
+  page: Page,
+  name: string,
+): Promise<() => void> {
+  let released = false
+  let release: () => void = () => undefined
+  const gate = new Promise<void>((resolve) => {
+    release = () => {
+      released = true
+      resolve()
+    }
+  })
   await page.route('**/backup/v1/**', async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    if (!released) {
+      await gate
+    }
     await route.continue()
   })
   await page.setInputFiles('[data-testid="upload-input"]', {
@@ -62,6 +99,7 @@ async function startSlowUpload(page: Page, name: string): Promise<void> {
   await expect(item).toHaveAttribute('data-status', 'uploading', {
     timeout: 30_000,
   })
+  return release
 }
 
 async function finishUpload(page: Page, name: string): Promise<void> {
@@ -82,7 +120,8 @@ async function clearCompletedTransfers(page: Page): Promise<void> {
 }
 
 test('桌面与手机两种视口截图', async ({ page }) => {
-  test.setTimeout(300_000)
+  // 截图需要注册、两种视口、多次上传与对话框，单独放宽超时。
+  test.setTimeout(600_000)
   await mkdir(OUTPUT_DIR, { recursive: true })
 
   const email = `shots-${Date.now()}-${randomUUID()}@example.com`
@@ -97,7 +136,7 @@ test('桌面与手机两种视口截图', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/login')
   await expect(
-    page.getByRole('heading', { name: '端对端加密备份' }),
+    page.getByRole('heading', { name: '登录' }),
   ).toBeVisible()
   await capture(page, 'login-desktop')
 
@@ -117,6 +156,16 @@ test('桌面与手机两种视口截图', async ({ page }) => {
   // 注册并登录（桌面视口），先截空文件夹。
   await page.setViewportSize({ width: 1440, height: 900 })
   await registerVerifyAndLogin(page, email)
+
+  // 骨架屏状态（7.5）。
+  const releaseList = await holdListRequests(page)
+  await page.getByTestId('refresh-files').click()
+  await expect(page.getByTestId('file-skeleton')).toBeVisible()
+  await capture(page, 'skeleton-desktop')
+  releaseList()
+  await expect(page.getByText('这个文件夹还是空的')).toBeVisible()
+  await page.unroute('**/api/v1/nodes/**')
+
   await createFolder(page, emptyDesktop)
   await openFolder(page, emptyDesktop)
   await capture(page, 'empty-folder-desktop')
@@ -149,10 +198,11 @@ test('桌面与手机两种视口截图', async ({ page }) => {
     .getByRole('button', { name: '关闭' })
     .click()
 
-  // 传输面板（放慢对象 PUT 以便截取上传中状态）。
-  await startSlowUpload(page, transferDesktop)
+  // 传输面板（按住对象 PUT 以截取上传中状态）。
+  const releaseDesktop = await startSlowUpload(page, transferDesktop)
   await expect(page.getByTestId('transfer-panel')).toBeVisible()
   await capture(page, 'transfer-panel-desktop')
+  releaseDesktop()
   await finishUpload(page, transferDesktop)
   await clearCompletedTransfers(page)
 
@@ -199,9 +249,10 @@ test('桌面与手机两种视口截图', async ({ page }) => {
   await backToRoot(page)
 
   // 手机传输面板。
-  await startSlowUpload(page, transferMobile)
+  const releaseMobile = await startSlowUpload(page, transferMobile)
   await expect(page.getByTestId('transfer-panel')).toBeVisible()
   await capture(page, 'transfer-panel-mobile')
+  releaseMobile()
   await finishUpload(page, transferMobile)
   await clearCompletedTransfers(page)
 

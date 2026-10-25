@@ -19,7 +19,7 @@ test('右键菜单、网格持久化、本地筛选、旧路由与 localStorage'
   const folderRenamed = `${prefix}-甲2`
 
   await registerVerifyAndLogin(page, email)
-  await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '全部文件' })).toBeVisible()
   await expect(
     page.getByRole('link', { name: '全部文件' }),
   ).toHaveAttribute('aria-current', 'page')
@@ -102,12 +102,13 @@ test('右键菜单、网格持久化、本地筛选、旧路由与 localStorage'
   await page.goto('/')
   await unlockWithPassword(page)
   await expect(page).toHaveURL(/\/files$/)
-  await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '全部文件' })).toBeVisible()
 
   // 退出登录后 Worker 内会话结束，回到登录页。
   await page.getByRole('button', { name: `账号菜单 ${email}` }).click()
   await page.getByRole('menuitem', { name: '退出登录' }).click()
   await expect(
-    page.getByRole('heading', { name: '端对端加密备份' }),
+    page.getByRole('heading', { name: '登录' }),
   ).toBeVisible()
+  await expect(page).toHaveURL(/\/login$/)
 })

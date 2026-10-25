@@ -23,7 +23,7 @@ test('真实服务端返回严格 CSP 且所有公开页面没有 CSP 违规', a
   expect(csp).toContain("frame-ancestors 'none'")
 
   await expect(
-    page.getByRole('heading', { name: '端对端加密备份' }),
+    page.getByRole('heading', { name: '登录' }),
   ).toBeVisible()
 
   // 登录前的品牌页面全部同源；登录后的文件/回收站/账号设置页由

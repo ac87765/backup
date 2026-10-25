@@ -250,7 +250,7 @@ test('容器化全链路：注册 → 验证 → 登录 → 文件夹 → 上传
     await captureSessionCookie(page)
 
     // 4. 文件夹 + 上传 + 下载 SHA-256 比对。
-    await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '全部文件' })).toBeVisible()
     await createFolder(page, folderName)
     await uploadFile(page, fileName, oldContent)
     const downloaded = await downloadCurrentFile(page, fileName)
@@ -317,8 +317,9 @@ test('容器化全链路：注册 → 验证 → 登录 → 文件夹 → 上传
     await page.getByRole('button', { name: `账号菜单 ${email}` }).click()
     await page.getByRole('menuitem', { name: '退出登录' }).click()
     await expect(
-      page.getByRole('heading', { name: '端对端加密备份' }),
+      page.getByRole('heading', { name: '登录' }),
     ).toBeVisible()
+    await expect(page).toHaveURL(/\/login$/)
 
     // 8. 用恢复密钥重置密码（脱离密码也能恢复访问），再用新密码登录。
     await page.goto('/reset')
@@ -337,7 +338,7 @@ test('容器化全链路：注册 → 验证 → 登录 → 文件夹 → 上传
     await captureSessionCookie(page)
 
     // 9. 重置后数据仍可解密：文件与文件夹都在，下载当前版本（已恢复的旧内容）比对。
-    await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '全部文件' })).toBeVisible()
     await expect(fileRow(page, folderName)).toBeVisible()
     await expect(fileRow(page, fileName)).toBeVisible()
     const afterReset = await downloadCurrentFile(page, fileName)

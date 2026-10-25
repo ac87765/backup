@@ -148,7 +148,7 @@ test('文件浏览器：多级文件夹 → 重命名 → 移动 → 同名冲�
   const folderRenamed = `${secretPrefix}-C2`
 
   await registerVerifyAndLogin(page, email)
-  await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '全部文件' })).toBeVisible()
   await expect(
     page.getByRole('link', { name: '全部文件' }),
   ).toHaveAttribute('aria-current', 'page')
@@ -189,7 +189,7 @@ test('文件浏览器：多级文件夹 → 重命名 → 移动 → 同名冲�
   // 回到根，进入 A，应看到 C2。
   await page
     .getByTestId('breadcrumb')
-    .getByRole('button', { name: '我的文件' })
+    .getByRole('button', { name: '全部文件' })
     .click()
   await openFolder(page, folderA)
   await expect(fileRow(page, folderRenamed)).toBeVisible()
@@ -216,7 +216,7 @@ test('文件浏览器：多级文件夹 → 重命名 → 移动 → 同名冲�
   await expect(trashItem(page, folderRenamed)).toHaveCount(0)
   // 回收站是独立视图：回到文件页并重新进入 A 验证恢复后的位置。
   await page.getByRole('link', { name: '全部文件' }).click()
-  await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '全部文件' })).toBeVisible()
   await openFolder(page, folderA)
   await expect(fileRow(page, folderRenamed)).toBeVisible()
 

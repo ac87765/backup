@@ -48,7 +48,7 @@ export async function registerVerifyAndLogin(
   await page.getByTestId('login-password').fill(password)
   await page.getByTestId('login-submit').click()
   await expect(page.getByTestId('home-email')).toHaveText(email)
-  await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '全部文件' })).toBeVisible()
 }
 
 export function fileRow(page: Page, name: string) {

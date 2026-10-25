@@ -6,7 +6,7 @@ test('安全与隐私页面可访问，并列出服务端可见信息、Web E2EE
   // 从登录页的真实导航入口进入，确认页面在导航中可达。
   await page.goto('/login')
   await page
-    .getByRole('link', { name: '了解端对端加密与服务端可见信息' })
+    .getByRole('link', { name: '了解加密方式' })
     .click()
   await expect(page).toHaveURL(/\/security$/)
   await expect(

@@ -167,8 +167,9 @@ test('注册 → 验证 → 登录 → 刷新解锁 → 改密 → 恢复重置 
   await page.getByRole('button', { name: `账号菜单 ${email}` }).click()
   await page.getByRole('menuitem', { name: '退出登录' }).click()
   await expect(
-    page.getByRole('heading', { name: '端对端加密备份' }),
+    page.getByRole('heading', { name: '登录' }),
   ).toBeVisible()
+  await expect(page).toHaveURL(/\/login$/)
 
   await page.goto('/reset')
   await page.getByTestId('reset-email').fill(email)

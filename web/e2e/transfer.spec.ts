@@ -49,7 +49,7 @@ async function registerVerifyAndLogin(page: Page, email: string): Promise<void> 
   await page.getByTestId('login-password').fill(PASSWORD)
   await page.getByTestId('login-submit').click()
   await expect(page.getByTestId('home-email')).toHaveText(email)
-  await expect(page.getByRole('heading', { name: '我的文件' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '全部文件' })).toBeVisible()
 }
 
 async function installDownloadFallback(page: Page): Promise<void> {
@@ -364,7 +364,8 @@ test('取消上传后配额预留释放', async ({ page }) => {
       timeout: 60_000,
     })
     await expect(fileRow(page, name)).toHaveCount(0)
-    await expect(page.getByTestId('usage-summary')).toContainText('预留 0 B', {
+    // 预留为 0 时不再显示；没有“预留”文案即表示配额已释放。
+    await expect(page.getByTestId('usage-summary')).not.toContainText('预留', {
       timeout: 60_000,
     })
   } finally {
