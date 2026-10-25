@@ -9,8 +9,10 @@
 pub mod cli;
 pub mod routes;
 
-use axum::extract::FromRequestParts;
+use axum::extract::{FromRequestParts, Request, State};
 use axum::http::request::Parts;
+use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
 use sqlx::{Postgres, Transaction};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
@@ -89,6 +91,10 @@ impl FromRequestParts<AppState> for AdminSession {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+        // 外层 admin::guard 已校验过时直接复用，避免每个请求重复查询会话。
+        if let Some(admin) = parts.extensions.get::<Self>() {
+            return Ok(admin.clone());
+        }
         let session = AuthenticatedSession::from_request_parts(parts, state)
             .await
             .map_err(|_| ApiError::not_found())?;
@@ -100,5 +106,20 @@ impl FromRequestParts<AppState> for AdminSession {
             return Err(ApiError::reauth_required());
         }
         Ok(Self(session))
+    }
+}
+
+/// 管理路由的最外层守卫。
+///
+/// 它必须位于 CSRF 中间件之外：未登录/非管理员请求要得到 404，而不是
+/// `csrf_rejected`（add-admin-console D3：与不存在的接口不可区分）。
+pub async fn guard(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    let (mut parts, body) = request.into_parts();
+    match AdminSession::from_request_parts(&mut parts, &state).await {
+        Ok(admin) => {
+            parts.extensions.insert(admin);
+            next.run(Request::from_parts(parts, body)).await
+        }
+        Err(error) => error.into_response(),
     }
 }

@@ -237,7 +237,7 @@ fn upload_body(root: Uuid) -> Value {
 #[tokio::test]
 async fn normal_user_and_anonymous_get_404_from_admin_api() {
     let app = setup().await;
-    let (_user_id, cookie) = user_session(&app, "plain@example.com", 0x10, false).await;
+    let (user_id, cookie) = user_session(&app, "plain@example.com", 0x10, false).await;
 
     let (status, body) =
         admin_request(&app, Method::GET, "/api/v1/admin/users", None, &cookie).await;
@@ -256,6 +256,28 @@ async fn normal_user_and_anonymous_get_404_from_admin_api() {
     let (status, _headers, body) = read(response).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "not_found");
+
+    // 写接口在未登录/非管理员时也必须先得到 404，而不是 CSRF 403。
+    let response = send(
+        &app.app,
+        Method::POST,
+        &format!("/api/v1/admin/users/{user_id}/suspend"),
+        Some(json!({ "reason": "x" })),
+        None,
+        false,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let response = send(
+        &app.app,
+        Method::POST,
+        &format!("/api/v1/admin/users/{user_id}/suspend"),
+        Some(json!({ "reason": "x" })),
+        Some(&cookie),
+        false,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

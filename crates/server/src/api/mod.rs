@@ -139,42 +139,6 @@ pub fn build_router_with(state: AppState, extra: Router<AppState>) -> Router {
             post(crate::files::versions::restore_version),
         )
         .route("/v1/me/usage", get(crate::files::usage::get_usage))
-        // 管理后台（add-admin-console D4）；非管理员由提取器返回 404。
-        .route("/v1/admin/overview", get(crate::admin::routes::overview))
-        .route("/v1/admin/users", get(crate::admin::routes::list_users))
-        .route(
-            "/v1/admin/users/{user_id}",
-            get(crate::admin::routes::get_user),
-        )
-        .route(
-            "/v1/admin/users/{user_id}/approve",
-            post(crate::admin::routes::approve_user),
-        )
-        .route(
-            "/v1/admin/users/{user_id}/reject",
-            post(crate::admin::routes::reject_user),
-        )
-        .route(
-            "/v1/admin/users/{user_id}/suspend",
-            post(crate::admin::routes::suspend_user),
-        )
-        .route(
-            "/v1/admin/users/{user_id}/reactivate",
-            post(crate::admin::routes::reactivate_user),
-        )
-        .route(
-            "/v1/admin/users/{user_id}/quota",
-            put(crate::admin::routes::update_quota),
-        )
-        .route(
-            "/v1/admin/users/{user_id}/revoke-sessions",
-            post(crate::admin::routes::revoke_user_sessions),
-        )
-        .route(
-            "/v1/admin/settings",
-            get(crate::admin::routes::get_settings).put(crate::admin::routes::update_settings),
-        )
-        .route("/v1/admin/audit", get(crate::admin::routes::list_audit))
         // 文件传输（第 8 组）
         .route(
             "/v1/upload-sessions",
@@ -219,6 +183,52 @@ pub fn build_router_with(state: AppState, extra: Router<AppState>) -> Router {
         .layer(from_fn(csrf::require_custom_header))
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_method_not_allowed);
+
+    // 管理路由单独成组：最外层先做管理员校验（404/reauth），再进入 CSRF 检查。
+    // 这样未登录/非管理员对写接口也得到 404，而不是 csrf_rejected。
+    let admin_api = Router::new()
+        .route("/v1/admin/overview", get(crate::admin::routes::overview))
+        .route("/v1/admin/users", get(crate::admin::routes::list_users))
+        .route(
+            "/v1/admin/users/{user_id}",
+            get(crate::admin::routes::get_user),
+        )
+        .route(
+            "/v1/admin/users/{user_id}/approve",
+            post(crate::admin::routes::approve_user),
+        )
+        .route(
+            "/v1/admin/users/{user_id}/reject",
+            post(crate::admin::routes::reject_user),
+        )
+        .route(
+            "/v1/admin/users/{user_id}/suspend",
+            post(crate::admin::routes::suspend_user),
+        )
+        .route(
+            "/v1/admin/users/{user_id}/reactivate",
+            post(crate::admin::routes::reactivate_user),
+        )
+        .route(
+            "/v1/admin/users/{user_id}/quota",
+            put(crate::admin::routes::update_quota),
+        )
+        .route(
+            "/v1/admin/users/{user_id}/revoke-sessions",
+            post(crate::admin::routes::revoke_user_sessions),
+        )
+        .route(
+            "/v1/admin/settings",
+            get(crate::admin::routes::get_settings).put(crate::admin::routes::update_settings),
+        )
+        .route("/v1/admin/audit", get(crate::admin::routes::list_audit))
+        .layer(from_fn(csrf::require_custom_header))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::admin::guard,
+        ));
+
+    let api = api.merge(admin_api);
 
     let security_headers = security::SecurityHeaders::new(state.storage.browser_origin());
 
