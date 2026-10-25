@@ -1811,3 +1811,174 @@ async fn every_file_endpoint_returns_404_for_another_users_node() {
             .expect("读取节点状态");
     assert!(still_deleted);
 }
+
+#[tokio::test]
+async fn cross_user_relative_foreign_keys_are_rejected_by_the_database() {
+    let app = setup().await;
+    let (owner, owner_root, _owner_cookie) = user_with_session(&app).await;
+    let (attacker, attacker_root, _attacker_cookie) = user_with_session(&app).await;
+
+    let owner_folder = insert_node(
+        &app,
+        owner,
+        owner_root,
+        "folder",
+        &token(0x170),
+        &meta(0x171),
+    )
+    .await;
+    let attacker_folder = insert_node(
+        &app,
+        attacker,
+        attacker_root,
+        "folder",
+        &token(0x172),
+        &meta(0x173),
+    )
+    .await;
+
+    let wrapped = server::auth::decode_hex_vec(&wrapped(0x174)).expect("包裹密钥");
+    let encrypted_meta = server::auth::decode_hex_vec(&meta(0x175)).expect("元数据");
+    let name_token = server::auth::decode_hex_vec(&token(0x176)).expect("令牌");
+
+    // nodes.parent_id 必须与 user_id 指向同一用户。
+    let cross_parent = sqlx::query(
+        r#"
+        INSERT INTO nodes (
+            id, user_id, parent_id, kind, wrapped_key, encrypted_meta, name_token
+        )
+        VALUES ($1, $2, $3, 'folder', $4, $5, $6)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(attacker)
+    .bind(owner_folder)
+    .bind(&wrapped)
+    .bind(&encrypted_meta)
+    .bind(&name_token)
+    .execute(app.database.pool())
+    .await;
+    assert!(
+        cross_parent.is_err(),
+        "引用他人父节点的 nodes 行必须被复合外键拒绝"
+    );
+
+    // contents.node_id 必须与 user_id 指向同一用户。
+    let owner_content = Uuid::new_v4();
+    insert_content(
+        &app,
+        owner,
+        owner_folder,
+        owner_content,
+        10,
+        &[("k-fk-owner", 10)],
+    )
+    .await;
+    let cross_content = sqlx::query(
+        r#"
+        INSERT INTO contents (id, user_id, node_id, chunk_count, ciphertext_size)
+        VALUES ($1, $2, $3, 1, 10)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(attacker)
+    .bind(owner_folder)
+    .execute(app.database.pool())
+    .await;
+    assert!(
+        cross_content.is_err(),
+        "引用他人节点的 contents 行必须被复合外键拒绝"
+    );
+
+    // chunks.content_id 必须与 user_id 指向同一用户。
+    let cross_chunk = sqlx::query(
+        r#"
+        INSERT INTO chunks (content_id, user_id, idx, object_key, ciphertext_size, sha256)
+        VALUES ($1, $2, 0, $3, 10, $4)
+        "#,
+    )
+    .bind(owner_content)
+    .bind(attacker)
+    .bind("k-fk-cross-chunk")
+    .bind([3_u8; 32].as_slice())
+    .execute(app.database.pool())
+    .await;
+    assert!(
+        cross_chunk.is_err(),
+        "引用他人 content 的 chunks 行必须被复合外键拒绝"
+    );
+
+    // 攻击者自己的 content，供“content 归属正确但 node 属于他人”的版本测试使用。
+    let attacker_content = Uuid::new_v4();
+    insert_content(
+        &app,
+        attacker,
+        attacker_folder,
+        attacker_content,
+        10,
+        &[("k-fk-attacker", 10)],
+    )
+    .await;
+
+    // file_versions.node_id 必须与 user_id 指向同一用户。
+    let cross_version_node = sqlx::query(
+        r#"
+        INSERT INTO file_versions (id, user_id, node_id, content_id, encrypted_meta)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(attacker)
+    .bind(owner_folder)
+    .bind(attacker_content)
+    .bind(&encrypted_meta)
+    .execute(app.database.pool())
+    .await;
+    assert!(
+        cross_version_node.is_err(),
+        "引用他人节点的 file_versions 行必须被复合外键拒绝"
+    );
+
+    // file_versions.content_id 必须与 user_id 指向同一用户。
+    let cross_version_content = sqlx::query(
+        r#"
+        INSERT INTO file_versions (id, user_id, node_id, content_id, encrypted_meta)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(attacker)
+    .bind(attacker_folder)
+    .bind(owner_content)
+    .bind(&encrypted_meta)
+    .execute(app.database.pool())
+    .await;
+    assert!(
+        cross_version_content.is_err(),
+        "引用他人 content 的 file_versions 行必须被复合外键拒绝"
+    );
+
+    // nodes.current_version_id 必须与 user_id 指向同一用户。
+    let owner_version = Uuid::new_v4();
+    insert_version(
+        &app,
+        owner,
+        owner_folder,
+        owner_version,
+        owner_content,
+        "0 seconds",
+        &meta(0x177),
+    )
+    .await;
+    let cross_current =
+        sqlx::query("UPDATE nodes SET current_version_id = $1 WHERE id = $2 AND user_id = $3")
+            .bind(owner_version)
+            .bind(attacker_folder)
+            .bind(attacker)
+            .execute(app.database.pool())
+            .await;
+    assert!(
+        cross_current.is_err(),
+        "current_version_id 指向他人版本必须被复合外键拒绝"
+    );
+}

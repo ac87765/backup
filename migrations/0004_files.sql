@@ -16,7 +16,8 @@ CREATE TABLE nodes (
     -- 软删除的顶层节点可能在原父节点被永久删除后失去 parent_id；恢复时
     -- 使用 trashed_from_parent_id 判断原位置是否仍可用。ON DELETE SET NULL
     -- 让“永久删除父节点”不会被另一个回收站 batch 的悬空引用阻塞。
-    parent_id UUID REFERENCES nodes (id) ON DELETE SET NULL,
+    -- 复合外键保证父子节点属于同一用户；只置空 parent_id，不动 user_id。
+    parent_id UUID,
     kind TEXT NOT NULL CHECK (kind IN ('file', 'folder')),
     -- 包裹的节点密钥：版本字节 + AEAD 帧（与 crypto-core 的 32 字节密钥一致）。
     wrapped_key BYTEA CHECK (
@@ -61,7 +62,13 @@ CREATE TABLE nodes (
     CONSTRAINT nodes_trash_consistency_check CHECK (
         (deleted_at IS NULL) = (trash_batch_id IS NULL)
         AND (deleted_at IS NULL) = (trashed_from_parent_id IS NULL)
-    )
+    ),
+    -- 复合唯一键供 contents / file_versions / 当前版本指针的复合外键引用。
+    CONSTRAINT nodes_user_id_key UNIQUE (user_id, id),
+    CONSTRAINT nodes_parent_fkey FOREIGN KEY (user_id, parent_id)
+        REFERENCES nodes (user_id, id)
+        ON DELETE SET NULL (parent_id)
+        DEFERRABLE INITIALLY DEFERRED
 );
 
 -- 每个用户恰好一个未删除的根节点。
@@ -90,18 +97,22 @@ CREATE INDEX nodes_trashed_idx
 CREATE TABLE contents (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    node_id UUID NOT NULL REFERENCES nodes (id) ON DELETE RESTRICT,
+    node_id UUID NOT NULL,
     chunk_count INTEGER NOT NULL CHECK (chunk_count >= 1),
     -- 密文字节数（计配额的单位）。
     ciphertext_size BIGINT NOT NULL CHECK (ciphertext_size >= 0),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT contents_user_id_key UNIQUE (user_id, id),
+    CONSTRAINT contents_node_fkey FOREIGN KEY (user_id, node_id)
+        REFERENCES nodes (user_id, id)
+        ON DELETE RESTRICT
 );
 
 CREATE INDEX contents_node_idx ON contents (user_id, node_id);
 CREATE INDEX contents_user_idx ON contents (user_id);
 
 CREATE TABLE chunks (
-    content_id UUID NOT NULL REFERENCES contents (id) ON DELETE RESTRICT,
+    content_id UUID NOT NULL,
     user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     idx INTEGER NOT NULL CHECK (idx >= 0),
     -- 对象键由服务端在预签名时生成并写入；全局唯一，便于孤儿巡检。
@@ -109,7 +120,10 @@ CREATE TABLE chunks (
     ciphertext_size BIGINT NOT NULL CHECK (ciphertext_size > 0),
     sha256 BYTEA NOT NULL CHECK (octet_length(sha256) = 32),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (content_id, idx)
+    PRIMARY KEY (content_id, idx),
+    CONSTRAINT chunks_content_fkey FOREIGN KEY (user_id, content_id)
+        REFERENCES contents (user_id, id)
+        ON DELETE RESTRICT
 );
 
 CREATE INDEX chunks_user_idx ON chunks (user_id);
@@ -118,10 +132,17 @@ CREATE INDEX chunks_content_idx ON chunks (user_id, content_id);
 CREATE TABLE file_versions (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    node_id UUID NOT NULL REFERENCES nodes (id) ON DELETE RESTRICT,
-    content_id UUID NOT NULL REFERENCES contents (id) ON DELETE RESTRICT,
+    node_id UUID NOT NULL,
+    content_id UUID NOT NULL,
     encrypted_meta BYTEA NOT NULL CHECK (octet_length(encrypted_meta) >= 42),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT file_versions_user_id_key UNIQUE (user_id, id),
+    CONSTRAINT file_versions_node_fkey FOREIGN KEY (user_id, node_id)
+        REFERENCES nodes (user_id, id)
+        ON DELETE RESTRICT,
+    CONSTRAINT file_versions_content_fkey FOREIGN KEY (user_id, content_id)
+        REFERENCES contents (user_id, id)
+        ON DELETE RESTRICT
 );
 
 CREATE INDEX file_versions_node_idx
@@ -129,13 +150,13 @@ CREATE INDEX file_versions_node_idx
 CREATE INDEX file_versions_content_idx
     ON file_versions (user_id, content_id);
 
--- 当前版本指针在 file_versions 之后才能加外键；删除版本时置空（只有永久删除
--- 会删版本，且节点也会在同一事务内删除）。DEFERRABLE 允许“先写版本再更新指针”
+-- 当前版本指针在 file_versions 之后才能加复合外键；删除版本时只置空
+-- current_version_id（user_id 保持不变）。DEFERRABLE 允许“先写版本再更新指针”
 -- 与注册事务里“先插入 user 再插入根 node”的循环引用在同一事务内完成。
 ALTER TABLE nodes
     ADD CONSTRAINT nodes_current_version_fkey
-    FOREIGN KEY (current_version_id) REFERENCES file_versions (id)
-    ON DELETE SET NULL
+    FOREIGN KEY (user_id, current_version_id) REFERENCES file_versions (user_id, id)
+    ON DELETE SET NULL (current_version_id)
     DEFERRABLE INITIALLY DEFERRED;
 
 -- 对已有开发数据补建根节点。若历史数据里 root_node_id 指向不存在的节点，
