@@ -1,0 +1,110 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            u.id,\n            u.email::text AS \"email!\",\n            u.status,\n            u.is_admin,\n            u.created_at,\n            u.email_verified_at,\n            u.approved_at,\n            activity.last_seen_at AS \"last_active_at?\",\n            u.used_bytes,\n            u.reserved_bytes,\n            u.quota_bytes,\n            (SELECT count(*) FROM nodes n\n              WHERE n.user_id = u.id AND n.deleted_at IS NULL AND n.kind = 'file') AS \"file_count!\",\n            (SELECT count(*) FROM nodes n\n              WHERE n.user_id = u.id AND n.deleted_at IS NULL\n                AND n.kind = 'folder' AND n.parent_id IS NOT NULL) AS \"folder_count!\",\n            (SELECT count(*) FROM file_versions fv WHERE fv.user_id = u.id) AS \"version_count!\",\n            (SELECT count(*) FROM sessions s\n              WHERE s.user_id = u.id AND s.revoked_at IS NULL\n                AND s.expires_at > now()\n                AND s.last_seen_at > now() - make_interval(days => 7)) AS \"active_session_count!\"\n        FROM users u\n        LEFT JOIN LATERAL (\n            SELECT max(s.last_seen_at) AS last_seen_at\n            FROM sessions s\n            WHERE s.user_id = u.id AND s.revoked_at IS NULL\n        ) activity ON true\n        WHERE ($1::text IS NULL OR u.status = $1)\n          AND ($2::text IS NULL OR u.email::text ILIKE $2 ESCAPE '\\')\n          AND ($3::timestamptz IS NULL OR (u.created_at, u.id) < ($3, $4))\n        ORDER BY u.created_at DESC, u.id DESC\n        LIMIT $5\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_admin",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "email_verified_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "approved_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_active_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "used_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "reserved_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "quota_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "file_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "folder_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "version_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "active_session_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      false,
+      false,
+      true,
+      true,
+      null,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "865ef324b080a94d0144c9be494a45e68dfbdd0ce79f7cf9045b7e0c2508823f"
+}

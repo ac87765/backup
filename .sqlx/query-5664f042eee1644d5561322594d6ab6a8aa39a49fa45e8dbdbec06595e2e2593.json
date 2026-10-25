@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE upload_sessions\n            SET status = 'aborted'\n            WHERE id = $1 AND user_id = $2 AND status = 'open'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5664f042eee1644d5561322594d6ab6a8aa39a49fa45e8dbdbec06595e2e2593"
+}

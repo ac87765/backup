@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT email::text AS \"email!\", status, quota_bytes\n        FROM users\n        WHERE is_admin = true\n        ORDER BY email\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "email!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "quota_bytes",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "55ec14876202cd1ada687b2139a53e01785586b129bb18e72c0c6bf64a8d2423"
+}

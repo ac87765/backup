@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT s.id, s.user_id, s.created_at, u.status, u.is_admin\n            FROM sessions s\n            JOIN users u ON u.id = s.user_id\n            WHERE s.token_hash = $1\n              AND s.revoked_at IS NULL\n              AND s.expires_at > now()\n              AND s.last_seen_at > now() - make_interval(days => $2)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_admin",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9c6f9dd04c18cec226f1432c9c5714804781848f4e3e812947b29d96dc3782e5"
+}

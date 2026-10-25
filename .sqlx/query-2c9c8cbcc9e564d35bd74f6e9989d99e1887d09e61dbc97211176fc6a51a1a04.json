@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            count(*) FILTER (WHERE status = 'pending') AS \"pending!\",\n            count(*) FILTER (WHERE status = 'active') AS \"active!\",\n            count(*) FILTER (WHERE status = 'suspended') AS \"suspended!\",\n            count(*) FILTER (WHERE status = 'rejected') AS \"rejected!\",\n            COALESCE(sum(used_bytes), 0)::bigint AS \"total_used!\",\n            COALESCE(sum(reserved_bytes), 0)::bigint AS \"total_reserved!\",\n            COALESCE(sum(quota_bytes), 0)::bigint AS \"total_quota!\",\n            count(*) FILTER (WHERE created_at > now() - interval '7 days') AS \"registrations!\"\n        FROM users\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "active!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "suspended!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "rejected!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "total_used!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "total_reserved!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "total_quota!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "registrations!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2c9c8cbcc9e564d35bd74f6e9989d99e1887d09e61dbc97211176fc6a51a1a04"
+}

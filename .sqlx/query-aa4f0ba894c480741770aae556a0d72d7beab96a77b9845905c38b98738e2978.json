@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            (SELECT count(*) FROM email_outbox) AS \"email!\",\n            (SELECT count(*) FROM object_deletions) AS \"deletions!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "email!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deletions!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "aa4f0ba894c480741770aae556a0d72d7beab96a77b9845905c38b98738e2978"
+}

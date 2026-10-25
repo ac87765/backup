@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users\n        SET status = 'active',\n            status_reason = NULL,\n            status_changed_at = now(),\n            approved_at = COALESCE(approved_at, now()),\n            updated_at = now()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9a207e8f786346ba117868606e1b53a8dfe33c76c8e6068f1e94be92b24bd7e8"
+}

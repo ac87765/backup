@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users\n        SET status = 'active',\n            quota_bytes = $2,\n            status_changed_at = now(),\n            status_reason = NULL,\n            approved_at = now(),\n            approved_by = $3,\n            updated_at = now()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5ba9aa88cf6daffbee195898d7811e554d5c3bbed250739c9075b88056d94d90"
+}

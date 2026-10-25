@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users\n        SET status = 'rejected',\n            status_reason = $2,\n            status_changed_at = now(),\n            updated_at = now()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "773090da4bd1784a6445c5779cd2316e03845d9d8e50c2d2b831c7a73a843e61"
+}
