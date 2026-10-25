@@ -62,10 +62,14 @@ jobs:
         run: cargo test --workspace
 
       # 集成测试拉取的 PostgreSQL / MinIO 镜像不再需要，释放空间给后续的 deny 与 wasm 步骤。
+      # 只删这两类镜像：不能用 `docker system prune -a`，那会连同 job 开始时构建好的
+      # cargo-deny-action 容器镜像一起删掉，导致 deny 步骤找不到镜像。
       - name: 清理测试容器镜像
         if: always()
         run: |
-          docker system prune -af --volumes
+          docker container prune -f
+          docker volume prune -f
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'postgres|minio' | xargs -r docker rmi -f
           df -h /
 
       # 2.10：`aead::seal_with_nonce` 只允许出现在测试向量构建里。
