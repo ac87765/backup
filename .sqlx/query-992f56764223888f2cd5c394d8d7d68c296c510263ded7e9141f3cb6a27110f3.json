@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH doomed AS (\n                SELECT id\n                FROM email_tokens\n                WHERE expires_at <= now() OR used_at IS NOT NULL\n                ORDER BY id\n                LIMIT $1\n            )\n            DELETE FROM email_tokens WHERE id IN (SELECT id FROM doomed)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "992f56764223888f2cd5c394d8d7d68c296c510263ded7e9141f3cb6a27110f3"
+}

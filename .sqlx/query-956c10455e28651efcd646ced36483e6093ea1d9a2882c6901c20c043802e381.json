@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, email::text AS \"email!\", email_verified_at, kdf_params, kdf_salt, wrapped_mk\n        FROM users\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "email_verified_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "kdf_params",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "kdf_salt",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "wrapped_mk",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "956c10455e28651efcd646ced36483e6093ea1d9a2882c6901c20c043802e381"
+}

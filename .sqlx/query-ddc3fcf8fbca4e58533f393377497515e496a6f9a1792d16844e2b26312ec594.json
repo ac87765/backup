@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users\n        SET auth_hash = $2,\n            pepper_version = $3,\n            recovery_auth_hash = $4,\n            recovery_pepper_version = $5,\n            kdf_params = $6,\n            kdf_salt = $7,\n            wrapped_mk = $8,\n            failed_logins = 0,\n            locked_until = NULL,\n            updated_at = now()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Int4",
+        "Bytea",
+        "Int4",
+        "Jsonb",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ddc3fcf8fbca4e58533f393377497515e496a6f9a1792d16844e2b26312ec594"
+}

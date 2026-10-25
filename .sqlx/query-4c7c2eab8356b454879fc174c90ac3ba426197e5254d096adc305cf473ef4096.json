@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, user_id\n            FROM sessions\n            WHERE token_hash = $1\n              AND revoked_at IS NULL\n              AND expires_at > now()\n              AND last_seen_at > now() - make_interval(days => $2)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4c7c2eab8356b454879fc174c90ac3ba426197e5254d096adc305cf473ef4096"
+}

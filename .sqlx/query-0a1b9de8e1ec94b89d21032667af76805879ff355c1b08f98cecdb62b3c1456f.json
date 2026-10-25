@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT t.id, t.user_id\n        FROM email_tokens t\n        WHERE t.token_hash = $1\n          AND t.purpose = $2\n          AND t.used_at IS NULL\n          AND t.expires_at > now()\n        FOR UPDATE OF t\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "0a1b9de8e1ec94b89d21032667af76805879ff355c1b08f98cecdb62b3c1456f"
+}

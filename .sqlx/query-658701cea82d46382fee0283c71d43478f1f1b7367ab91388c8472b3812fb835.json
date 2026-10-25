@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE sessions\n            SET last_seen_at = now()\n            WHERE id = $1\n              AND last_seen_at < now() - make_interval(secs => $2)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "658701cea82d46382fee0283c71d43478f1f1b7367ab91388c8472b3812fb835"
+}

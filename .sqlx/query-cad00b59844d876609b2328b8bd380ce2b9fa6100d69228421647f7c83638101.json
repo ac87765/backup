@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users\n        SET failed_logins = failed_logins + 1,\n            locked_until = CASE\n                WHEN failed_logins + 1 >= $2 THEN now() + make_interval(mins => $3)\n                ELSE locked_until\n            END,\n            updated_at = now()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cad00b59844d876609b2328b8bd380ce2b9fa6100d69228421647f7c83638101"
+}

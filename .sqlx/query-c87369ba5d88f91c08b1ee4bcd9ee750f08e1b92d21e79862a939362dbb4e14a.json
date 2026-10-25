@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH doomed AS (\n                SELECT id\n                FROM sessions\n                WHERE expires_at <= now()\n                   OR last_seen_at <= now() - make_interval(days => 7)\n                   OR revoked_at IS NOT NULL\n                ORDER BY id\n                LIMIT $1\n            )\n            DELETE FROM sessions WHERE id IN (SELECT id FROM doomed)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c87369ba5d88f91c08b1ee4bcd9ee750f08e1b92d21e79862a939362dbb4e14a"
+}
