@@ -62,6 +62,8 @@ export interface CurrentUser {
   userId: string
   email: string
   emailVerified: boolean
+  /** 根文件夹 ID（非密钥；文件浏览器从根开始导航）。 */
+  rootNodeId: string
 }
 
 /** 会话列表项（主线程可见，不含令牌）。 */
@@ -73,6 +75,66 @@ export interface SessionSummaryView {
   ip: string
   userAgent: string | null
   current: boolean
+}
+
+/** 节点类型。 */
+export type NodeKind = 'file' | 'folder'
+
+/** 主线程可见的节点展示数据；不含包裹密钥、密文或任何密钥材料。 */
+export interface FileNodeView {
+  id: string
+  parentId: string | null
+  kind: NodeKind
+  /** Worker 内解密后的名称；只驻留内存。 */
+  name: string
+  /** 文件明文大小；文件夹为 null。 */
+  size: number | null
+  /** 文件原始修改时间（Unix 秒）；文件夹为 null。 */
+  mtime: number | null
+  mime: string | null
+  rowVersion: number
+  currentVersionId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** 回收站顶层项。 */
+export interface TrashNodeView extends FileNodeView {
+  deletedAt: string
+  trashBatchId: string
+}
+
+/** 列目录一页。 */
+export interface FolderPageView {
+  items: FileNodeView[]
+  nextCursor: string | null
+}
+
+/** 版本展示数据。 */
+export interface VersionView {
+  id: string
+  contentId: string
+  size: number
+  mtime: number
+  mime: string
+  isCurrent: boolean
+  createdAt: string
+}
+
+/** 已用 / 预留 / 总额。 */
+export interface UsageView {
+  usedBytes: number
+  reservedBytes: number
+  quotaBytes: number
+}
+
+/** 软删除/永久删除结果。 */
+export interface DeleteResultView {
+  deletedNodes: number
+  deletedVersions: number
+  deletedContents: number
+  freedBytes: number
+  queuedObjects: number
 }
 
 /** 认证请求的错误载荷；`retryAfter` 来自 429 的 Retry-After。 */
@@ -244,4 +306,52 @@ export interface AuthWorkerApi {
 }
 
 /** Worker 暴露的完整 API。 */
-export type WorkerApi = CryptoWorkerApi & AuthWorkerApi
+export type WorkerApi = CryptoWorkerApi & AuthWorkerApi & FileWorkerApi
+
+/**
+ * Comlink 暴露的文件管理高层 API。
+ *
+ * 入参与返回值都只包含节点 ID、解密后的名称/大小/时间等展示数据；
+ * 节点密钥、包裹密钥、加密元数据与名称令牌只存在于 Worker 内。
+ */
+export interface FileWorkerApi {
+  /** 列目录；Worker 内解包节点密钥、缓存并解密名称/版本元数据。 */
+  listFolder(nodeId: string, cursor?: string): Promise<FolderPageView>
+  /** 创建文件夹；Worker 内生成节点 ID/密钥、加密元数据并计算名称令牌。 */
+  createFolder(parentId: string, name: string): Promise<FileNodeView>
+  /** 重命名；名称令牌按当前父节点重新计算。 */
+  renameNode(
+    nodeId: string,
+    parentId: string,
+    name: string,
+    rowVersion: number,
+  ): Promise<FileNodeView>
+  /** 移动；名称令牌按新父节点重新计算。 */
+  moveNode(
+    nodeId: string,
+    newParentId: string,
+    name: string,
+    rowVersion: number,
+  ): Promise<FileNodeView>
+  /** 移入回收站。 */
+  deleteNode(nodeId: string): Promise<void>
+  /** 回收站顶层列表。 */
+  listTrash(): Promise<TrashNodeView[]>
+  /**
+   * 恢复回收站项目。不指定新父节点时使用原位置；目标不可用时客户端
+   * 捕获 `target_unavailable` 后让用户选择新位置并重新提交。
+   */
+  restoreNode(
+    nodeId: string,
+    newParentId?: string,
+    name?: string,
+  ): Promise<FileNodeView>
+  /** 永久删除回收站项目。 */
+  permanentlyDeleteNode(nodeId: string): Promise<DeleteResultView>
+  /** 版本列表；Worker 内解密并校验 content 绑定。 */
+  listVersions(nodeId: string): Promise<VersionView[]>
+  /** 恢复旧版本；Worker 用同一 content_id 为新 version_id 重新加密元数据。 */
+  restoreVersion(nodeId: string, sourceVersionId: string): Promise<VersionView>
+  /** 已用 / 预留 / 总额。 */
+  getUsage(): Promise<UsageView>
+}

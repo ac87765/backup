@@ -32,7 +32,7 @@ export function HomePage() {
   return (
     <PageShell
       title="端对端加密备份"
-      subtitle="账号已就绪。文件浏览器将在第 7 组接入。"
+      subtitle="账号已就绪。打开文件管理开始整理加密文件夹。"
     >
       <div className="space-y-4 text-sm text-slate-700">
         <p>
@@ -56,6 +56,9 @@ export function HomePage() {
           </div>
         )}
         <nav className="grid gap-2">
+          <Link className="underline" to="/files">
+            文件管理
+          </Link>
           <Link className="underline" to="/sessions">
             会话管理
           </Link>

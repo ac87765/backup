@@ -13,6 +13,7 @@ const ME_RESPONSE = {
   user_id: '550e8400-e29b-41d4-a716-446655440000',
   email: 'user@example.com',
   email_verified: true,
+  root_node_id: '550e8400-e29b-41d4-a716-446655440001',
   kdf_params: {
     algorithm: 'argon2id',
     m_cost_kib: 65536,

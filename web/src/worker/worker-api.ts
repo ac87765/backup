@@ -6,12 +6,20 @@
  */
 import { AuthClient } from './auth-client'
 import { CryptoApi } from './crypto-api'
+import { FileClient } from './file-client'
 import type {
   AuthErrorPayload,
   AuthWorkerApi,
   CryptoBackend,
   CurrentUser,
+  DeleteResultView,
+  FileNodeView,
+  FileWorkerApi,
+  FolderPageView,
   SessionSummaryView,
+  TrashNodeView,
+  UsageView,
+  VersionView,
 } from './types'
 
 /** 把 WASM/网络错误统一成可跨 Comlink 的普通对象（保留 code/retryAfter）。 */
@@ -34,7 +42,7 @@ function toAuthPayload(error: unknown): AuthErrorPayload {
   }
 }
 
-async function runAuth<T>(operation: () => Promise<T>): Promise<T> {
+async function runApi<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation()
   } catch (error) {
@@ -44,48 +52,50 @@ async function runAuth<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-export class WorkerApi extends CryptoApi implements AuthWorkerApi {
+export class WorkerApi extends CryptoApi implements AuthWorkerApi, FileWorkerApi {
   private readonly auth: AuthClient
+  private readonly file: FileClient
 
   constructor(backend: CryptoBackend | Promise<CryptoBackend>) {
     const promise = Promise.resolve(backend)
     super(promise)
     this.auth = new AuthClient(promise)
+    this.file = new FileClient(promise)
   }
 
   register(
     email: string,
     password: string,
   ): Promise<{ recoveryDisplay: string }> {
-    return runAuth(() => this.auth.register(email, password))
+    return runApi(() => this.auth.register(email, password))
   }
 
   confirmRegistration(): Promise<void> {
-    return runAuth(() => this.auth.confirmRegistration())
+    return runApi(() => this.auth.confirmRegistration())
   }
 
   discardRegistration(): Promise<void> {
-    return runAuth(() => this.auth.discardRegistration())
+    return runApi(() => this.auth.discardRegistration())
   }
 
   validateRecoveryKey(display: string): Promise<void> {
-    return runAuth(() => this.auth.validateRecoveryKey(display))
+    return runApi(() => this.auth.validateRecoveryKey(display))
   }
 
   login(email: string, password: string): Promise<CurrentUser> {
-    return runAuth(() => this.auth.login(email, password))
+    return runApi(() => this.auth.login(email, password))
   }
 
   refreshSession(): Promise<CurrentUser | null> {
-    return runAuth(() => this.auth.refreshSession())
+    return runApi(() => this.auth.refreshSession())
   }
 
   unlock(password: string): Promise<void> {
-    return runAuth(() => this.auth.unlock(password))
+    return runApi(() => this.auth.unlock(password))
   }
 
   changePassword(oldPassword: string, newPassword: string): Promise<void> {
-    return runAuth(() => this.auth.changePassword(oldPassword, newPassword))
+    return runApi(() => this.auth.changePassword(oldPassword, newPassword))
   }
 
   resetWithRecovery(
@@ -93,7 +103,7 @@ export class WorkerApi extends CryptoApi implements AuthWorkerApi {
     recoveryKey: string,
     newPassword: string,
   ): Promise<void> {
-    return runAuth(() =>
+    return runApi(() =>
       this.auth.resetWithRecovery(email, recoveryKey, newPassword),
     )
   }
@@ -101,34 +111,96 @@ export class WorkerApi extends CryptoApi implements AuthWorkerApi {
   prepareRecoveryRotation(
     currentPassword: string,
   ): Promise<{ recoveryDisplay: string }> {
-    return runAuth(() => this.auth.prepareRecoveryRotation(currentPassword))
+    return runApi(() => this.auth.prepareRecoveryRotation(currentPassword))
   }
 
   confirmRecoveryRotation(): Promise<void> {
-    return runAuth(() => this.auth.confirmRecoveryRotation())
+    return runApi(() => this.auth.confirmRecoveryRotation())
   }
 
   discardRecoveryRotation(): Promise<void> {
-    return runAuth(() => this.auth.discardRecoveryRotation())
+    return runApi(() => this.auth.discardRecoveryRotation())
   }
 
   logout(): Promise<void> {
-    return runAuth(() => this.auth.logout())
+    return runApi(() => this.auth.logout())
   }
 
   verifyEmail(token: string): Promise<void> {
-    return runAuth(() => this.auth.verifyEmail(token))
+    return runApi(() => this.auth.verifyEmail(token))
   }
 
   resendVerification(email: string): Promise<void> {
-    return runAuth(() => this.auth.resendVerification(email))
+    return runApi(() => this.auth.resendVerification(email))
   }
 
   getSessions(): Promise<SessionSummaryView[]> {
-    return runAuth(() => this.auth.getSessions())
+    return runApi(() => this.auth.getSessions())
   }
 
   revokeSession(sessionId: string): Promise<void> {
-    return runAuth(() => this.auth.revokeSession(sessionId))
+    return runApi(() => this.auth.revokeSession(sessionId))
+  }
+
+  listFolder(nodeId: string, cursor?: string): Promise<FolderPageView> {
+    return runApi(() => this.file.listFolder(nodeId, cursor))
+  }
+
+  createFolder(parentId: string, name: string): Promise<FileNodeView> {
+    return runApi(() => this.file.createFolder(parentId, name))
+  }
+
+  renameNode(
+    nodeId: string,
+    parentId: string,
+    name: string,
+    rowVersion: number,
+  ): Promise<FileNodeView> {
+    return runApi(() =>
+      this.file.renameNode(nodeId, parentId, name, rowVersion),
+    )
+  }
+
+  moveNode(
+    nodeId: string,
+    newParentId: string,
+    name: string,
+    rowVersion: number,
+  ): Promise<FileNodeView> {
+    return runApi(() =>
+      this.file.moveNode(nodeId, newParentId, name, rowVersion),
+    )
+  }
+
+  deleteNode(nodeId: string): Promise<void> {
+    return runApi(() => this.file.deleteNode(nodeId))
+  }
+
+  listTrash(): Promise<TrashNodeView[]> {
+    return runApi(() => this.file.listTrash())
+  }
+
+  restoreNode(
+    nodeId: string,
+    newParentId?: string,
+    name?: string,
+  ): Promise<FileNodeView> {
+    return runApi(() => this.file.restoreNode(nodeId, newParentId, name))
+  }
+
+  permanentlyDeleteNode(nodeId: string): Promise<DeleteResultView> {
+    return runApi(() => this.file.permanentlyDeleteNode(nodeId))
+  }
+
+  listVersions(nodeId: string): Promise<VersionView[]> {
+    return runApi(() => this.file.listVersions(nodeId))
+  }
+
+  restoreVersion(nodeId: string, sourceVersionId: string): Promise<VersionView> {
+    return runApi(() => this.file.restoreVersion(nodeId, sourceVersionId))
+  }
+
+  getUsage(): Promise<UsageView> {
+    return runApi(() => this.file.getUsage())
   }
 }

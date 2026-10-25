@@ -12,6 +12,7 @@ import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/context'
 import { PageShell } from './components/PageShell'
 import { ChangePasswordPage } from './pages/ChangePasswordPage'
+import { FilesPage } from './pages/FilesPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
@@ -101,6 +102,14 @@ function AppRoutes() {
         element={
           <RequireSession>
             <HomePage />
+          </RequireSession>
+        }
+      />
+      <Route
+        path="/files"
+        element={
+          <RequireSession>
+            <FilesPage />
           </RequireSession>
         }
       />
