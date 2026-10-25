@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH actual AS (\n                SELECT\n                    u.id,\n                    u.used_bytes,\n                    COALESCE((\n                        SELECT SUM(c.ciphertext_size)\n                        FROM contents c\n                        WHERE c.user_id = u.id\n                          AND EXISTS (\n                              SELECT 1\n                              FROM file_versions fv\n                              WHERE fv.content_id = c.id AND fv.user_id = u.id\n                          )\n                    ), 0)::bigint AS actual\n                FROM users u\n            )\n            SELECT\n                count(*)::bigint AS \"mismatched!\",\n                COALESCE(SUM(used_bytes - actual), 0)::bigint AS \"delta!\"\n            FROM actual\n            WHERE used_bytes <> actual\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mismatched!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "delta!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "4c3ec007430e2b090fefb40d2103a38dd53e93938100c1099304f820c170e395"
+}

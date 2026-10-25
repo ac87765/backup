@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO users (\n            id, email, kdf_params, kdf_salt, auth_hash, pepper_version,\n            recovery_auth_hash, recovery_pepper_version, wrapped_mk, recovery_wrapped_mk,\n            root_node_id\n        )\n        VALUES ($1, $2::text::citext, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n        ON CONFLICT (email) DO NOTHING\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Bytea",
+        "Bytea",
+        "Int4",
+        "Bytea",
+        "Int4",
+        "Bytea",
+        "Bytea",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "749b8995ea532816b5b9a6282e220b9be8e01f02eda88561abd586acb1a2694b"
+}

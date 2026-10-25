@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE nodes\n        SET parent_id = $3,\n            name_token = $4,\n            deleted_at = NULL,\n            trash_batch_id = NULL,\n            trashed_from_parent_id = NULL,\n            row_version = row_version + 1,\n            updated_at = now()\n        WHERE id = $1\n          AND user_id = $2\n          AND deleted_at IS NOT NULL\n          AND trash_batch_id = $5\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Bytea",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c97cac1088685ce60e4f0cd15d0a11770c619fa0c1584ba4da021e802384e564"
+}

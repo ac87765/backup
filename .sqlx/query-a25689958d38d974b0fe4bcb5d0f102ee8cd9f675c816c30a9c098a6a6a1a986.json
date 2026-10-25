@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT batch.user_id, batch.trash_batch_id\n            FROM (\n                SELECT DISTINCT ON (n.user_id, n.trash_batch_id)\n                    n.user_id,\n                    n.trash_batch_id\n                FROM nodes n\n                WHERE n.deleted_at IS NOT NULL\n                  AND n.deleted_at < now() - make_interval(days => $1)\n                  AND NOT EXISTS (\n                      SELECT 1 FROM nodes parent\n                      WHERE parent.user_id = n.user_id\n                        AND parent.id = n.parent_id\n                        AND parent.trash_batch_id = n.trash_batch_id\n                        AND parent.deleted_at IS NOT NULL\n                  )\n                ORDER BY n.user_id, n.trash_batch_id\n            ) batch\n            ORDER BY batch.user_id, batch.trash_batch_id\n            LIMIT $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "trash_batch_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "a25689958d38d974b0fe4bcb5d0f102ee8cd9f675c816c30a9c098a6a6a1a986"
+}

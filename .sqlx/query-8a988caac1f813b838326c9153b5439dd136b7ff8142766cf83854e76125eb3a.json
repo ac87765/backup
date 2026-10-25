@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE nodes\n        SET deleted_at = NULL,\n            trash_batch_id = NULL,\n            trashed_from_parent_id = NULL,\n            row_version = row_version + 1,\n            updated_at = now()\n        WHERE user_id = $1\n          AND trash_batch_id = $2\n          AND id <> $3\n          AND deleted_at IS NOT NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8a988caac1f813b838326c9153b5439dd136b7ff8142766cf83854e76125eb3a"
+}

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1 FROM nodes p\n            WHERE p.user_id = $1\n              AND p.id = $2\n              AND p.trash_batch_id = $3\n              AND p.deleted_at IS NOT NULL\n        ) AS \"exists!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3ad206d96f3cd9cca6c56e6b162b342581a13d0686e2860a4eac8ad20cac5a42"
+}

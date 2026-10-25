@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM nodes WHERE user_id = $1 AND trash_batch_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7adf1a33568426c5c209d6d5e64870c21a371a02c1fdf5271eb622e58e7a7b96"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE nodes\n        SET current_version_id = $3,\n            row_version = row_version + 1,\n            updated_at = now()\n        WHERE id = $1 AND user_id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "572fa1aa99fdabb7f81e78f9e9c3cda2bc46a0ccf4a8c8a860a60ae68ff6be20"
+}

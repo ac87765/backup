@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            fv.id,\n            fv.content_id,\n            fv.encrypted_meta,\n            c.ciphertext_size,\n            c.chunk_count,\n            fv.created_at,\n            (fv.id = n.current_version_id) AS \"is_current!\"\n        FROM file_versions fv\n        JOIN contents c ON c.id = fv.content_id AND c.user_id = fv.user_id\n        JOIN nodes n ON n.id = fv.node_id AND n.user_id = fv.user_id\n        WHERE fv.id = $1\n          AND fv.node_id = $2\n          AND fv.user_id = $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "content_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "encrypted_meta",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "ciphertext_size",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "chunk_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_current!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "b71b8dabb1d546867200bfc2b2dfaa75cf48134e785c7dec6552adec9c04d3e3"
+}

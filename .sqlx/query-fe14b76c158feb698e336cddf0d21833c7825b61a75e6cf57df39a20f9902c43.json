@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT candidate.id, candidate.user_id\n            FROM (\n                SELECT\n                    fv.id,\n                    fv.user_id,\n                    fv.node_id,\n                    fv.created_at,\n                    row_number() OVER (\n                        PARTITION BY fv.node_id\n                        ORDER BY fv.created_at DESC, fv.id DESC\n                    ) AS rank\n                FROM file_versions fv\n            ) candidate\n            JOIN nodes n\n                ON n.id = candidate.node_id AND n.user_id = candidate.user_id\n            WHERE candidate.rank > $1\n              AND candidate.created_at < now() - make_interval(days => $2)\n              AND candidate.id IS DISTINCT FROM n.current_version_id\n            ORDER BY candidate.id\n            LIMIT $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "fe14b76c158feb698e336cddf0d21833c7825b61a75e6cf57df39a20f9902c43"
+}
