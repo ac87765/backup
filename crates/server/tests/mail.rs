@@ -23,7 +23,7 @@ use sqlx::{PgPool, Row};
 use tracing_subscriber::fmt::MakeWriter;
 use uuid::Uuid;
 
-use common::{environment, insert_test_user, migrated_database};
+use common::{decode_mail_body, environment, insert_test_user, migrated_database, read_mail_body};
 
 struct Buffer(Arc<Mutex<Vec<u8>>>);
 
@@ -107,6 +107,49 @@ fn extract_token(message: &str) -> String {
         .expect("邮件正文中应包含 64 位十六进制令牌")
 }
 
+#[test]
+fn mail_body_decoder_handles_base64_and_quoted_printable() {
+    use base64::Engine;
+    let body = "验证链接 https://backup.example.com/#token=abc123";
+    let encoded = base64::engine::general_purpose::STANDARD.encode(body);
+    let raw =
+        format!("From: backup@localhost\r\nContent-Transfer-Encoding: base64\r\n\r\n{encoded}\r\n");
+    assert_eq!(decode_mail_body(&raw), body);
+
+    let raw_qp = "From: backup@localhost\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nhello=20#token=3Dabc\r\n";
+    assert_eq!(decode_mail_body(raw_qp), "hello #token=abc\r\n");
+
+    let plain = "From: backup@localhost\r\n\r\nplain body\r\n";
+    assert_eq!(decode_mail_body(plain), "plain body\r\n");
+}
+
+#[tokio::test]
+async fn file_mailer_output_is_decodable_by_test_helper() {
+    let dir = tempfile::tempdir().expect("临时邮件目录");
+    let mailer = build_mailer(&MailConfig::File {
+        dir: dir.path().to_path_buf(),
+    })
+    .expect("构造 file mailer");
+    let body = "验证链接 https://backup.example.com/#token=abc123";
+    mailer
+        .send(&RenderedMail {
+            outbox_id: 1,
+            to: "user@example.com".to_owned(),
+            subject: "测试".to_owned(),
+            body: body.to_owned(),
+        })
+        .await
+        .expect("发送到本地目录");
+
+    let file = std::fs::read_dir(dir.path())
+        .expect("读取邮件目录")
+        .next()
+        .expect("应有一封邮件")
+        .expect("目录项");
+    let decoded = read_mail_body(&file.path());
+    assert!(decoded.contains(body), "解码后的正文: {decoded}");
+}
+
 #[tokio::test]
 async fn file_mode_writes_mail_without_storing_plaintext_token() {
     let env = environment().await;
@@ -133,8 +176,9 @@ async fn file_mode_writes_mail_without_storing_plaintext_token() {
         .collect::<Result<Vec<_>, _>>()
         .expect("目录项");
     assert_eq!(files.len(), 1);
-    let content = std::fs::read_to_string(files[0].path()).expect("读取邮件文件");
-    assert!(content.contains("To: user@example.com"), "{content}");
+    let raw = std::fs::read_to_string(files[0].path()).expect("读取邮件文件");
+    assert!(raw.contains("To: user@example.com"), "{raw}");
+    let content = read_mail_body(&files[0].path());
     let token = extract_token(&content);
 
     assert_token_not_in_database(&database, user_id, &token).await;
@@ -201,7 +245,7 @@ async fn smtp_failure_is_retried_with_a_new_token() {
 
     let messages = smtp.messages.lock().expect("SMTP 消息锁").clone();
     assert_eq!(messages.len(), 1, "只应有一封成功发送的邮件");
-    let token = extract_token(&messages[0]);
+    let token = extract_token(&decode_mail_body(&messages[0]));
     assert_token_not_in_database(&database, user_id, &token).await;
 
     let token_rows: i64 = sqlx::query_scalar("SELECT count(*) FROM email_tokens")

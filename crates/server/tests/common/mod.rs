@@ -231,6 +231,84 @@ pub fn minio_container(env: &TestEnvironment) -> &'static ContainerAsync<Generic
     env.minio
 }
 
+/// 读取 `.eml` 文件并返回解码后的正文。
+pub fn read_mail_body(path: &Path) -> String {
+    let raw = std::fs::read_to_string(path).expect("读取邮件文件");
+    decode_mail_body(&raw)
+}
+
+/// 从原始邮件（含头部）中取正文并按 `Content-Transfer-Encoding` 解码。
+///
+/// lettre 在正文含中文时使用 base64，较旧的简单正文可能使用
+/// quoted-printable；测试统一通过本函数读取正文，避免直接匹配编码后的文本。
+pub fn decode_mail_body(raw: &str) -> String {
+    let (headers, body) = raw
+        .split_once("\r\n\r\n")
+        .or_else(|| raw.split_once("\n\n"))
+        .unwrap_or(("", raw));
+    let encoding = headers.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.trim()
+            .eq_ignore_ascii_case("content-transfer-encoding")
+            .then(|| value.trim().to_ascii_lowercase())
+    });
+
+    match encoding.as_deref() {
+        Some("base64") => {
+            use base64::Engine;
+            let cleaned: String = body
+                .chars()
+                .filter(|character| !character.is_ascii_whitespace())
+                .collect();
+            let decoded = base64::engine::general_purpose::STANDARD
+                .decode(cleaned.as_bytes())
+                .expect("邮件正文必须是合法 base64");
+            String::from_utf8(decoded).expect("邮件正文必须是 UTF-8")
+        }
+        Some("quoted-printable") => decode_quoted_printable(body),
+        _ => body.to_owned(),
+    }
+}
+
+fn decode_quoted_printable(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'=' {
+            // 软换行：`=\r\n` 或 `=\n`
+            if bytes.get(index + 1) == Some(&b'\r') && bytes.get(index + 2) == Some(&b'\n') {
+                index += 3;
+                continue;
+            }
+            if bytes.get(index + 1) == Some(&b'\n') {
+                index += 2;
+                continue;
+            }
+            if let (Some(high), Some(low)) = (
+                bytes.get(index + 1).and_then(|byte| hex_value(*byte)),
+                bytes.get(index + 2).and_then(|byte| hex_value(*byte)),
+            ) {
+                output.push((high << 4) | low);
+                index += 3;
+                continue;
+            }
+        }
+        output.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8(output).expect("quoted-printable 解码后必须是 UTF-8")
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
 /// 插入一条最小的 users 行（仅用于第 5 组邮件队列测试的 FK 依赖）。
 ///
 /// `email_outbox` / `email_tokens` 在第 6 组补了指向 `users` 的外键；

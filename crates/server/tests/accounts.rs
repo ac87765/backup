@@ -21,7 +21,7 @@ use sqlx::Row;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use common::{environment, integration_config, migrated_database, static_fixture};
+use common::{environment, integration_config, migrated_database, read_mail_body, static_fixture};
 
 const PEPPER: &str = "test-pepper-value-0123456789abcdef";
 const CSRF_HEADER: &str = "x-requested-with";
@@ -371,11 +371,15 @@ async fn registration_creates_pending_user_and_queues_verification_email() {
     .expect("构造 file mailer");
     let resolver: std::sync::Arc<dyn server::jobs::email::RecipientResolver> =
         std::sync::Arc::new(server::jobs::email::SqlRecipientResolver);
-    // 使用很短的 base URL，避免 quoted-printable 在 76 列处把 64 位令牌折断；
-    // 真实 URL 的格式由 mail 模块的单元测试覆盖。
-    let stats = server::jobs::email::run_batch(&app.database, &mailer, &resolver, "", 10)
-        .await
-        .expect("发送验证邮件");
+    let stats = server::jobs::email::run_batch(
+        &app.database,
+        &mailer,
+        &resolver,
+        "https://backup.example.com",
+        10,
+    )
+    .await
+    .expect("发送验证邮件");
     assert_eq!(stats.sent, 1);
 
     let file = std::fs::read_dir(mail_dir.path())
@@ -383,9 +387,9 @@ async fn registration_creates_pending_user_and_queues_verification_email() {
         .next()
         .expect("应有一封邮件")
         .expect("目录项");
-    let content = std::fs::read_to_string(file.path()).expect("读取邮件");
+    let content = read_mail_body(&file.path());
     assert!(
-        content.contains("#token=") || content.contains("#token=3D"),
+        content.contains("https://backup.example.com/#token="),
         "验证链接必须把令牌放在 URL 片段里: {content}"
     );
     let token = extract_token_from_mail(&content);
@@ -1288,6 +1292,30 @@ fn recovery_body(email: &str, recovery: [u8; 32]) -> Value {
     })
 }
 
+async fn rotate_recovery_request(
+    app: &TestApp,
+    cookie: &str,
+    current_auth_key: [u8; 32],
+    new_recovery_key: [u8; 32],
+) -> (StatusCode, HeaderMap, Value) {
+    let response = send(
+        &app.app,
+        Method::POST,
+        "/api/v1/auth/rotate-recovery-key",
+        Some(json!({
+            "current_auth_key": hex(&current_auth_key),
+            "new_recovery_wrapped_mk": wrapped(0x77),
+            "new_recovery_auth_key": hex(&new_recovery_key),
+        })),
+        Some(cookie),
+        true,
+        &[],
+        None,
+    )
+    .await;
+    read(response).await
+}
+
 #[tokio::test]
 async fn recovery_reset_allows_new_password_and_revokes_sessions() {
     let app = setup().await;
@@ -1408,6 +1436,7 @@ async fn rotate_recovery_key_replaces_material_and_invalidates_old_key() {
         Method::POST,
         "/api/v1/auth/rotate-recovery-key",
         Some(json!({
+            "current_auth_key": hex(&auth_key(0x10)),
             "new_recovery_wrapped_mk": wrapped(0x77),
             "new_recovery_auth_key": hex(&recovery_key(0x30)),
         })),
@@ -1453,6 +1482,79 @@ async fn rotate_recovery_key_replaces_material_and_invalidates_old_key() {
     )
     .await;
     assert_eq!(read(new).await.0, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn rotate_recovery_key_with_wrong_current_password_keeps_materials_unchanged() {
+    let app = setup().await;
+    register(
+        &app,
+        "rotate-wrong@example.com",
+        auth_key(0x10),
+        recovery_key(0x20),
+    )
+    .await;
+    let (_status, headers, _body) = login(&app, "rotate-wrong@example.com", auth_key(0x10)).await;
+    let cookie = session_cookie(&headers);
+    let before = snapshot(&app, "rotate-wrong@example.com").await;
+
+    let (status, _headers, body) =
+        rotate_recovery_request(&app, &cookie, auth_key(0x99), recovery_key(0x30)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["code"], "invalid_credentials");
+
+    let after = snapshot(&app, "rotate-wrong@example.com").await;
+    assert_eq!(
+        before.recovery_wrapped_mk, after.recovery_wrapped_mk,
+        "旧密码错误时不得替换恢复包裹材料"
+    );
+    assert_eq!(
+        before.recovery_auth_hash, after.recovery_auth_hash,
+        "旧密码错误时不得替换恢复认证值"
+    );
+    assert_eq!(after.failed_logins, 1, "失败必须计入账号维度限流");
+
+    // 失败不影响随后用正确密码轮换。
+    let (status, _headers, body) =
+        rotate_recovery_request(&app, &cookie, auth_key(0x10), recovery_key(0x30)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rotated = snapshot(&app, "rotate-wrong@example.com").await;
+    assert_eq!(rotated.recovery_wrapped_mk, wrapped(0x77));
+    assert_eq!(rotated.failed_logins, 0);
+}
+
+#[tokio::test]
+async fn rotate_recovery_key_shares_login_lockout() {
+    let app = setup().await;
+    register(
+        &app,
+        "rotate-lock@example.com",
+        auth_key(0x10),
+        recovery_key(0x20),
+    )
+    .await;
+    let (_status, headers, _body) = login(&app, "rotate-lock@example.com", auth_key(0x10)).await;
+    let cookie = session_cookie(&headers);
+    let before = snapshot(&app, "rotate-lock@example.com").await;
+
+    for _ in 0..10 {
+        let (status, _headers, body) =
+            rotate_recovery_request(&app, &cookie, auth_key(0x99), recovery_key(0x30)).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    }
+    let locked = snapshot(&app, "rotate-lock@example.com").await;
+    assert_eq!(locked.failed_logins, 10);
+    assert!(locked.locked);
+
+    let (status, headers, body) =
+        rotate_recovery_request(&app, &cookie, auth_key(0x10), recovery_key(0x30)).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["code"], "account_temporarily_locked");
+    assert!(headers.contains_key(header::RETRY_AFTER));
+
+    let after = snapshot(&app, "rotate-lock@example.com").await;
+    assert_eq!(before.recovery_wrapped_mk, after.recovery_wrapped_mk);
+    assert_eq!(before.recovery_auth_hash, after.recovery_auth_hash);
 }
 
 // ---------------------------------------------------------------------------

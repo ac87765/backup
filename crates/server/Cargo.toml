@@ -109,7 +109,10 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # - http-body-util：读取 axum 响应体以便断言错误 JSON。
 # - tempfile：静态文件与测试用临时目录。
 # - tower（已在依赖中）：`ServiceExt::oneshot` 直接调用 Router。
+# - base64：集成测试解码 lettre 写出的 `Content-Transfer-Encoding: base64`
+#   邮件正文（含中文时 lettre 会选择 base64）。仅测试使用。
 [dev-dependencies]
+base64 = "0.22"
 http-body-util = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 tempfile = "3"

@@ -182,6 +182,8 @@ pub struct RecoverRequest {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RotateRecoveryKeyRequest {
+    /// 当前密码派生出的认证密钥，用于证明知道当前密码。
+    pub current_auth_key: String,
     pub new_recovery_wrapped_mk: String,
     pub new_recovery_auth_key: String,
 }
@@ -1207,6 +1209,8 @@ pub async fn rotate_recovery_key(
 ) -> Result<Json<OkResponse>, ApiError> {
     state.auth.check_ip(ip)?;
     let request = parse_body(payload)?;
+    let current_auth_key = decode_secret_key(&request.current_auth_key)
+        .map_err(|_| ApiError::invalid_credentials())?;
     let new_recovery_wrapped_mk = decode_wrapped_material(&request.new_recovery_wrapped_mk)?;
     let new_recovery_auth_key = decode_secret_key(&request.new_recovery_auth_key)?;
     let new_recovery_hash = state
@@ -1219,12 +1223,54 @@ pub async fn rotate_recovery_key(
         .begin()
         .await
         .map_err(ApiError::internal)?;
+    let user = sqlx::query!(
+        r#"
+        SELECT auth_hash, pepper_version, locked_until
+        FROM users
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+        session.user_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(ApiError::internal)?;
+    let Some(user) = user else {
+        return Err(ApiError::unauthenticated());
+    };
+
+    // 与登录共用账号锁定逻辑：锁定期间即使密码正确也直接拒绝。
+    if let Some(locked_until) = user.locked_until {
+        if locked_until > OffsetDateTime::now_utc() {
+            return Err(ApiError::account_locked(lock_retry_after(locked_until)));
+        }
+        sqlx::query!(
+            "UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = $1",
+            session.user_id,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(ApiError::internal)?;
+    }
+
+    let presented = state
+        .auth
+        .hash_with_pepper(user.pepper_version, &current_auth_key)?;
+    if !constant_time_eq(&presented, &user.auth_hash) {
+        record_failed_login(&mut tx, session.user_id).await?;
+        // 只提交失败计数；恢复材料保持原样。
+        tx.commit().await.map_err(ApiError::internal)?;
+        return Err(ApiError::invalid_credentials());
+    }
+
     sqlx::query!(
         r#"
         UPDATE users
         SET recovery_wrapped_mk = $2,
             recovery_auth_hash = $3,
             recovery_pepper_version = $4,
+            failed_logins = 0,
+            locked_until = NULL,
             updated_at = now()
         WHERE id = $1
         "#,
