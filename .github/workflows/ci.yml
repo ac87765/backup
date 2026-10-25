@@ -18,6 +18,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # 只保留行号级调试信息：完整调试信息让 target/ 体积翻倍，第 6 组起 runner 磁盘被写满。
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 # 所有第三方 action 都按 commit SHA 固定（供应链安全），注释保留对应的可读 tag。
 # 升级时同时更新 SHA 与注释。
@@ -31,6 +33,14 @@ jobs:
       SQLX_OFFLINE: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # runner 预装了大量本项目用不到的 SDK；集成测试的容器镜像与 target/ 会把磁盘写满
+      # （第 6 组曾因 No space left on device 导致 runner 崩溃）。
+      - name: 释放 runner 磁盘空间
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
 
       # rust-toolchain.toml 固定了版本、组件与 wasm32 目标，rustup 会自动安装。
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
@@ -50,6 +60,18 @@ jobs:
 
       - name: cargo test
         run: cargo test --workspace
+
+      # 集成测试拉取的 PostgreSQL / MinIO 镜像不再需要，释放空间给后续的 deny 与 wasm 步骤。
+      # 只删这两类镜像：不能用 `docker system prune -a`，那会连同 job 开始时构建好的
+      # cargo-deny-action 容器镜像一起删掉，导致 deny 步骤找不到镜像。
+      - name: 清理测试容器镜像
+        if: always()
+        # 尽力而为：清理失败不应阻断流水线。按镜像 ID 删除（MinIO 镜像按 digest 固定，没有 tag）。
+        run: |
+          docker container prune -f || true
+          docker volume prune -f || true
+          docker images --format '{{.ID}} {{.Repository}}' | grep -E 'postgres|minio' | awk '{print $1}' | sort -u | xargs -r docker rmi -f || true
+          df -h /
 
       # 2.10：`aead::seal_with_nonce` 只允许出现在测试向量构建里。
       # 生产（非 cfg(test)、未开 feature）构建中不得包含该符号。
