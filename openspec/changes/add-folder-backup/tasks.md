@@ -3,7 +3,7 @@
 ## 1. 基础能力
 
 - [x] 1.1 Worker API 层统一 429 退避（design D5）：读取 `Retry-After`、抖动、最多 8 次，向主线程报告“等待中”状态；单测覆盖缺失 `Retry-After`、超过重试次数、等待期间取消
-- [ ] 1.2 `crypto-core` 的 `VersionMetadata` 新增可选字段 `content_sha256`（design D3，含格式校验与 Debug 脱敏）并同步 WASM 绑定/TS 类型；Worker 上传时流式计算明文 SHA-256 写入；测试：无该字段时序列化与现有测试向量逐字节相同、含该字段的密文可被旧结构（无该字段）解密、非法格式被拒绝；`wasm-pack test` 通过
+- [x] 1.2 `crypto-core` 的 `VersionMetadata` 新增可选字段 `content_sha256`（design D3，含格式校验与 Debug 脱敏）并同步 WASM 绑定/TS 类型；Worker 上传时流式计算明文 SHA-256 写入；测试：无该字段时序列化与现有测试向量逐字节相同、含该字段的密文可被旧结构（无该字段）解密、非法格式被拒绝；`wasm-pack test` 通过
 - [x] 1.3 本地选择与遍历（design D1）：`webkitdirectory` 与拖拽 `webkitGetAsEntry` 递归（含空文件夹、`readEntries` 分批）、忽略列表、名称校验、50,000 上限；单测用伪造的 Entry 树覆盖
 
 ## 2. 文件夹上传编排
