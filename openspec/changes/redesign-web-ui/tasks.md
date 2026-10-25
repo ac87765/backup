@@ -37,3 +37,11 @@
 - [ ] 6.1 按 design D8 更新 E2E：只调整定位步骤，不删除、不放宽断言；新增覆盖右键菜单、视图切换保持、筛选不发请求、旧路由重定向、localStorage 只含界面偏好的 E2E
 - [ ] 6.2 新增 `web/e2e/screenshots.spec.ts`（`E2E_SCREENSHOTS=1` 时运行），按 design D9 输出桌面与手机两种视口截图
 - [ ] 6.3 严格 CSP 下浏览全部新页面无违规（扩展 `csp.spec.ts`）；`npm run typecheck && npm run lint && npm test && npm run build` 与全部 Playwright 测试通过
+
+## 7. 动效（design D10）
+
+- [ ] 7.1 在 `index.css` 增加动效令牌（`--ease-out`、`--duration-fast/base/slow`）与 `prefers-reduced-motion` 全局降级；实现可复用的进入/退出过渡（只动画 opacity/transform 及必要尺寸）
+- [ ] 7.2 菜单、对话框、Toast、传输面板（滑入 + 折叠高度过渡）、移动端抽屉、拖拽覆盖层的进入/退出动效；退出期间不拦截点击
+- [ ] 7.3 列表动效：悬停过渡、新增项淡入、删除/移走项淡出收起、切换文件夹/视图内容淡入；进度条宽度平滑过渡
+- [ ] 7.4 加载骨架行（与真实行等高、光泽扫过，reduced motion 时静止）替换加载中的空白或文字
+- [ ] 7.5 测试：reduced motion 下无动画的组件测试；删除收起后列表与数据一致；Playwright 在 reduced motion 下全部通过，并在截图中补充骨架屏状态
