@@ -1,0 +1,77 @@
+//! 管理员身份、管理接口与审计（add-admin-console）。
+//!
+//! 安全边界：
+//! - `is_admin` 只能由 [`cli`]（`server admin grant|revoke`）修改，HTTP 层没有写路径；
+//! - 非管理员访问 `/api/v1/admin/*` 一律 404（与不存在的接口不可区分）；
+//! - 所有管理写操作与审计记录在同一事务内提交；
+//! - 日志只记录 action / admin_id / target_user_id，不记录邮箱或原因。
+
+pub mod cli;
+
+use sqlx::{Postgres, Transaction};
+use uuid::Uuid;
+
+/// 审计动作名（同时作为 `backup_admin_actions_total{action}` 的标签）。
+pub mod action {
+    pub const APPROVE: &str = "approve";
+    pub const REJECT: &str = "reject";
+    pub const SUSPEND: &str = "suspend";
+    pub const REACTIVATE: &str = "reactivate";
+    pub const UPDATE_QUOTA: &str = "update_quota";
+    pub const REVOKE_SESSIONS: &str = "revoke_sessions";
+    pub const UPDATE_SETTINGS: &str = "update_settings";
+    pub const GRANT_ADMIN: &str = "grant_admin";
+    pub const REVOKE_ADMIN: &str = "revoke_admin";
+}
+
+/// 命令行操作的审计操作者：nil UUID 哨兵值。
+pub const SYSTEM_ADMIN_ID: Uuid = Uuid::nil();
+
+/// 命令行审计记录的来源 IP。
+pub const CLI_SOURCE_IP: &str = "cli";
+
+/// 会话创建后允许执行管理操作的最长时间（add-admin-console D3）。
+pub const ADMIN_REAUTH_HOURS: i64 = 12;
+
+/// 在调用方事务内追加一条审计记录（只追加，不更新、不删除）。
+pub async fn insert_audit(
+    tx: &mut Transaction<'_, Postgres>,
+    admin_id: Uuid,
+    action: &str,
+    target_user_id: Option<Uuid>,
+    details: &serde_json::Value,
+    ip: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO admin_audit_log (admin_id, action, target_user_id, details, ip)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+        admin_id,
+        action,
+        target_user_id,
+        details,
+        ip,
+    )
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+/// 记录一次管理操作指标（不含用户维度）。
+pub fn record_action(action: &'static str) {
+    metrics::counter!("backup_admin_actions_total", "action" => action).increment(1);
+}
+
+/// 把字节数格式化为人类可读的配额（只用于邮件正文，不参与计算）。
+pub fn format_quota(bytes: i64) -> String {
+    const GIB: i64 = 1024 * 1024 * 1024;
+    const TIB: i64 = 1024 * GIB;
+    if bytes >= TIB && bytes % TIB == 0 {
+        return format!("{} TB", bytes / TIB);
+    }
+    if bytes >= GIB && bytes % GIB == 0 {
+        return format!("{} GB", bytes / GIB);
+    }
+    format!("{bytes} 字节")
+}

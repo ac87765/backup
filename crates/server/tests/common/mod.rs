@@ -413,9 +413,9 @@ pub async fn insert_test_user(database: &server::Database, user_id: Uuid) -> Uui
         INSERT INTO users (
             id, email, kdf_params, kdf_salt, auth_hash, pepper_version,
             recovery_auth_hash, recovery_pepper_version, wrapped_mk, recovery_wrapped_mk,
-            root_node_id
+            root_node_id, status, approved_at
         )
-        VALUES ($1, $2::text::citext, $3, $4, $5, 1, $6, 1, $7, $8, $9)
+        VALUES ($1, $2::text::citext, $3, $4, $5, 1, $6, 1, $7, $8, $9, 'active', now())
         "#,
     )
     .bind(user_id)
@@ -481,6 +481,8 @@ pub fn test_config(static_dir: std::path::PathBuf) -> server::Config {
         trusted_proxies: Vec::new(),
         auth_rate_limit_per_minute: std::num::NonZeroU32::new(60).expect("60"),
         user_write_rate_limit_per_minute: std::num::NonZeroU32::new(600).expect("600"),
+        default_quota_bytes: server::config::DEFAULT_NEW_USER_QUOTA_BYTES as i64,
+        max_quota_bytes: server::config::DEFAULT_MAX_QUOTA_BYTES as i64,
     }
 }
 

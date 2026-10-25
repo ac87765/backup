@@ -32,6 +32,12 @@ pub const ENV_PREFIX: &str = "BACKUP_";
 /// 2.6 倍余量（约可支撑 260 MB/s 的持续上传）。README 记录完整推导。
 pub const DEFAULT_USER_WRITE_RATE_LIMIT_PER_MINUTE: u32 = 240;
 
+/// 新用户默认配额：10 GiB（add-admin-console D1/D2）。
+pub const DEFAULT_NEW_USER_QUOTA_BYTES: u64 = 10 * 1024 * 1024 * 1024;
+
+/// 管理员可设置的单用户配额上限：10 TiB（add-admin-console D4）。
+pub const DEFAULT_MAX_QUOTA_BYTES: u64 = 10 * 1024 * 1024 * 1024 * 1024;
+
 /// 配置项名称。错误信息与日志只使用这里的名字，不使用内部键名或配置值。
 pub mod keys {
     pub const BIND_ADDR: &str = "BACKUP_BIND_ADDR";
@@ -65,6 +71,8 @@ pub mod keys {
     pub const TRUSTED_PROXIES: &str = "BACKUP_TRUSTED_PROXIES";
     pub const AUTH_RATE_LIMIT_PER_MINUTE: &str = "BACKUP_AUTH_RATE_LIMIT_PER_MINUTE";
     pub const USER_WRITE_RATE_LIMIT_PER_MINUTE: &str = "BACKUP_USER_WRITE_RATE_LIMIT_PER_MINUTE";
+    pub const DEFAULT_QUOTA_BYTES: &str = "BACKUP_DEFAULT_QUOTA_BYTES";
+    pub const MAX_QUOTA_BYTES: &str = "BACKUP_MAX_QUOTA_BYTES";
 }
 
 /// 单个 pepper 的最小长度（字节）。
@@ -379,6 +387,10 @@ pub struct Config {
     /// 每个已认证用户每分钟允许的写接口请求数（进程内令牌桶）。
     /// 批量 presign/confirm 各算一次请求，因此默认值按高吞吐上传估算。
     pub user_write_rate_limit_per_minute: NonZeroU32,
+    /// 新用户默认配额（字节），也是 app_settings 未设置时的回退值。
+    pub default_quota_bytes: i64,
+    /// 管理员可为单个用户设置的最大配额（字节）。
+    pub max_quota_bytes: i64,
 }
 
 impl Config {
@@ -450,6 +462,7 @@ impl Config {
         let trusted_proxies = parse_trusted_proxies(figment)?;
         let auth_rate_limit_per_minute = parse_auth_rate_limit(figment)?;
         let user_write_rate_limit_per_minute = parse_user_write_rate_limit(figment)?;
+        let (default_quota_bytes, max_quota_bytes) = parse_quota_config(figment)?;
 
         // 启动期校验浏览器访问 origin：OSS 的 public endpoint 必须是不带 bucket
         // 的标准 endpoint，否则预签名 URL 的 host 会变成 bucket.bucket.host。
@@ -478,6 +491,8 @@ impl Config {
             trusted_proxies,
             auth_rate_limit_per_minute,
             user_write_rate_limit_per_minute,
+            default_quota_bytes,
+            max_quota_bytes,
         })
     }
 }
@@ -631,6 +646,35 @@ fn parse_user_write_rate_limit(figment: &Figment) -> Result<NonZeroU32, ConfigEr
         keys::USER_WRITE_RATE_LIMIT_PER_MINUTE,
         "必须是正整数",
     ))
+}
+
+/// 新用户默认配额与单用户配额上限（字节）。
+fn parse_quota_config(figment: &Figment) -> Result<(i64, i64), ConfigError> {
+    let default = parse_u64(
+        &string_with_default(
+            figment,
+            keys::DEFAULT_QUOTA_BYTES,
+            &DEFAULT_NEW_USER_QUOTA_BYTES.to_string(),
+        )?,
+        keys::DEFAULT_QUOTA_BYTES,
+        0..=i64::MAX as u64,
+    )?;
+    let max = parse_u64(
+        &string_with_default(
+            figment,
+            keys::MAX_QUOTA_BYTES,
+            &DEFAULT_MAX_QUOTA_BYTES.to_string(),
+        )?,
+        keys::MAX_QUOTA_BYTES,
+        1..=i64::MAX as u64,
+    )?;
+    if default > max {
+        return Err(ConfigError::invalid(
+            keys::DEFAULT_QUOTA_BYTES,
+            "不能大于 BACKUP_MAX_QUOTA_BYTES",
+        ));
+    }
+    Ok((default as i64, max as i64))
 }
 
 /// 只解析数据库配置（`serve` 与 `migrate` 共用）。
@@ -844,6 +888,20 @@ fn parse_u32(
     let parsed = value
         .parse::<u32>()
         .map_err(|_| ConfigError::invalid(env_key, "必须是正整数"))?;
+    if !range.contains(&parsed) {
+        return Err(ConfigError::invalid(env_key, "超出允许范围"));
+    }
+    Ok(parsed)
+}
+
+fn parse_u64(
+    value: &str,
+    env_key: &'static str,
+    range: std::ops::RangeInclusive<u64>,
+) -> Result<u64, ConfigError> {
+    let parsed = value
+        .parse::<u64>()
+        .map_err(|_| ConfigError::invalid(env_key, "必须是非负整数"))?;
     if !range.contains(&parsed) {
         return Err(ConfigError::invalid(env_key, "超出允许范围"));
     }
@@ -1611,6 +1669,46 @@ mod tests {
             err,
             ConfigError::Invalid {
                 key: keys::AUTH_RATE_LIMIT_PER_MINUTE,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn quota_config_defaults_and_validates_relationship() {
+        let config = load(&complete_pairs()).expect("配置应当合法");
+        assert_eq!(
+            config.default_quota_bytes,
+            DEFAULT_NEW_USER_QUOTA_BYTES as i64
+        );
+        assert_eq!(config.max_quota_bytes, DEFAULT_MAX_QUOTA_BYTES as i64);
+
+        let mut pairs = complete_pairs();
+        pairs.push(("default_quota_bytes", "5368709120"));
+        pairs.push(("max_quota_bytes", "107374182400"));
+        let config = load(&pairs).expect("显式配额配置应当生效");
+        assert_eq!(config.default_quota_bytes, 5_368_709_120);
+        assert_eq!(config.max_quota_bytes, 107_374_182_400);
+
+        let mut pairs = complete_pairs();
+        pairs.push(("default_quota_bytes", "200"));
+        pairs.push(("max_quota_bytes", "100"));
+        let err = load(&pairs).expect_err("默认配额不得大于上限");
+        assert_eq!(
+            err,
+            ConfigError::Invalid {
+                key: keys::DEFAULT_QUOTA_BYTES,
+                reason: "不能大于 BACKUP_MAX_QUOTA_BYTES"
+            }
+        );
+
+        let mut pairs = complete_pairs();
+        pairs.push(("default_quota_bytes", "not-a-number"));
+        let err = load(&pairs).expect_err("非法配额必须失败");
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: keys::DEFAULT_QUOTA_BYTES,
                 ..
             }
         ));

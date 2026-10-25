@@ -58,6 +58,86 @@ async fn migrate_command_applies_migrations_and_is_idempotent() {
 }
 
 #[tokio::test]
+async fn migration_0006_marks_existing_users_active() {
+    let env = environment().await;
+    let test_db = TestDb::create(env).await;
+    let pool = test_db.connect().await;
+
+    // 先只执行 0006 之前的迁移，模拟升级前的数据库。
+    for migration in server::db::MIGRATOR
+        .migrations
+        .iter()
+        .filter(|migration| migration.version < 6)
+    {
+        sqlx::raw_sql(&migration.sql)
+            .execute(&pool)
+            .await
+            .unwrap_or_else(|error| panic!("应用迁移 {} 失败：{error}", migration.version));
+    }
+
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO users (
+            id, email, kdf_params, kdf_salt, auth_hash, pepper_version,
+            recovery_auth_hash, recovery_pepper_version, wrapped_mk, recovery_wrapped_mk
+        )
+        VALUES (
+            $1, $2::text::citext,
+            '{"algorithm":"argon2id","m_cost_kib":65536,"t_cost":3,"p_cost":1}'::jsonb,
+            $3, $4, 1, $4, 1, $5, $5
+        )
+        "#,
+    )
+    .bind(user_id)
+    .bind("legacy@example.com")
+    .bind(vec![0_u8; 16])
+    .bind(vec![0_u8; 32])
+    .bind(vec![1_u8; 73])
+    .execute(&pool)
+    .await
+    .expect("插入升级前用户");
+
+    // 再执行 0006（升级迁移）。
+    let admin_migration = server::db::MIGRATOR
+        .migrations
+        .iter()
+        .find(|migration| migration.version == 6)
+        .expect("必须存在 0006 迁移");
+    sqlx::raw_sql(&admin_migration.sql)
+        .execute(&pool)
+        .await
+        .expect("应用 0006 迁移");
+
+    use sqlx::Row as _;
+
+    let row = sqlx::query(
+        r#"
+        SELECT status, is_admin, approved_at
+        FROM users
+        WHERE id = $1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("读取迁移后的用户");
+    let status: String = row.get("status");
+    let is_admin: bool = row.get("is_admin");
+    let approved_at: Option<time::OffsetDateTime> = row.get("approved_at");
+    assert_eq!(status, "active", "迁移前已存在的用户必须保持可用");
+    assert!(!is_admin);
+    assert!(approved_at.is_none());
+
+    let mode: serde_json::Value =
+        sqlx::query_scalar("SELECT value FROM app_settings WHERE key = 'registration_mode'")
+            .fetch_one(&pool)
+            .await
+            .expect("默认注册模式必须存在");
+    assert_eq!(mode, serde_json::json!("approval"));
+}
+
+#[tokio::test]
 async fn checksum_mismatch_is_rejected() {
     let env = environment().await;
     let test_db = TestDb::create(env).await;

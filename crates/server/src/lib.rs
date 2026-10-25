@@ -3,7 +3,10 @@
 //! 二进制入口只做参数解析与生命周期管理，具体能力都在本 crate 内实现，
 //! 以便集成测试直接构造应用（不启动真实进程也能覆盖中间件与错误映射）。
 
+pub mod accounts;
+pub mod admin;
 pub mod api;
+pub mod app_settings;
 pub mod auth;
 pub mod config;
 pub mod db;

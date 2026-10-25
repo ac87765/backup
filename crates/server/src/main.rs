@@ -9,6 +9,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
+use server::admin::cli::{AdminCommand, run as run_admin};
 use server::{
     AppState, Config, Database, MigrateConfig, StartupError, Storage, build_router, config, jobs,
     mail, metrics, shutdown,
@@ -29,6 +30,11 @@ enum Command {
     Migrate,
     /// 输出 OpenAPI 规范到 stdout。
     Openapi,
+    /// 管理员身份管理（只连数据库）。
+    Admin {
+        #[command(subcommand)]
+        command: AdminCommand,
+    },
 }
 
 fn main() -> ExitCode {
@@ -54,6 +60,7 @@ fn run(command: Command) -> anyhow::Result<()> {
         }
         Command::Serve => runtime()?.block_on(serve()),
         Command::Migrate => runtime()?.block_on(migrate()),
+        Command::Admin { command } => runtime()?.block_on(run_admin(command)),
     }
 }
 
