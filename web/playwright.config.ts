@@ -1,29 +1,47 @@
+import path from 'node:path'
+
 import { defineConfig, devices } from '@playwright/test'
 
 /**
- * Playwright 冒烟测试：验证**生产构建**在严格 CSP 下能加载 WASM 并完成一次加解密。
- *
- * `webServer` 会用 `VITE_SELFTEST=1` 构建，并通过 `vite preview` 提供
- * `script-src 'self' 'wasm-unsafe-eval'` 的 CSP 响应头。
+ * 真实后端 E2E：构建前端 → `server serve` 托管 web/dist 与 API。
+ * 邮件使用 file 模式写入 E2E_MAIL_DIR，测试从 .eml 解码令牌。
  */
+const baseUrl = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:4174'
+const mailDir =
+  process.env.E2E_MAIL_DIR ?? path.resolve(process.cwd(), 'e2e-tmp', 'mail')
+process.env.E2E_MAIL_DIR = mailDir
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
-  timeout: 120_000,
-  expect: { timeout: 15_000 },
+  timeout: 180_000,
+  expect: { timeout: 20_000 },
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: baseUrl,
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'npm run e2e:preview',
-    url: 'http://127.0.0.1:4173',
+    // 本机沙箱下可先手动 `npm run build`，再用 E2E_SKIP_BUILD=1 跳过重复构建。
+    command:
+      process.env.E2E_SKIP_BUILD === '1'
+        ? 'node e2e/serve.mjs'
+        : 'npm run e2e:serve',
+    url: baseUrl,
     reuseExistingServer: !process.env.CI,
-    timeout: 240_000,
+    timeout: 300_000,
     env: {
-      VITE_SELFTEST: '1',
-      // CI 使用 rust job 上传的 WASM artifact；确保 webServer 子进程也能看到该开关。
+      E2E_BASE_URL: baseUrl,
+      E2E_MAIL_DIR: mailDir,
+      ...(process.env.E2E_DATABASE_URL
+        ? { E2E_DATABASE_URL: process.env.E2E_DATABASE_URL }
+        : {}),
+      ...(process.env.E2E_STORAGE_ENDPOINT
+        ? { E2E_STORAGE_ENDPOINT: process.env.E2E_STORAGE_ENDPOINT }
+        : {}),
+      ...(process.env.E2E_SERVER_BIN
+        ? { E2E_SERVER_BIN: process.env.E2E_SERVER_BIN }
+        : {}),
       ...(process.env.SKIP_WASM_BUILD
         ? { SKIP_WASM_BUILD: process.env.SKIP_WASM_BUILD }
         : {}),
