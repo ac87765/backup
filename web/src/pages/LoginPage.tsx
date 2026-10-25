@@ -1,18 +1,11 @@
 import { useState } from 'react'
-import {
-  Link,
-  Navigate,
-  useLocation,
-  useNavigate,
-} from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/context'
 import { errorMessage } from '../auth/errors'
-import {
-  type AuthRedirectState,
-  safeRedirect,
-} from '../auth/navigation'
-import { FormError, PageShell } from '../components/PageShell'
+import { type AuthRedirectState, safeRedirect } from '../auth/navigation'
+import { AuthLayout } from '../components/AuthLayout'
+import { Button, FormError, TextField } from '../ui'
 
 export function LoginPage() {
   const { api, user, unlocked, setSession } = useAuth()
@@ -50,9 +43,22 @@ export function LoginPage() {
   }
 
   return (
-    <PageShell
+    <AuthLayout
       title="端对端加密备份"
-      subtitle="使用邮箱和密码登录。主密钥只在本机 Worker 内解包。"
+      subtitle="使用邮箱和密码登录。主密钥只在本机 Worker 内解包，不会发送到服务端。"
+      footer={
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5">
+          <Link to="/register" className="font-medium text-brand-600 hover:underline">
+            注册
+          </Link>
+          <Link to="/reset" className="font-medium text-brand-600 hover:underline">
+            忘记密码 / 恢复密钥重置
+          </Link>
+          <Link to="/security" className="text-ink-600 hover:text-ink-900 hover:underline">
+            了解端对端加密与服务端可见信息
+          </Link>
+        </div>
+      }
     >
       <form
         className="space-y-4"
@@ -61,51 +67,35 @@ export function LoginPage() {
           void submit()
         }}
       >
-        <label className="block text-sm font-medium text-slate-700">
-          邮箱
-          <input
-            data-testid="login-email"
-            type="email"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
-          />
-        </label>
-        <label className="block text-sm font-medium text-slate-700">
-          密码
-          <input
-            data-testid="login-password"
-            type="password"
-            required
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
-          />
-        </label>
         <FormError message={error} />
-        <button
-          data-testid="login-submit"
+        <TextField
+          label="邮箱"
+          data-testid="login-email"
+          type="email"
+          required
+          autoComplete="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+        <TextField
+          label="密码"
+          data-testid="login-password"
+          type="password"
+          required
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        <Button
           type="submit"
+          variant="primary"
+          block
+          data-testid="login-submit"
           disabled={busy}
-          className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
           {busy ? '登录中…' : '登录'}
-        </button>
+        </Button>
       </form>
-      <div className="mt-4 flex justify-between text-sm text-slate-600">
-        <Link className="font-medium text-slate-900 underline" to="/register">
-          注册
-        </Link>
-        <Link className="font-medium text-slate-900 underline" to="/reset">
-          忘记密码 / 恢复密钥重置
-        </Link>
-      </div>
-      <p className="mt-3 text-sm text-slate-600">
-        <Link className="underline" to="/security">
-          了解端对端加密与服务端可见信息
-        </Link>
-      </p>
-    </PageShell>
+    </AuthLayout>
   )
 }

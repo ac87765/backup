@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import {
   CheckCircle2,
   ChevronDown,
@@ -27,6 +27,7 @@ import {
   useToast,
   type MenuItem,
 } from '../ui'
+import { Brand } from './Brand'
 import { useUsage } from './usage-context'
 
 export interface AppShellProps {
@@ -38,23 +39,6 @@ export interface AppShellProps {
   /** 当前页面能直接处理上传时提供；否则上传入口跳转到文件页。 */
   onUploadRequest?: () => void
   onNewFolderRequest?: () => void
-}
-
-function BrandMark() {
-  return (
-    <Link
-      to="/files"
-      className="flex items-center gap-2.5 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
-      aria-label="加密备份 首页"
-    >
-      <span className="flex h-9 w-9 items-center justify-center rounded-control bg-brand-600 text-white">
-        <ShieldCheck size={20} aria-hidden="true" />
-      </span>
-      <span className="text-[17px] font-semibold tracking-tight text-ink-900">
-        加密备份
-      </span>
-    </Link>
-  )
 }
 
 interface SidebarBodyProps {
@@ -339,7 +323,7 @@ function AppShellFrame({
     <div className="min-h-dvh bg-canvas">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-white px-3 pb-4 pt-5 md:flex">
         <div className="px-2">
-          <BrandMark />
+          <Brand to="/files" />
         </div>
         <SidebarBody
           onUploadRequest={onUploadRequest}
@@ -387,7 +371,7 @@ function AppShellFrame({
             className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-white px-3 pb-4 pt-4 shadow-pop"
           >
             <div className="flex items-center justify-between px-2">
-              <BrandMark />
+              <Brand to="/files" />
               <IconButton
                 label="关闭导航菜单"
                 size="sm"

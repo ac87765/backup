@@ -10,7 +10,6 @@ import {
 
 import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/context'
-import { PageShell } from './components/PageShell'
 import { FilesPage } from './pages/FilesPage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
@@ -21,7 +20,7 @@ import { TrashPage } from './pages/TrashPage'
 import { UnlockPage } from './pages/UnlockPage'
 import { VerifyEmailPage } from './pages/VerifyEmailPage'
 import { UsageProvider } from './shell/UsageProvider'
-import { ToastProvider } from './ui'
+import { Spinner, ToastProvider } from './ui'
 
 function RequireSession({ children }: { children: ReactNode }) {
   const { user, loading, unlocked } = useAuth()
@@ -29,11 +28,9 @@ function RequireSession({ children }: { children: ReactNode }) {
   const from = `${location.pathname}${location.search}`
   if (loading) {
     return (
-      <PageShell title="加载中" subtitle="正在检查会话…">
-        <p role="status" className="text-sm text-ink-600">
-          加载中…
-        </p>
-      </PageShell>
+      <main className="flex min-h-dvh items-center justify-center bg-canvas">
+        <Spinner size={28} label="加载中" />
+      </main>
     )
   }
   if (!user) {

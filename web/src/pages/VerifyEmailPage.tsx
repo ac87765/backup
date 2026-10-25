@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/context'
 import { errorMessage } from '../auth/errors'
-import { FormError, FormSuccess, PageShell } from '../components/PageShell'
+import { AuthLayout } from '../components/AuthLayout'
+import { Button, FormError, FormNotice, Spinner, TextField } from '../ui'
 
 type VerifyState = 'idle' | 'verifying' | 'success' | 'error' | 'missing'
 
@@ -64,64 +65,56 @@ export function VerifyEmailPage({
   }
 
   return (
-    <PageShell
+    <AuthLayout
       title={state === 'success' ? '邮箱已验证' : '验证邮箱'}
       subtitle="验证链接中的令牌只通过 POST 提交，并且只能使用一次。"
+      footer={
+        <Link to="/login" className="font-medium text-brand-600 hover:underline">
+          返回登录
+        </Link>
+      }
     >
       <div className="space-y-4">
         {state === 'verifying' && (
-          <p role="status" className="text-sm text-slate-600">
+          <div className="flex items-center justify-center gap-2 py-4 text-sm text-ink-600">
+            <Spinner size={18} />
             正在验证…
-          </p>
+          </div>
         )}
         {state === 'success' && (
-          <FormSuccess message="邮箱验证成功，现在可以登录了。" />
+          <FormNotice message="邮箱验证成功，现在可以登录了。" />
         )}
         {state === 'error' && (
           <>
             <FormError message={error} />
-            <div className="space-y-2 rounded-lg border border-slate-200 p-4">
-              <p className="text-sm font-medium text-slate-700">
+            <div className="space-y-3 rounded-card border border-line p-4">
+              <p className="text-sm font-medium text-ink-900">
                 重新发送验证邮件
               </p>
-              <input
+              <TextField
+                aria-label="邮箱"
                 type="email"
+                autoComplete="email"
                 value={resendEmail}
                 onChange={(event) => setResendEmail(event.target.value)}
                 placeholder="邮箱"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
               />
-              <button
-                type="button"
-                onClick={() => void resend()}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
-              >
-                重新发送
-              </button>
-              <FormSuccess message={resendMessage} />
+              <Button onClick={() => void resend()}>重新发送</Button>
+              <FormNotice message={resendMessage} />
             </div>
           </>
         )}
         {state === 'missing' && (
-          <p className="text-sm text-slate-600">
+          <p className="text-sm leading-6 text-ink-600">
             缺少验证令牌，请从邮件中的链接重新打开。
           </p>
         )}
         {state !== 'verifying' && (
-          <button
-            type="button"
-            onClick={onDone}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-          >
+          <Button variant="primary" block onClick={onDone}>
             前往登录
-          </button>
+          </Button>
         )}
-        <p className="text-sm text-slate-600">
-          <Link className="font-medium text-slate-900 underline" to="/login">
-            返回登录
-          </Link>
-        </p>
       </div>
-    </PageShell>
+    </AuthLayout>
   )
 }

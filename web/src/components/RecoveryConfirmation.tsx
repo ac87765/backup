@@ -7,6 +7,7 @@ import {
 } from '../auth/recovery'
 import { useAuth } from '../auth/context'
 import { errorMessage } from '../auth/errors'
+import { Button, FormError, TextField } from '../ui'
 
 interface RecoveryConfirmationProps {
   display: string
@@ -63,61 +64,55 @@ export function RecoveryConfirmation({
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <p className="text-sm font-medium text-slate-700">请抄写恢复密钥</p>
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-ink-900">请抄写恢复密钥</p>
         <code
           data-testid="recovery-display"
-          className="mt-2 block break-all rounded-lg bg-slate-100 p-4 font-mono text-sm tracking-wide text-slate-900"
+          className="block break-all rounded-control border border-line bg-canvas p-4 font-mono text-sm leading-6 tracking-wide text-ink-900"
         >
           {display}
         </code>
       </div>
 
       <div className="space-y-3">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm leading-6 text-ink-600">
           请回填以下组以确认已保存（不区分大小写）：
         </p>
         {indices.map((groupIndex, position) => (
-          <label key={groupIndex} className="block text-sm font-medium text-slate-700">
-            第 {groupIndex + 1} 组
-            <input
-              data-testid={`recovery-confirm-${position}`}
-              data-group-index={groupIndex}
-              value={answers[position] ?? ''}
-              onChange={(event) => updateAnswer(position, event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono uppercase tracking-wide focus:border-slate-500 focus:outline-none"
-            />
-          </label>
+          <TextField
+            key={groupIndex}
+            label={`第 ${groupIndex + 1} 组`}
+            data-testid={`recovery-confirm-${position}`}
+            data-group-index={groupIndex}
+            value={answers[position] ?? ''}
+            onChange={(event) => updateAnswer(position, event.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            inputClassName="font-mono uppercase tracking-wide"
+          />
         ))}
       </div>
 
-      {(localError || error) && (
-        <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
-          {localError ?? error}
-        </p>
-      )}
+      <FormError message={localError ?? error ?? null} />
 
-      <div className="flex gap-3">
-        <button
+      <div className="flex flex-wrap gap-2">
+        <Button
           type="button"
+          variant="primary"
           onClick={() => void submit()}
           disabled={busy || submitting}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
           {submitting ? '校验中…' : confirmLabel}
-        </button>
+        </Button>
         {onCancel && (
-          <button
+          <Button
             type="button"
             onClick={onCancel}
             disabled={busy || submitting}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"
           >
             取消
-          </button>
+          </Button>
         )}
       </div>
     </div>

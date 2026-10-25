@@ -1,17 +1,11 @@
 import { useState } from 'react'
-import {
-  Navigate,
-  useLocation,
-  useNavigate,
-} from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/context'
 import { errorMessage } from '../auth/errors'
-import {
-  type AuthRedirectState,
-  safeRedirect,
-} from '../auth/navigation'
-import { FormError, PageShell } from '../components/PageShell'
+import { type AuthRedirectState, safeRedirect } from '../auth/navigation'
+import { AuthLayout } from '../components/AuthLayout'
+import { Button, FormError, Spinner, TextField } from '../ui'
 
 export function UnlockPage() {
   const { api, user, loading, unlocked, markUnlocked, logout } = useAuth()
@@ -26,21 +20,15 @@ export function UnlockPage() {
 
   if (loading) {
     return (
-      <PageShell title="解锁" subtitle="正在检查会话…">
-        <p role="status" className="text-sm text-slate-600">
-          加载中…
-        </p>
-      </PageShell>
+      <AuthLayout title="解锁" subtitle="正在检查会话…">
+        <div className="flex justify-center py-6">
+          <Spinner size={24} label="加载中" />
+        </div>
+      </AuthLayout>
     )
   }
   if (!user) {
-    return (
-      <Navigate
-        to="/login"
-        state={{ from: destination }}
-        replace
-      />
-    )
+    return <Navigate to="/login" state={{ from: destination }} replace />
   }
   if (unlocked) {
     return <Navigate to={destination} replace />
@@ -66,9 +54,24 @@ export function UnlockPage() {
   }
 
   return (
-    <PageShell
+    <AuthLayout
       title="解锁"
       subtitle={`已登录为 ${user.email}。主密钥只存在于本页 Worker 内存，刷新后需要重新解锁。`}
+      footer={
+        <button
+          type="button"
+          onClick={() => {
+            void logout()
+              .catch(() => undefined)
+              .finally(() => {
+                void navigate('/login')
+              })
+          }}
+          className="font-medium text-ink-600 hover:text-ink-900 hover:underline"
+        >
+          退出登录
+        </button>
+      }
     >
       <form
         className="space-y-4"
@@ -77,36 +80,26 @@ export function UnlockPage() {
           void submit()
         }}
       >
-        <label className="block text-sm font-medium text-slate-700">
-          密码
-          <input
-            data-testid="unlock-password"
-            type="password"
-            required
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
-          />
-        </label>
         <FormError message={error} />
-        <button
-          data-testid="unlock-submit"
+        <TextField
+          label="密码"
+          data-testid="unlock-password"
+          type="password"
+          required
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        <Button
           type="submit"
+          variant="primary"
+          block
+          data-testid="unlock-submit"
           disabled={busy}
-          className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
           {busy ? '解锁中…' : '解锁'}
-        </button>
+        </Button>
       </form>
-      <button
-        type="button"
-        onClick={() => {
-          void logout().catch(() => undefined).finally(() => { void navigate('/login') })
-        }}
-        className="mt-4 text-sm font-medium text-slate-600 underline"
-      >
-        退出登录
-      </button>
-    </PageShell>
+    </AuthLayout>
   )
 }
