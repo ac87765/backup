@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, email::text AS \"email!\", email_verified_at, kdf_params, kdf_salt,\n                   auth_hash, pepper_version, wrapped_mk, failed_logins, locked_until\n            FROM users\n            WHERE email = $1::text::citext\n            ",
+  "query": "\n        SELECT id, email::text AS \"email!\", email_verified_at, kdf_params, kdf_salt, wrapped_mk,\n               root_node_id\n        FROM users\n        WHERE id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -30,33 +30,18 @@
       },
       {
         "ordinal": 5,
-        "name": "auth_hash",
-        "type_info": "Bytea"
-      },
-      {
-        "ordinal": 6,
-        "name": "pepper_version",
-        "type_info": "Int4"
-      },
-      {
-        "ordinal": 7,
         "name": "wrapped_mk",
         "type_info": "Bytea"
       },
       {
-        "ordinal": 8,
-        "name": "failed_logins",
-        "type_info": "Int4"
-      },
-      {
-        "ordinal": 9,
-        "name": "locked_until",
-        "type_info": "Timestamptz"
+        "ordinal": 6,
+        "name": "root_node_id",
+        "type_info": "Uuid"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -66,11 +51,8 @@
       false,
       false,
       false,
-      false,
-      false,
-      false,
-      true
+      false
     ]
   },
-  "hash": "c5628e46d4243f01d61975a193e5790a3bd9883f2144fb956f9d1c8d6c70f1fa"
+  "hash": "86c06372a845c65f66bf6a9a74e1b40fa7e1d3708358b15452ceb81bf151504d"
 }
