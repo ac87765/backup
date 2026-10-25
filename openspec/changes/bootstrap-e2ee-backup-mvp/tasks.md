@@ -78,7 +78,7 @@
 
 ## 8. 文件传输
 
-- [ ] 8.1 迁移：`upload_sessions`、`upload_chunks`、`object_deletions`、`email_outbox`（若未建），验证迁移执行
+- [x] 8.1 迁移：`upload_sessions`、`upload_chunks`、`object_deletions`、`email_outbox`（若未建），验证迁移执行
 - [ ] 8.2 实现创建上传会话（content_id 幂等、事务内配额预留、邮箱未验证拒绝），集成测试覆盖并发超额只成功一个
 - [ ] 8.3 实现块 presign（服务端生成对象键、≤15 分钟）、块确认（stat 校验大小、幂等）、已确认块查询，集成测试覆盖大小不符、对象不存在、已关闭会话
 - [ ] 8.4 实现提交（单事务校验与写入、幂等返回同一结果、目标不可用保持 open）与中止，集成测试覆盖缺块、重复提交、目标被删
