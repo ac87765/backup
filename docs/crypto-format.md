@@ -1,8 +1,8 @@
 # 加密格式说明（`0x01`）
 
 本文档描述客户端加密的唯一实现（`crates/crypto-core`，经 `crypto-wasm` 在浏览器 Web Worker 中运行）
-所采用的密钥层级、密文帧与 AAD 规则。它与 `openspec/changes/bootstrap-e2ee-backup-mvp/design.md`
-的 D4/D5/D6 一致；两者冲突时以 design 为准，并且必须先修正文档再改代码。
+所采用的密钥层级、密文帧与 AAD 规则。它与 `openspec/changes/archive/2026-10-29-bootstrap-e2ee-backup-mvp/design.md`
+的 D4/D5/D6 一致（版本元数据的可选 `content_sha256` 扩展见 `2026-10-29-add-folder-backup/design.md` D3）；两者冲突时以 design 为准，并且必须先修正文档再改代码。
 
 > **不可变性**：密文格式版本 `0x01` 以及下表中的每个字符串、每种拼接方式，
 > 一旦写出第一份真实用户数据就永久不可变。任何改动都必须引入新的格式版本号，

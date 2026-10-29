@@ -3,17 +3,15 @@
 浏览器内完成加密与解密的个人文件备份服务：文件以密文形式存放在阿里云 OSS，
 服务端只保存账号、树结构与配额等元数据，看不到文件名、文件内容或任何密钥。
 
-当前仓库处于 **第 9 组：部署与端到端验证**。密码学核心、HTTP API、上传/下载管线等按
-`openspec/changes/bootstrap-e2ee-backup-mvp/tasks.md` 的分组逐步实现。
+MVP（账号、端对端加密、上传下载、文件管理、版本、回收站、配额）以及界面改版、文件夹备份、
+“安全与隐私”可视化页面、管理后台与注册审批均已上线；生产部署方式见 [deploy/server/](deploy/server/README.md)。
 
 ## 设计与契约
 
-全部行为契约、设计决策与任务清单都在 OpenSpec change 中，实现前请先读：
-
-- [proposal.md](openspec/changes/bootstrap-e2ee-backup-mvp/proposal.md) —— 范围与不在范围内的内容
-- [design.md](openspec/changes/bootstrap-e2ee-backup-mvp/design.md) —— 架构与 D1–D16 决策（约束，不是建议）
-- [specs/](openspec/changes/bootstrap-e2ee-backup-mvp/specs) —— 可验证的行为场景
-- [tasks.md](openspec/changes/bootstrap-e2ee-backup-mvp/tasks.md) —— 分组任务与验证条件
+- [openspec/specs/](openspec/specs) —— **当前全部行为契约**（8 个能力的主规格，每个 Scenario 都有测试）
+- [openspec/changes/archive/](openspec/changes/archive) —— 已完成 change 的提案、设计决策与任务（设计决策仍是约束）
+  - [MVP design.md](openspec/changes/archive/2026-10-29-bootstrap-e2ee-backup-mvp/design.md) —— 架构与 D1–D16 基础决策
+- 新功能先在 `openspec/changes/<change>/` 写提案、设计、spec 增量与任务，实现并验证后再归档合并进主规格
 - [docs/crypto-format.md](docs/crypto-format.md) —— 密钥层级、密文帧与 AAD 格式（`0x01`，永久不可变）
 - [AGENTS.md](AGENTS.md) —— 工程硬性规则（加密、服务端、日志、提交规范）
 
@@ -287,7 +285,7 @@ npm run generate:api && git diff --exit-code -- src/api/schema.d.ts  # OpenAPI �
 ```bash
 wasm-pack test --headless --chrome --release crates/crypto-wasm
 cd web && npm run test:e2e
-openspec validate bootstrap-e2ee-backup-mvp --strict
+openspec validate --all --strict
 ```
 
 `cargo deny` 需要单独安装：`cargo install cargo-deny --locked`。

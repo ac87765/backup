@@ -412,7 +412,8 @@ jobs:
         run: npm install --global @fission-ai/openspec@1.15.0
 
       - name: openspec validate --strict
-        run: openspec validate bootstrap-e2ee-backup-mvp --strict
+        # 主规格 + 所有进行中的 change；已归档的 change 不再单独校验。
+        run: openspec validate --all --strict
 
   dev-stack:
     name: Dev stack (PostgreSQL + MinIO)

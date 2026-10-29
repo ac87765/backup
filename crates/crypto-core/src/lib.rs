@@ -4,7 +4,7 @@
 //! 以便同时被 `crypto-wasm`（浏览器 Web Worker）与将来的桌面端 / CLI 复用。
 //!
 //! 密钥层级、AEAD 帧格式与 AAD 域的权威定义见
-//! `openspec/changes/bootstrap-e2ee-backup-mvp/design.md` 的 D4/D5/D6，
+//! `openspec/changes/archive/2026-10-29-bootstrap-e2ee-backup-mvp/design.md` 的 D4/D5/D6，
 //! 人类可读的格式说明见仓库根目录的 `docs/crypto-format.md`。
 //!
 //! # 密钥层级

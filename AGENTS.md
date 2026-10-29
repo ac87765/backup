@@ -6,10 +6,13 @@
 ## 开工前必须读
 
 1. `openspec/config.yaml` —— 技术栈、架构原则、工程约定（已决策）。
-2. `openspec/changes/bootstrap-e2ee-backup-mvp/` 下的 `proposal.md`、`design.md`、`specs/*/spec.md`、`tasks.md`。
-3. OpenSpec 实现流程：`.agents/skills/openspec-apply-change/SKILL.md`。
+2. `openspec/specs/*/spec.md`：当前全部行为契约（已上线功能的主规格）。
+3. 本次要实现的 change：`openspec/changes/<change>/` 下的 `proposal.md`、`design.md`、`specs/*/spec.md`、`tasks.md`。
+4. 已归档 change 的设计决策（仍是约束）：`openspec/changes/archive/*/design.md`，尤其是
+   `2026-10-29-bootstrap-e2ee-backup-mvp/design.md` 的 D1–D16（加密、存储、认证、部署的基础决策）。
+5. OpenSpec 实现流程：`.agents/skills/openspec-apply-change/SKILL.md`。
 
-spec 是行为契约，每个 `#### Scenario` 都应有对应测试。design.md 的决策 D1–D16 是约束，不是建议。
+spec 是行为契约，每个 `#### Scenario` 都应有对应测试。各 design.md 的决策是约束，不是建议。
 
 ## 工作方式
 
@@ -51,7 +54,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo deny check
-openspec validate bootstrap-e2ee-backup-mvp --strict
+openspec validate --all --strict
 ```
 涉及前端时追加（在 `web/` 下）：`npm run typecheck && npm run lint && npm test && npm run build`。
 涉及 WASM 时追加：`wasm-pack test --headless --chrome crates/crypto-wasm`。
