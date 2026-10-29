@@ -1,0 +1,74 @@
+# 生产栈：单台云主机（已在 1 GiB 内存 + 2 GiB swap 的阿里云 ECS 上验证）。
+#
+#   postgres  — PostgreSQL 16，小内存调优，数据在 named volume `pgdata`
+#   server    — 本仓库 Dockerfile 构建的镜像；启动时先 `server migrate` 再 `server serve`
+#
+# server 只监听 127.0.0.1:8080，对外 HTTPS 由宿主机上的 Caddy 反向代理（见 Caddyfile.template）。
+# 变量来自同目录的两个文件（install.sh 生成，权限 600，不进仓库）：
+#   .env        POSTGRES_PASSWORD、BACKUP_IMAGE（compose 变量替换用）
+#   backup.env  应用配置（BACKUP_*，见 backup.env.example）
+name: backup
+
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: backup
+      POSTGRES_USER: backup
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    # 小内存调优（1 GiB 主机）。内存更大的主机可以按比例调高。
+    command:
+      - postgres
+      - -c
+      - shared_buffers=48MB
+      - -c
+      - max_connections=30
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - effective_cache_size=192MB
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U backup -d backup"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 320m
+    networks: [backend]
+
+  server:
+    image: ${BACKUP_IMAGE:?}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: ./backup.env
+    environment:
+      BACKUP_DATABASE_URL: postgres://backup:${POSTGRES_PASSWORD:?}@postgres:5432/backup
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["/usr/local/bin/server migrate && exec /usr/local/bin/server serve"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      # 仅 BACKUP_MAIL_MODE=file 时使用（未配置 SMTP 前，用 get-link.sh 取验证链接）。
+      - mail:/var/lib/backup/mail
+    mem_limit: 256m
+    stop_grace_period: 35s
+    networks: [backend]
+
+networks:
+  backend:
+    # 固定网段：宿主机经 docker 端口映射访问 server 时，源地址是网关 172.30.0.1，
+    # backup.env 里 BACKUP_TRUSTED_PROXIES=172.30.0.1/32 依赖这一点。
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
+
+volumes:
+  pgdata:
+  mail:

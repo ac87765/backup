@@ -1,0 +1,24 @@
+# Caddy 反向代理模板（install.sh 渲染为 /etc/caddy/Caddyfile）。
+#
+# 占位符（下方用双花括号包裹；注释里不要写出完整占位符，否则也会被替换）：
+#   SITE_HOST      对外地址：域名（backup.example.com）或公网 IP（120.79.245.99）
+#   TLS_BLOCK      域名：留空（Caddy 自动申请普通证书）
+#                  IP：使用 Let's Encrypt 短期 IP 证书（约 6 天，自动续期）
+#   GLOBAL_EXTRA   IP：`default_sni <IP>`。云主机的公网 IP 经 NAT 映射，
+#                  浏览器访问 IP 时不发送 SNI，没有它 TLS 握手会失败。
+{
+	{{GLOBAL_EXTRA}}
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+https://{{SITE_HOST}} {
+	{{TLS_BLOCK}}
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8080
+}
+
+http://{{SITE_HOST}} {
+	redir https://{{SITE_HOST}}{uri} permanent
+}
