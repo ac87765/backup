@@ -19,7 +19,7 @@ use crate::io_path::{StatePathError, path_for_io};
 use crate::model::{PendingUpload, PendingUploadStatus};
 
 /// 当前 schema 版本。
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 /// 状态库文件名（位于调用方传入的应用数据目录）。
 pub const DATABASE_FILE_NAME: &str = "client-state.sqlite3";
 
@@ -363,6 +363,26 @@ impl StateStore {
                 );
 
                 PRAGMA user_version = 2;
+                "#,
+            )?;
+            tx.commit()?;
+        }
+        if current < 3 {
+            // 微信备份（add-wechat-backup 第 1 组）：账号本地备注名。
+            // 键是数据根目录 + 账号目录名；不含 user_id（这是本机目录的显示
+            // 备注，与云端账号无关），也不含任何聊天内容或文件内容。
+            let tx = connection.transaction()?;
+            tx.execute_batch(
+                r#"
+                CREATE TABLE wechat_accounts (
+                    data_root       TEXT NOT NULL,
+                    account_name    TEXT NOT NULL,
+                    note            TEXT NOT NULL,
+                    updated_at      INTEGER NOT NULL,
+                    PRIMARY KEY (data_root, account_name)
+                );
+
+                PRAGMA user_version = 3;
                 "#,
             )?;
             tx.commit()?;
@@ -1152,6 +1172,64 @@ impl StateStore {
         })
         .await
     }
+
+    /// 读取微信账号的本地备注名；不存在时返回 `None`。
+    pub(crate) async fn wechat_account_note(
+        &self,
+        data_root: String,
+        account_name: String,
+    ) -> Result<Option<String>, StateError> {
+        self.run_db(move |connection| {
+            let note = connection
+                .query_row(
+                    "SELECT note FROM wechat_accounts WHERE data_root = ?1 AND account_name = ?2",
+                    params![data_root, account_name],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?;
+            Ok(note)
+        })
+        .await
+    }
+
+    /// 设置微信账号的本地备注名（覆盖旧值）。
+    pub(crate) async fn set_wechat_account_note(
+        &self,
+        data_root: String,
+        account_name: String,
+        note: String,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            connection.execute(
+                r#"
+                INSERT INTO wechat_accounts (data_root, account_name, note, updated_at)
+                VALUES (?1, ?2, ?3, ?4)
+                ON CONFLICT (data_root, account_name) DO UPDATE SET
+                    note = excluded.note,
+                    updated_at = excluded.updated_at
+                "#,
+                params![data_root, account_name, note, unix_seconds()],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// 清除微信账号的本地备注名；不存在时也成功。
+    pub(crate) async fn clear_wechat_account_note(
+        &self,
+        data_root: String,
+        account_name: String,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            connection.execute(
+                "DELETE FROM wechat_accounts WHERE data_root = ?1 AND account_name = ?2",
+                params![data_root, account_name],
+            )?;
+            Ok(())
+        })
+        .await
+    }
 }
 
 fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<UploadRecord, StateError>> {
@@ -1343,6 +1421,7 @@ mod tests {
         assert!(sql.contains("backup_index"));
         assert!(sql.contains("backup_activity"));
         assert!(sql.contains("backup_settings"));
+        assert!(sql.contains("wechat_accounts"));
         // 只存本机元数据：表结构中不得出现密钥/令牌/密文字段。
         for forbidden in ["wrapped", "token", "ciphertext", "plaintext", "secret"] {
             assert!(
@@ -1530,6 +1609,75 @@ mod tests {
                 .unwrap()
                 .len(),
             300
+        );
+    }
+
+    #[tokio::test]
+    async fn wechat_note_roundtrip_and_old_database_migrates() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(DATABASE_FILE_NAME);
+        let data_root = "D:/WeChatData/xwechat_files".to_owned();
+        let account = "wxid_test0001".to_owned();
+
+        {
+            let store = StateStore::open_path(&path).unwrap();
+            assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+            assert!(
+                store
+                    .wechat_account_note(data_root.clone(), account.clone())
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            store
+                .set_wechat_account_note(data_root.clone(), account.clone(), "主账号".to_owned())
+                .await
+                .unwrap();
+            assert_eq!(
+                store
+                    .wechat_account_note(data_root.clone(), account.clone())
+                    .await
+                    .unwrap(),
+                Some("主账号".to_owned())
+            );
+            store
+                .clear_wechat_account_note(data_root.clone(), account.clone())
+                .await
+                .unwrap();
+            assert!(
+                store
+                    .wechat_account_note(data_root.clone(), account.clone())
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+
+        // 模拟升级前的 v2 旧库：删除新表并把 user_version 拨回 2。
+        {
+            let connection = Connection::open(&path).unwrap();
+            connection
+                .execute_batch("DROP TABLE wechat_accounts; PRAGMA user_version = 2;")
+                .unwrap();
+        }
+
+        // 旧库重新打开时执行 v3 迁移，表恢复且仍可正常读写。
+        let store = StateStore::open_path(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        assert!(
+            store
+                .wechat_account_note(data_root.clone(), account.clone())
+                .await
+                .unwrap()
+                .is_none()
+        );
+        store
+            .set_wechat_account_note(data_root.clone(), account.clone(), "迁移后".to_owned())
+            .await
+            .unwrap();
+        assert_eq!(
+            store.wechat_account_note(data_root, account).await.unwrap(),
+            Some("迁移后".to_owned())
         );
     }
 

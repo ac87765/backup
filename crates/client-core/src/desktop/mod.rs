@@ -26,6 +26,8 @@ mod filter;
 mod types;
 mod watcher;
 
+pub mod wechat;
+
 pub use engine::BackupEngine;
 pub use error::BackupError;
 pub use types::{
