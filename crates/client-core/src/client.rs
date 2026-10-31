@@ -3,10 +3,12 @@
 //! 界面层只拿到 [`Account`]（邮箱、状态、是否管理员等展示数据）；
 //! 主密钥只保存在本结构的私有状态或系统凭据存储中。
 
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use crypto_core::MasterKey;
+use crypto_core::{MasterKey, NodeKey};
 use reqwest::Url;
 use uuid::Uuid;
 
@@ -15,6 +17,7 @@ use crate::auth::{self, LoginRequest, LoginResponse, PreloginResponse, ProfileRe
 pub use crate::clock::{Clock, SleepFuture, SystemClock};
 use crate::error::ClientError;
 use crate::secret_store::{SecretStore, SessionToken, platform_secret_store};
+use crate::state::StateStore;
 
 /// 账号状态（与 user-accounts / admin-console spec 一致）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +32,12 @@ pub enum AccountStatus {
     Rejected,
     /// 服务端新增、客户端尚未识别的状态；按不可写处理。
     Unknown,
+}
+
+impl std::fmt::Display for AccountStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 impl AccountStatus {
@@ -95,10 +104,14 @@ pub struct ClientBuilder {
     store: Option<Arc<dyn SecretStore>>,
     clock: Arc<dyn Clock>,
     keep_unlocked: bool,
+    app_data_dir: Option<PathBuf>,
+    state_store: Option<Arc<StateStore>>,
 }
 
 impl ClientBuilder {
     /// 创建构造器；默认使用 [`SystemClock`] 与当前平台凭据存储。
+    ///
+    /// 未指定应用数据目录时使用内存状态库（不会跨进程续传）。
     #[must_use]
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
@@ -106,6 +119,8 @@ impl ClientBuilder {
             store: None,
             clock: Arc::new(SystemClock),
             keep_unlocked: false,
+            app_data_dir: None,
+            state_store: None,
         }
     }
 
@@ -130,6 +145,22 @@ impl ClientBuilder {
         self
     }
 
+    /// 本地状态库所在的应用数据目录（design D5：由调用方传入）。
+    ///
+    /// 目录不存在时创建；数据库文件名为 [`crate::state::DATABASE_FILE_NAME`]。
+    #[must_use]
+    pub fn app_data_dir(mut self, directory: impl Into<PathBuf>) -> Self {
+        self.app_data_dir = Some(directory.into());
+        self
+    }
+
+    /// 注入已打开的状态库（测试或调用方自行处理损坏重建时使用）。
+    #[must_use]
+    pub fn state_store(mut self, store: Arc<StateStore>) -> Self {
+        self.state_store = Some(store);
+        self
+    }
+
     /// 构造客户端。
     pub fn build(self) -> Result<Client, ClientError> {
         let mut url = Url::parse(&self.base_url).map_err(|_| ClientError::InvalidBaseUrl)?;
@@ -141,22 +172,52 @@ impl ClientBuilder {
         url.set_fragment(None);
 
         let store = self.store.unwrap_or_else(platform_secret_store);
-        let api = HttpClient::new(url, self.clock)?;
+        let clock = self.clock;
+        let api = Arc::new(HttpClient::new(url, clock.clone())?);
+        let state_store = match (self.state_store, self.app_data_dir) {
+            (Some(store), _) => store,
+            (None, Some(directory)) => Arc::new(StateStore::open(&directory)?),
+            (None, None) => Arc::new(StateStore::open_in_memory()?),
+        };
+        let storage_http = reqwest::Client::builder()
+            // 预签名 URL 直连对象存储：绝不跟随重定向、绝不携带会话 Cookie。
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(300))
+            .build()
+            .map_err(ClientError::Network)?;
         Ok(Client {
             api,
             store,
-            keep_unlocked: AtomicBool::new(self.keep_unlocked),
-            state: Mutex::new(None),
+            clock,
+            keep_unlocked: Arc::new(AtomicBool::new(self.keep_unlocked)),
+            state: Arc::new(Mutex::new(None)),
+            node_keys: Arc::new(Mutex::new(HashMap::new())),
+            content_hashes: Arc::new(Mutex::new(HashMap::new())),
+            state_store,
+            storage_http,
         })
     }
 }
 
 /// 原生客户端核心。
+///
+/// `Clone` 共享会话、主密钥内存状态、节点密钥缓存与本地状态库；用于把传输
+/// 任务交给 `tokio::spawn`，而不是复制凭据。
+#[derive(Clone)]
 pub struct Client {
-    api: HttpClient,
-    store: Arc<dyn SecretStore>,
-    keep_unlocked: AtomicBool,
-    state: Mutex<Option<SessionState>>,
+    pub(crate) api: Arc<HttpClient>,
+    pub(crate) store: Arc<dyn SecretStore>,
+    pub(crate) clock: Arc<dyn Clock>,
+    keep_unlocked: Arc<AtomicBool>,
+    state: Arc<Mutex<Option<SessionState>>>,
+    /// node_id → 解包后的节点密钥；只在 Rust 内存中，不跨桥接层。
+    node_keys: Arc<Mutex<HashMap<Uuid, NodeKey>>>,
+    /// node_id → 当前版本的明文内容 SHA-256（仅用于增量判定）。
+    content_hashes: Arc<Mutex<HashMap<Uuid, Option<String>>>>,
+    pub(crate) state_store: Arc<StateStore>,
+    /// 直连 OSS/MinIO 的 HTTP 客户端（不带任何会话 Cookie/CSRF 头）。
+    pub(crate) storage_http: reqwest::Client,
 }
 
 impl Client {
@@ -447,6 +508,58 @@ impl Client {
         Ok(self.session_token()?.is_some())
     }
 
+    /// 取当前主密钥用于本 crate 的加解密。
+    ///
+    /// `pub(crate)` 且返回克隆：密钥只在 Rust 内部流动，绝不经过公开 API。
+    pub(crate) fn master_key(&self) -> Result<MasterKey, ClientError> {
+        let guard = self.state_guard()?;
+        let state = guard.as_ref().ok_or(ClientError::NoSession)?;
+        state.master_key.clone().ok_or(ClientError::Locked)
+    }
+
+    /// 写操作前的客户端检查：只有 `active` 账号允许写。
+    pub(crate) fn ensure_writable(&self) -> Result<Account, ClientError> {
+        let guard = self.state_guard()?;
+        let state = guard.as_ref().ok_or(ClientError::NoSession)?;
+        if !state.account.writes_allowed() {
+            return Err(ClientError::AccountNotWritable(state.account.status));
+        }
+        Ok(state.account.clone())
+    }
+
+    /// 内部缓存一个已解包的节点密钥。
+    pub(crate) fn cache_node_key(&self, node_id: Uuid, key: NodeKey) -> Result<(), ClientError> {
+        let mut keys = self
+            .node_keys
+            .lock()
+            .map_err(|_| ClientError::Internal("节点密钥缓存锁已损坏"))?;
+        keys.insert(node_id, key);
+        Ok(())
+    }
+
+    /// 读取缓存的节点密钥（克隆后交给调用方清零）。
+    pub(crate) fn cached_node_key(&self, node_id: Uuid) -> Result<Option<NodeKey>, ClientError> {
+        let keys = self
+            .node_keys
+            .lock()
+            .map_err(|_| ClientError::Internal("节点密钥缓存锁已损坏"))?;
+        Ok(keys.get(&node_id).cloned())
+    }
+
+    /// 缓存当前版本的明文内容 SHA-256（仅用于增量比较，不跨桥接层）。
+    pub(crate) fn cache_content_hash(
+        &self,
+        node_id: Uuid,
+        sha256: Option<String>,
+    ) -> Result<(), ClientError> {
+        let mut hashes = self
+            .content_hashes
+            .lock()
+            .map_err(|_| ClientError::Internal("内容摘要缓存锁已损坏"))?;
+        hashes.insert(node_id, sha256);
+        Ok(())
+    }
+
     /// 退出登录：通知服务端撤销当前会话，并**无论请求是否成功**都清除本地
     /// 会话令牌与主密钥（design D3）。
     pub async fn logout(&self) -> Result<(), ClientError> {
@@ -469,10 +582,24 @@ impl Client {
 
     /// 只清除内存中的主密钥，保留会话令牌与钥匙串内容（临时锁定）。
     pub fn lock(&self) -> Result<(), ClientError> {
-        let mut guard = self.state_guard()?;
-        if let Some(state) = guard.as_mut() {
-            state.master_key = None;
+        {
+            let mut guard = self.state_guard()?;
+            if let Some(state) = guard.as_mut() {
+                state.master_key = None;
+            }
         }
+        self.clear_key_caches()
+    }
+
+    fn clear_key_caches(&self) -> Result<(), ClientError> {
+        self.node_keys
+            .lock()
+            .map_err(|_| ClientError::Internal("节点密钥缓存锁已损坏"))?
+            .clear();
+        self.content_hashes
+            .lock()
+            .map_err(|_| ClientError::Internal("内容摘要缓存锁已损坏"))?
+            .clear();
         Ok(())
     }
 
@@ -529,6 +656,7 @@ impl Client {
             let mut guard = self.state_guard()?;
             *guard = None;
         }
+        self.clear_key_caches()?;
         self.store.clear()?;
         Ok(())
     }

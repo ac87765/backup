@@ -107,6 +107,27 @@ impl HttpClient {
         Self::parse_json(response).await
     }
 
+    /// 通用 JSON 请求（文件管理/传输模块使用）。
+    ///
+    /// 请求体只接受 `serde_json::Value`，避免把密钥类型误传给本层；429 退避
+    /// 仍由 [`Self::send`] 统一处理。
+    pub(crate) async fn request_json<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<T, ClientError> {
+        let serialized = match body {
+            Some(body) => Some(serialize_body(body)?),
+            None => None,
+        };
+        let response = match serialized.as_ref() {
+            Some(body) => self.send(method, path, Some(body.as_slice())).await?,
+            None => self.send(method, path, None).await?,
+        };
+        Self::parse_json(response).await
+    }
+
     pub(crate) async fn post_json<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,

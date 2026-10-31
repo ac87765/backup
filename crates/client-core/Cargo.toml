@@ -17,6 +17,12 @@ description = "原生客户端核心：认证、密钥边界与凭据存储（�
 # - zeroize：会话令牌等敏感缓冲区离开作用域时清零。
 # - getrandom：退避抖动使用操作系统 CSPRNG（AGENTS.md 禁止 Math.random 类随机源）。
 # - uuid：解析服务端返回的用户/根节点 ID，保证公开 API 是强类型展示数据。
+# - rusqlite（bundled）：design D5 指定的本地状态库。bundled 让 Windows/macOS
+#   安装包不依赖系统 SQLite，行为在 CI 与用户机器上一致。
+# - unicode-normalization：文件夹合并时必须按 NFC + 小写比较名称，与
+#   crypto-core 的名称令牌规则保持一致；这是 crypto-core 已使用的同一依赖。
+# - subtle：文件夹增量判定会比较明文内容 SHA-256，AGENTS.md 要求哈希比较为
+#   常量时间；crypto-core 内部使用的同一常量时间实现。
 # - axum / http-body-util（dev）：429 退避测试的本地假服务器。
 # - sqlx / testcontainers / tempfile（dev）：参照 server 集成测试，启动 PostgreSQL + MinIO。
 # - server（dev）：进程内启动真实服务端路由，验证客户端与真实实现互通。
@@ -27,12 +33,15 @@ getrandom = "0.2"
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
 ] }
+rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+subtle = "2"
 thiserror = "2"
-tokio = { version = "1", features = ["rt", "time"] }
+tokio = { version = "1", features = ["fs", "rt", "sync", "time"] }
 tracing = "0.1"
-uuid = { version = "1", features = ["serde"] }
+unicode-normalization = "0.1"
+uuid = { version = "1", features = ["serde", "v4"] }
 zeroize = { version = "1", features = ["derive"] }
 
 # 密钥链（design D3）：
@@ -49,6 +58,7 @@ windows-sys = { version = "0.61", default-features = false, features = [
     "Win32_Foundation",
     "Win32_Security_Credentials",
     "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
 ] }
 
 [dev-dependencies]

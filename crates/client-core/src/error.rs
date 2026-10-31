@@ -6,6 +6,30 @@
 
 use std::time::Duration;
 
+use crate::client::AccountStatus;
+use crate::model::TransferErrorCode;
+
+/// 传输/文件操作的结构化错误。
+///
+/// `message` 只用于界面展示；日志不得输出可能包含本地路径或文件夹名称的
+/// 详细错误（调用方应按错误码记录）。
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
+pub struct TransferError {
+    pub code: TransferErrorCode,
+    pub message: String,
+}
+
+impl TransferError {
+    #[must_use]
+    pub fn new(code: TransferErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+}
+
 /// 服务端稳定错误码。
 ///
 /// 与 `crates/server/src/api/error.rs` 的 `ApiError` 构造函数一一对应。
@@ -208,6 +232,46 @@ pub enum ClientError {
     #[error(transparent)]
     SecretStore(#[from] SecretStoreError),
 
+    /// 本地状态库失败。
+    #[error(transparent)]
+    State(#[from] crate::state::StateError),
+
+    /// 本地文件系统失败（不附加路径，避免把文件名写进日志）。
+    #[error("本地文件操作失败")]
+    Io(#[from] std::io::Error),
+
+    /// 主密钥尚未加载（用户尚未输入密码解锁）。
+    #[error("密钥库已锁定，请先解锁")]
+    Locked,
+
+    /// 当前账号不是 active，写操作被客户端直接拒绝（服务端也会拒绝）。
+    #[error("当前账号状态不可写：{0}")]
+    AccountNotWritable(AccountStatus),
+
+    /// 缺少节点密钥；需要先刷新目录或重新加载版本。
+    #[error("节点密钥尚未加载，请刷新目录后重试")]
+    NodeKeyUnavailable,
+
+    /// 文件在上传过程中被修改；调用方应稍后重试。
+    #[error("文件在上传过程中被修改，已放弃本次上传")]
+    FileChanged,
+
+    /// 传输/文件操作错误（带稳定错误码）。
+    #[error(transparent)]
+    Transfer(#[from] TransferError),
+
+    /// 完整性校验失败（版本绑定、块哈希、明文大小等）。
+    #[error("完整性校验失败：{0}")]
+    Integrity(&'static str),
+
+    /// 当前操作不被允许（例如重命名根节点）。
+    #[error("当前操作不被允许")]
+    OperationNotAllowed,
+
+    /// 用户取消传输。
+    #[error("传输已取消")]
+    Cancelled,
+
     /// 内部错误；不携带敏感信息。
     #[error("客户端内部错误：{0}")]
     Internal(&'static str),
@@ -250,6 +314,52 @@ impl ClientError {
             Self::Api(failure)
                 if failure.status == 429 && failure.code == ApiErrorCode::RateLimited
         )
+    }
+
+    /// 稳定传输错误码（用于进度事件与界面）。
+    #[must_use]
+    pub fn transfer_code(&self) -> TransferErrorCode {
+        match self {
+            Self::Api(failure) => match &failure.code {
+                ApiErrorCode::NameConflict => TransferErrorCode::NameConflict,
+                ApiErrorCode::TargetUnavailable => TransferErrorCode::TargetUnavailable,
+                ApiErrorCode::QuotaExceeded => TransferErrorCode::QuotaExceeded,
+                ApiErrorCode::UploadSessionClosed => TransferErrorCode::UploadSessionClosed,
+                ApiErrorCode::ChunkNotFound => TransferErrorCode::ChunkNotFound,
+                ApiErrorCode::ChunkSizeMismatch => TransferErrorCode::ChunkSizeMismatch,
+                ApiErrorCode::UploadIncomplete => TransferErrorCode::UploadIncomplete,
+                ApiErrorCode::RateLimited => TransferErrorCode::RateLimited,
+                _ if failure.status == 429 => TransferErrorCode::RateLimited,
+                _ if failure.status >= 500 => TransferErrorCode::Server,
+                _ => TransferErrorCode::Other,
+            },
+            Self::Network(_) => TransferErrorCode::Network,
+            Self::AccountNotWritable(_) => TransferErrorCode::AccountNotWritable,
+            Self::Locked => TransferErrorCode::Locked,
+            Self::FileChanged => TransferErrorCode::FileChanged,
+            Self::Io(_) => TransferErrorCode::LocalIo,
+            Self::Integrity(_) | Self::Crypto(_) => TransferErrorCode::Integrity,
+            Self::Cancelled => TransferErrorCode::Cancelled,
+            Self::Transfer(error) => error.code,
+            _ => TransferErrorCode::Other,
+        }
+    }
+
+    /// 是否值得稍后重试（网络、429、5xx、本地临时失败、上传中被修改）。
+    #[must_use]
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Network(_) | Self::Io(_) | Self::FileChanged => true,
+            Self::Api(failure) => failure.status == 429 || failure.status >= 500,
+            Self::Transfer(error) => matches!(
+                error.code,
+                TransferErrorCode::Network
+                    | TransferErrorCode::RateLimited
+                    | TransferErrorCode::Server
+                    | TransferErrorCode::FileChanged
+            ),
+            _ => false,
+        }
     }
 }
 

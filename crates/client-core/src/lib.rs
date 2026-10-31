@@ -18,16 +18,31 @@ mod api;
 mod auth;
 mod client;
 mod clock;
+mod files;
 mod hex;
+mod io_path;
+mod model;
 mod secret_store;
+mod state;
+mod transfer;
 
 pub mod error;
 
 pub use client::{Account, AccountStatus, Client, ClientBuilder, Clock, SleepFuture, SystemClock};
-pub use error::{ApiErrorCode, ApiFailure, ClientError};
+pub use error::{ApiErrorCode, ApiFailure, ClientError, TransferError};
+pub use io_path::{sanitize_local_name, validate_name};
+pub use model::{
+    ConflictPolicy, DownloadOutcome, FolderCounts, FolderDownloadOutcome, FolderJobStatus,
+    FolderProgress, FolderUploadOutcome, NodeKind, NodeSort, NodeSortField, NodeView,
+    PendingUpload, PendingUploadStatus, PermanentDeleteOutcome, RestoreTarget, SkippedItem,
+    TransferDirection, TransferErrorCode, TransferFailure, TransferProgress, TransferStatus,
+    TrashItem, UploadOutcome, UsageView, VersionView,
+};
 pub use secret_store::{
     MemorySecretStore, SecretStore, SecretStoreError, SessionToken, platform_secret_store,
 };
+pub use state::{DATABASE_FILE_NAME, SCHEMA_VERSION, StateError, StateStore};
+pub use transfer::{DownloadTask, FolderDownloadTask, FolderUploadTask, UploadTask};
 
 /// 桌面专有能力的入口。
 ///
