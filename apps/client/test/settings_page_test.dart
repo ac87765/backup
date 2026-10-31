@@ -103,7 +103,7 @@ void main() {
     await tester.tap(find.byKey(const Key('settings-logout')));
     await tester.pumpAndSettle();
 
-    expect(find.text('登录加密备份'), findsOneWidget);
+    expect(find.byKey(const Key('login-title')), findsOneWidget);
     expect(harness.bridge.calls, contains('logout'));
   });
 }

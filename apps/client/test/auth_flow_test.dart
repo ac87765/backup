@@ -11,7 +11,7 @@ void main() {
     final harness = TestHarness();
     await pumpApp(tester, harness);
 
-    expect(find.text('登录加密备份'), findsOneWidget);
+    expect(find.byKey(const Key('login-title')), findsOneWidget);
     await tester.enterText(
       find.byKey(const Key('login-email')),
       'tlj978626571@gmail.com',
@@ -42,7 +42,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('邮箱或密码不正确'), findsOneWidget);
-    expect(find.text('登录加密备份'), findsOneWidget);
+    expect(find.byKey(const Key('login-title')), findsOneWidget);
   });
 
   testWidgets('待审核账号显示等待页且没有上传入口', (tester) async {
@@ -111,7 +111,7 @@ void main() {
     await tester.tap(find.byKey(const Key('switch-account')));
     await tester.pumpAndSettle();
 
-    expect(find.text('登录加密备份'), findsOneWidget);
+    expect(find.byKey(const Key('login-title')), findsOneWidget);
     expect(harness.bridge.calls, contains('forgetCredentials'));
   });
 

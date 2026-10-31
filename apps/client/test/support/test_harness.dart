@@ -10,6 +10,7 @@ import 'package:encrypted_backup_client/core/theme/app_theme.dart';
 import 'package:encrypted_backup_client/desktop/onboarding/standard_folders.dart';
 import 'package:encrypted_backup_client/desktop/settings/local_settings.dart';
 import 'package:encrypted_backup_client/desktop/startup/startup_service.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -69,10 +70,21 @@ class FakeWindowControls implements WindowControls {
   int dragCount = 0;
   int showCount = 0;
   bool quitCalled = false;
+  final List<WindowMode> modes = <WindowMode>[];
+  final ValueNotifier<bool> _visible = ValueNotifier<bool>(true);
+
+  @override
+  ValueListenable<bool> get visible => _visible;
+
+  @override
+  Future<void> applyMode(WindowMode mode) async {
+    modes.add(mode);
+  }
 
   @override
   Future<void> hideToTray() async {
     hideCount += 1;
+    _visible.value = false;
   }
 
   @override
@@ -88,6 +100,7 @@ class FakeWindowControls implements WindowControls {
   @override
   Future<void> showAndFocus() async {
     showCount += 1;
+    _visible.value = true;
   }
 
   @override
@@ -194,26 +207,52 @@ class TestHarness {
   Widget get app =>
       ProviderScope(overrides: overrides, child: const EncryptedBackupApp());
 
-  Widget page(Widget home) => ProviderScope(
-    overrides: overrides,
-    child: RepaintBoundary(
-      key: const Key('golden-root'),
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light,
-        home: home,
-      ),
-    ),
-  );
+  /// 直接渲染单个页面（不经路由）。默认按主窗口模式（显示最大化按钮），
+  /// 避免设置页等独立页面的标题栏与设计稿不一致。
+  Widget page(Widget home, {WindowMode windowMode = WindowMode.main}) =>
+      ProviderScope(
+        overrides: <Override>[
+          ...overrides,
+          windowModeProvider.overrideWith(
+            () => _FixedWindowModeController(windowMode),
+          ),
+        ],
+        child: RepaintBoundary(
+          key: const Key('golden-root'),
+          child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.light,
+            home: home,
+          ),
+        ),
+      );
 }
 
-/// 固定测试窗口为设计稿逻辑尺寸（登录 440×600、主窗口 1280×800、
+class _FixedWindowModeController extends WindowModeController {
+  _FixedWindowModeController(this._mode);
+
+  final WindowMode _mode;
+
+  @override
+  WindowMode build() => _mode;
+}
+
+/// 固定测试窗口为设计稿逻辑尺寸（认证 880×560、主窗口 1280×800、
 /// 设置 760×600、首次引导 760×720）。
-void setTestWindow(WidgetTester tester, Size size) {
+///
+/// 默认按系统“减少动态效果”运行：循环动画停止、进入动效直接完成，这样
+/// `pumpAndSettle` 不会被无限动画卡住，golden 也保持确定。需要验证动效的
+/// 测试传 `reduceMotion: false` 并自行 `pump`。
+void setTestWindow(WidgetTester tester, Size size, {bool reduceMotion = true}) {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(tester.view.resetPhysicalSize);
+  final dispatcher = tester.binding.platformDispatcher;
+  dispatcher.accessibilityFeaturesTestValue = FakeAccessibilityFeatures(
+    disableAnimations: reduceMotion,
+  );
+  addTearDown(dispatcher.clearAccessibilityFeaturesTestValue);
 }
 
 Future<void> pumpApp(WidgetTester tester, TestHarness harness) async {

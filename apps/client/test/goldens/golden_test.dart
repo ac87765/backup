@@ -66,7 +66,7 @@ void main() {
   testWidgets(
     'login',
     (tester) async {
-      setTestWindow(tester, const Size(440, 600));
+      setTestWindow(tester, const Size(880, 560));
       final harness = TestHarness();
       await pumpApp(tester, harness);
       await tester.enterText(
@@ -88,7 +88,7 @@ void main() {
   testWidgets(
     'login-working',
     (tester) async {
-      setTestWindow(tester, const Size(440, 600));
+      setTestWindow(tester, const Size(880, 560));
       final harness = TestHarness();
       final completer = Completer<AccountDto>();
       harness.bridge.loginCompleter = completer;
@@ -104,7 +104,9 @@ void main() {
       await tester.tap(find.byKey(const Key('login-submit')));
       await tester.pump(const Duration(milliseconds: 50));
       await capture(tester, 'login-working-win.png');
-      // 不完成登录：完成后会在 440×600 的登录窗口尺寸里导航到文件页。
+      // 不完成登录：完成后会切到主窗口尺寸并导航到文件页。
+      // golden 在“减少动态效果”下运行（setTestWindow 默认开启），
+      // 因此按钮底部进度条不绘制、进入动效直接显示最终画面。
       expect(completer.isCompleted, isFalse);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
@@ -114,7 +116,7 @@ void main() {
   testWidgets(
     'login-error',
     (tester) async {
-      setTestWindow(tester, const Size(440, 600));
+      setTestWindow(tester, const Size(880, 560));
       final harness = TestHarness();
       harness.bridge.loginError = const BridgeError(
         code: 'invalid_credentials',
@@ -140,7 +142,7 @@ void main() {
   testWidgets(
     'unlock',
     (tester) async {
-      setTestWindow(tester, const Size(440, 600));
+      setTestWindow(tester, const Size(880, 560));
       final harness = TestHarness(
         bridge: FakeNativeBridge(
           account: testAccount(unlocked: false),
@@ -162,7 +164,7 @@ void main() {
   testWidgets(
     'pending',
     (tester) async {
-      setTestWindow(tester, const Size(440, 600));
+      setTestWindow(tester, const Size(880, 560));
       final harness = TestHarness(
         bridge: FakeNativeBridge(
           account: testAccount(status: AccountStatusDto.pending),
