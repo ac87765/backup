@@ -1,33 +1,40 @@
-import 'package:encrypted_backup_client/app.dart';
-import 'package:encrypted_backup_client/core/router/app_router.dart';
-import 'package:encrypted_backup_client/core/router/destinations.dart';
-import 'package:encrypted_backup_client/desktop/router/desktop_routes.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-void main() {
-  testWidgets('主窗口骨架显示全部侧栏目的地并可切换路由', (tester) async {
-    // 测试运行在 Linux/Windows/macOS 主机上：显式注入桌面路由，保证组件
-    // 测试始终覆盖完整侧栏（生产入口按平台过滤）。
-    final router = buildAppRouter(
-      destinations: appDestinations,
-      extraShellRoutes: [backupFoldersRoute],
-    );
-    await tester.pumpWidget(
-      ProviderScope(child: EncryptedBackupApp(router: router)),
-    );
-    await tester.pumpAndSettle();
+import 'support/fake_native_bridge.dart';
+import 'support/test_harness.dart';
 
-    for (final label in const ['全部文件', '最近', '回收站', '备份文件夹', '安全与隐私', '设置']) {
+void main() {
+  testWidgets('登录后显示主窗口骨架并可切换侧栏页面', (tester) async {
+    setTestWindow(tester, const Size(1280, 800));
+    final harness = TestHarness(
+      bridge: FakeNativeBridge(
+        account: testAccount(),
+        storedSession: true,
+        rootItems: [testNode(id: 'a', name: '合同.pdf')],
+      ),
+    );
+    await pumpApp(tester, harness);
+
+    for (final label in const ['全部文件', '最近', '回收站', '安全与隐私']) {
       expect(find.text(label), findsWidgets, reason: '侧栏缺少 $label');
     }
+    expect(find.text('合同.pdf'), findsOneWidget);
 
-    await tester.tap(find.text('备份文件夹').first);
+    await tester.tap(find.text('回收站').first);
     await tester.pumpAndSettle();
-    expect(find.textContaining('添加本地文件夹'), findsOneWidget);
+    expect(find.text('回收站是空的'), findsOneWidget);
 
-    await tester.tap(find.text('设置').first);
+    await tester.tap(find.text('安全与隐私').first);
     await tester.pumpAndSettle();
-    expect(find.textContaining('保持解锁'), findsWidgets);
+    expect(find.text('你的文件，只有你能打开'), findsOneWidget);
+
+    await tester.tap(find.text('最近').first);
+    await tester.pumpAndSettle();
+    expect(find.text('“最近”暂不可用'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('open-settings')));
+    await tester.pumpAndSettle();
+    expect(find.text('通用'), findsWidgets);
   });
 }

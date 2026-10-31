@@ -1,0 +1,3 @@
+tags:
+  golden:
+    description: 桌面尺寸 golden 截图；需要 Windows 系统字体，Linux CI 用 --exclude-tags golden。
