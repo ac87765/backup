@@ -101,7 +101,7 @@ jobs:
           cargo test -p client-core --features desktop
           --lib --test fake_auth --test retry --test transfer_fake --test backup_fake --test vectors
 
-- name: flutter pub get
+      - name: flutter pub get
         working-directory: apps/client
         run: flutter pub get
 
@@ -138,7 +138,7 @@ jobs:
           cargo test -p client-core --features desktop
           --lib --test fake_auth --test retry --test transfer_fake --test backup_fake --test vectors
 
-- name: flutter pub get
+      - name: flutter pub get
         working-directory: apps/client
         run: flutter pub get
 
