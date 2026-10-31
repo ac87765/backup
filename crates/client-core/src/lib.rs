@@ -28,7 +28,9 @@ mod transfer;
 
 pub mod error;
 
-pub use client::{Account, AccountStatus, Client, ClientBuilder, Clock, SleepFuture, SystemClock};
+pub use client::{
+    Account, AccountStatus, Client, ClientBuilder, Clock, KdfParamsView, SleepFuture, SystemClock,
+};
 pub use error::{ApiErrorCode, ApiFailure, ClientError, TransferError};
 pub use io_path::{sanitize_local_name, validate_name};
 pub use model::{

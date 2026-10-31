@@ -71,6 +71,22 @@ impl AccountStatus {
     }
 }
 
+/// 服务端 KDF 参数的展示数据（`prelogin` 返回值）。
+///
+/// 只包含算法与代价参数，不含盐、密钥或任何可派生密钥的材料。界面上通常只在
+/// “正在准备安全登录”之类的提示中显示进度，真正的派生仍在 Rust 内完成。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KdfParamsView {
+    /// 算法标识，当前固定为 `argon2id`。
+    pub algorithm: &'static str,
+    /// 内存代价，单位 KiB。
+    pub memory_kib: u32,
+    /// 迭代次数。
+    pub iterations: u32,
+    /// 并行度。
+    pub parallelism: u32,
+}
+
 /// 当前用户的展示数据；不包含任何密钥或可派生密钥的材料。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Account {
@@ -288,6 +304,28 @@ impl Client {
             self.keep_unlocked.store(false, Ordering::SeqCst);
             Ok(())
         }
+    }
+
+    /// 查询服务端下发的 KDF 参数（登录前预检）。
+    ///
+    /// 只返回算法与代价参数（展示数据），不返回盐或任何密钥材料；真正的密码
+    /// 派生仍由 [`Client::login`] / [`Client::unlock`] 在 Rust 内完成。界面可以
+    /// 在登录按钮上显示“正在准备安全登录”，或据此提示需要升级客户端。
+    pub async fn prelogin(&self, email: &str) -> Result<KdfParamsView, ClientError> {
+        let prelogin: PreloginResponse = self
+            .api
+            .post_json(
+                "/api/v1/auth/prelogin",
+                &serde_json::json!({ "email": email }),
+            )
+            .await?;
+        let params = auth::parse_kdf_params(&prelogin.kdf_params)?;
+        Ok(KdfParamsView {
+            algorithm: "argon2id",
+            memory_kib: params.m_cost_kib,
+            iterations: params.t_cost,
+            parallelism: params.p_cost,
+        })
     }
 
     /// 邮箱 + 密码登录（设计 D12a：派生、认证与解包都在 Rust 核心内完成）。
