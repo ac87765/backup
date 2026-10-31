@@ -24,8 +24,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
-use opendal::Operator;
 use opendal::layers::TimeoutLayer;
+use opendal::{HttpTransporter, Operator};
+use opendal_http_transport_reqwest::ReqwestTransport;
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
@@ -243,11 +244,11 @@ impl fmt::Debug for Storage {
 impl Storage {
     /// 根据配置构造内网 + 公网两个 operator。
     pub fn new(config: &StorageConfig) -> Result<Self, StorageError> {
-        ensure_http_stack();
+        ensure_crypto_provider();
         let browser_origin = config
             .browser_origin()
             .map_err(StorageError::BrowserOrigin)?;
-        let backend = OpenDalBackend::new(config)?;
+        let backend = OpenDalBackend::new(config, &http_transport()?)?;
         Ok(Self {
             backend: Arc::new(backend),
             bucket: config.bucket.clone(),
@@ -343,20 +344,35 @@ fn validate_presign_ttl(ttl: Duration) -> Result<(), StorageError> {
     Ok(())
 }
 
-/// 安装进程级 HTTP/TLS 运行时。
+/// 把 rustls 的进程级默认 CryptoProvider 统一为 ring。
 ///
 /// OpenDAL 使用 `rustls-no-provider` 的 reqwest transport（避免 aws-lc-rs），
-/// 因此需要：
-/// 1. 把 rustls 的默认 CryptoProvider 统一为 ring；
-/// 2. 显式安装 OpenDAL 的默认 reqwest transport。
-///
-/// 两者都是进程级、幂等的；在其他库已经安装 provider 时保留现有设置。
-fn ensure_http_stack() {
+/// 构造 reqwest client 前必须已有 provider。幂等；在其他库已经安装 provider
+/// 时保留现有设置。
+fn ensure_crypto_provider() {
     static INSTALL: Once = Once::new();
     INSTALL.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();
-        opendal_http_transport_reqwest::install_default();
     });
+}
+
+/// 为一个 [`Storage`] 构造独立的 HTTP transport（内网与公网 operator 共享）。
+///
+/// 不使用 OpenDAL 的进程级默认 transport：它是全进程共享的一个 reqwest client，
+/// 连接池里的连接由“打开它的 tokio runtime”驱动。同一进程存在多个 runtime 时
+/// （每个 `#[tokio::test]` 各有一个），某个 runtime 关闭后，其他 runtime 仍可能
+/// 取到这些连接，请求失败为 “dispatch task is gone: runtime dropped the dispatch
+/// task”。生产进程只有一个 runtime、只构造一个 `Storage`，行为不变。
+fn http_transport() -> Result<HttpTransporter, StorageError> {
+    let client = reqwest_transport::Client::builder()
+        .build()
+        .map_err(|error| {
+            StorageError::Config(
+                opendal::Error::new(opendal::ErrorKind::ConfigInvalid, "构造 HTTP client 失败")
+                    .set_source(error),
+            )
+        })?;
+    Ok(HttpTransporter::new(ReqwestTransport::new(client)))
 }
 
 /// 删除能力句柄，仅在 crate 内部可见（`jobs` 模块使用）。
@@ -481,10 +497,10 @@ struct OpenDalBackend {
 }
 
 impl OpenDalBackend {
-    fn new(config: &StorageConfig) -> Result<Self, StorageError> {
+    fn new(config: &StorageConfig, transport: &HttpTransporter) -> Result<Self, StorageError> {
         Ok(Self {
-            internal: build_operator(config, &config.internal_endpoint)?,
-            public: build_operator(config, &config.public_endpoint)?,
+            internal: build_operator(config, &config.internal_endpoint, transport)?,
+            public: build_operator(config, &config.public_endpoint, transport)?,
         })
     }
 }
@@ -588,7 +604,11 @@ impl ObjectBackend for OpenDalBackend {
     }
 }
 
-fn build_operator(config: &StorageConfig, endpoint: &str) -> Result<Operator, StorageError> {
+fn build_operator(
+    config: &StorageConfig,
+    endpoint: &str,
+    transport: &HttpTransporter,
+) -> Result<Operator, StorageError> {
     // 两个 operator 都可能访问网络：内网 operator 做数据面操作，公网 operator
     // 生成预签名 URL。统一在网络边界上加 30 秒硬超时，避免故障时无限等待。
     let operator = match config.kind {
@@ -613,7 +633,10 @@ fn build_operator(config: &StorageConfig, endpoint: &str) -> Result<Operator, St
             Operator::new(builder).map_err(StorageError::Config)?
         }
     };
-    Ok(operator.layer(
+    let context = operator
+        .base_context()
+        .with_http_transport(transport.clone());
+    Ok(operator.with_context(context).layer(
         TimeoutLayer::new()
             .with_timeout(OPERATION_TIMEOUT)
             .with_io_timeout(OPERATION_TIMEOUT),

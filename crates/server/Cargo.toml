@@ -71,8 +71,12 @@ opendal = { version = "0.59", default-features = false, features = [
     # 未使用的 layers-concurrent-limit / layers-retry 不再开启，减少不必要依赖。
     "layers-timeout",
 ] }
-# OpenDAL 的 reqwest transport（no-provider），由本 crate 在启动时安装为默认 transport。
+# OpenDAL 的 reqwest transport（no-provider）。每个 Storage 构造自己的 client，
+# 不使用进程级默认 transport（见 storage::http_transport）。
 opendal-http-transport-reqwest = { version = "0.59", default-features = false, features = ["rustls-no-provider"] }
+# 上面 transport 所用的 reqwest 0.13（已在依赖树中，不新增 crate），仅用于构造
+# `reqwest::Client`；改名以免与 dev-dependencies 中测试用的 reqwest 0.12 冲突。
+reqwest-transport = { package = "reqwest", version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rand = "0.9"
 secrecy = "0.10"
 serde = { version = "1", features = ["derive"] }
