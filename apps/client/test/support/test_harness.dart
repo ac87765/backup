@@ -170,7 +170,11 @@ class TestHarness {
   final List<Uri> openedUris = <Uri>[];
   AppConfig config = testConfig;
 
+  /// 与运行测试的主机无关：默认按桌面端（Windows / macOS）构建路由。
+  bool desktop = true;
+
   List<Override> get overrides => <Override>[
+    desktopPlatformProvider.overrideWithValue(desktop),
     nativeBridgeProvider.overrideWithValue(bridge),
     appConfigProvider.overrideWith((ref) async => config),
     bootstrapProvider.overrideWith((ref) async {}),

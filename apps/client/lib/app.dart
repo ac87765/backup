@@ -12,12 +12,16 @@ import 'desktop/router/desktop_routes.dart';
 import 'desktop/settings/local_settings.dart';
 
 /// 当前构建是否启用桌面专有路由（Windows / macOS）。
-final bool isDesktopPlatform = Platform.isWindows || Platform.isMacOS;
+///
+/// 做成 provider 而不是顶层常量：`dart:io` 的 Platform 反映运行测试的主机，
+/// 组件测试需要与主机无关地指定桌面 / 非桌面（CI 在 Linux 上运行）。
+final desktopPlatformProvider = Provider<bool>(
+  (ref) => Platform.isWindows || Platform.isMacOS,
+);
 
 /// 桌面端侧栏目的地；iOS 等平台过滤掉 `desktopOnly`。
-List<AppDestination> destinationsForPlatform({bool? desktop}) {
-  final enabled = desktop ?? isDesktopPlatform;
-  return enabled
+List<AppDestination> destinationsForPlatform({required bool desktop}) {
+  return desktop
       ? appDestinations
       : appDestinations
             .where((destination) => !destination.desktopOnly)
@@ -28,8 +32,9 @@ List<AppDestination> destinationsForPlatform({bool? desktop}) {
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = _AuthRefresh(ref);
   ref.onDispose(refresh.dispose);
+  final isDesktopPlatform = ref.watch(desktopPlatformProvider);
   return buildAppRouter(
-    destinations: destinationsForPlatform(),
+    destinations: destinationsForPlatform(desktop: isDesktopPlatform),
     extraShellRoutes: isDesktopPlatform
         ? <RouteBase>[backupFoldersRoute]
         : const <RouteBase>[],
