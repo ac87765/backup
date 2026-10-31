@@ -7,7 +7,7 @@
 ## 0. 分工（2026-10-31 用户确认）
 
 - **macOS 安装包由 CI 生成，不在 Mac 上本地打包。** GitHub Actions 的 macos 运行器构建、ad-hoc 签名并生成 `.dmg`，
-  作为 Actions artifact 下载（第 7 组实现；在此之前 artifact 是 `.app` 的 zip）。
+  作为 Actions artifact 下载（第 7 组实现；打包脚本为 `apps/client/tool/package_macos.sh`）。
 - **Mac 上的会话默认只做验收**：下载 CI 产物 → 安装 → 按第 7 节清单逐项验收 → 记录问题。这一步不需要安装 Xcode、Rust、Flutter。
 - **只有验收发现需要改代码的问题时**，才按第 4–5 节在 Mac 上搭建开发环境、修复并补测试；修复后仍以 CI 产出的安装包为准再次验收。
   第 6 节的本地打包步骤只用于排查 CI 打包问题。
@@ -28,20 +28,22 @@
 | 4 | `apps/client` Flutter 工程 + `apps/client/rust` 桥接 + CI（`.github/workflows/client.yml` 含 macOS 构建 job） | 已完成 |
 | 5 | 通用界面：登录 / 解锁、文件浏览、传输、设置（golden 截图见 `apps/client/test/goldens/`） | 已完成 |
 | 6 | 桌面专有：托盘 / 菜单栏、关闭到托盘、单实例、备份文件夹页、拖拽、上传 / 下载文件夹、首次引导、开机启动 | 已完成 |
-| 7 | Windows 安装包与 Windows 真机验收；CI 生成 macOS `.dmg`；**macOS 验收（本文件的任务）** | 未开始 |
+| 7 | Windows 安装包与 Windows 真机验收；CI 生成 macOS `.dmg`；macOS 验收（本文件的任务） | 进行中（待真机验收） |
 
 macOS 验收应在第 1–7 组的 Windows 部分全部合并、Windows 版验收通过之后再做。开始前先 `git pull`，并以 `tasks.md` 为准核对状态。
 
 ### 获取 CI 产物并安装
 
-1. 仓库 Actions 页面 → 工作流 “Client (Flutter / bridge / desktop)” → 选 `main` 分支最近一次成功的运行 →
-   页面底部 Artifacts 下载 macOS 产物（`encrypted-backup-macos`）。也可用 `gh run download <run-id> -n encrypted-backup-macos`。
+1. 仓库 Actions 页面 → 工作流 “Client (Flutter / bridge / desktop)” → 选 `main` 分支最近一次成功的运行
+   （或 `v*` 标签的发布运行）→ 页面底部 Artifacts 下载 `encrypted-backup-macos`。
+   也可用 `gh run download <run-id> -n encrypted-backup-macos`。
    artifact 默认保留 90 天，过期后重新运行工作流即可。
-2. 打开 `.dmg`（或解压 zip），把应用拖到“应用程序”。
+2. 解压得到 `加密备份-<版本>-macos.dmg`，双击打开，把应用拖到“应用程序”，然后推出 dmg。
 3. 首次打开：应用未经 Apple 公证，会提示无法验证开发者。在访达中右键应用 →“打开”→ 确认；或执行
    `xattr -dr com.apple.quarantine "/Applications/加密备份.app"` 去掉下载隔离标记。
-4. 先确认 Mac 的芯片（ → 关于本机）。CI 运行器是 Apple Silicon；若用户的 Mac 是 Intel 芯片且应用无法启动，
-   用 `lipo -archs "/Applications/加密备份.app/Contents/MacOS/加密备份"` 查看架构，并把“需要 universal / x86_64 构建”作为问题记录。
+4. 先确认 Mac 的芯片（ → 关于本机）。CI 运行器是 Apple Silicon，产物默认为 **arm64**；若用户的 Mac 是 Intel 芯片且应用无法启动，
+   用 `lipo -archs "/Applications/加密备份.app/Contents/MacOS/加密备份"` 查看架构，并把“需要 x86_64 / universal 构建”作为问题记录
+   （CI 日志中也会打印同一命令的结果）。
 
 ## 3. 至今在 macOS 上从未真机运行过的部分（重点验证）
 
@@ -95,23 +97,43 @@ flutter build macos --release
   `apps/client/lib/src/rust/**`）。修改 `apps/client/rust/src/api/**` 后必须重新生成，CI 会用 `git diff` 检查漂移。
 - Rust 部分由 cargokit（`apps/client/rust_builder/cargokit`）在 `flutter build` 时编译；macOS 走 `build_pod.sh`。
   本仓库只改过 cargokit 的 Windows 构建目录（`cmake/cargokit.cmake`，规避 MAX_PATH），macOS 路径未改动。
-- CI 的 macOS job 只运行不需要 Docker 的 `client-core` 测试目标，并上传未签名的 `.app` zip，可作为对照。
+- CI 的 macOS job 只运行不需要 Docker 的 `client-core` 测试目标，并用
+  `apps/client/tool/package_macos.sh` 生成 ad-hoc 签名、已校验的 `.dmg`（不再上传未签名的 `.app` zip）。
 
 ## 6. 本地打包（仅用于排查 CI 打包问题）
 
-正式安装包由 CI 生成（第 0 节）。以下步骤与 CI 的做法相同，只在需要本地复现时使用。自用分发，不做 Apple 公证（design D10）：
+正式安装包由 CI 生成（第 0 节）。需要本地复现 CI 的打包结果时，在 Mac 仓库根目录运行：
 
-1. ad-hoc 签名：`codesign --force --deep --sign - "<应用名>.app"`，然后 `codesign --verify --deep --strict` 检查。
-2. 生成 dmg：`hdiutil create -volname "加密备份" -srcfolder "<应用名>.app" -ov -format UDZO 加密备份-<版本>.dmg`
-   （版本号取自 git 标签，见 design D10）。若第 7 组在仓库里提供了打包脚本，优先使用脚本。
-3. 首次打开：未公证的应用需在访达中右键“打开”，或在“系统设置 → 隐私与安全性”中允许。把实际步骤写进安装说明（tasks 7.2）。
-4. 架构：优先构建 Apple Silicon（arm64）；用户的 Mac 若是 Intel，改用 x86_64 或 universal，先问用户机型。
+```bash
+bash apps/client/tool/package_macos.sh
+```
+
+脚本会依次执行 `flutter build macos --release`（注入 `APP_VERSION` / `GIT_COMMIT`）、
+`codesign --force --deep --sign -` 与 `codesign --verify --deep --strict`、`lipo -archs`，
+再用 `hdiutil` 生成只读压缩 dmg（内含应用与 `/Applications` 快捷方式），输出
+`apps/client/build/installer/加密备份-<版本>-macos.dmg`。可以用环境变量覆盖版本与提交：
+
+```bash
+APP_VERSION=1.2.3 GIT_COMMIT=0123abc bash apps/client/tool/package_macos.sh
+```
+
+补充说明：
+
+- 自用分发，不做 Apple 公证（design D10）；dmg 里的应用是 ad-hoc 签名，未启用 App Sandbox。
+- 架构：Flutter macOS release 默认只构建当前 Mac 的架构（Apple Silicon → arm64，Intel → x86_64），
+  不是 universal；脚本会把 `lipo -archs` 打印到日志。需要 universal 时另行用 xcodebuild 指定
+  `ARCHS="arm64 x86_64"`，并在验收记录中注明。
+- 首次打开：未公证的应用需在访达中右键“打开”，或在“系统设置 → 隐私与安全性”中允许。
+  完整用户步骤见 [`docs/desktop-client.md`](desktop-client.md)。
 
 ## 7. 验收（tasks 7.4）
 
-按第 7 组写入仓库的 macOS 验收清单逐项执行（届时会在本节给出路径）。至少覆盖：登录 / 待审核 / 解锁、浏览与文件操作、
-上传下载、文件夹备份全流程（新增 / 修改 / 本地删除不影响云端 / 内容不变不产生新版本 / 排除临时文件）、
-第 3 节列出的 macOS 专有项、与 Web 和 Windows 客户端互通（同一文件互相可见、可解密）。
+按 [`docs/acceptance/macos.md`](acceptance/macos.md) 逐项执行。该清单与 Windows 清单结构相同，
+覆盖：登录 / 待审核 / 解锁、浏览与文件操作、上传下载、文件夹备份全流程（新增 / 修改 / 本地删除不影响云端 /
+内容不变不产生新版本 / 排除临时文件）、第 3 节列出的 macOS 专有项（钥匙串、FSEvents、NFD 文件名、
+菜单栏模板图标、未启用沙箱、Gatekeeper、架构核对），以及与 Web 和 Windows 客户端互通
+（同一文件互相可见、可解密）。
+
 发现问题时记录现象、复现步骤与日志（日志不得包含令牌、密钥、文件内容），修复须遵守 `AGENTS.md`，并补测试。
 
 ## 8. 注意事项

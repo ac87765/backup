@@ -6,6 +6,9 @@
 MVP（账号、端对端加密、上传下载、文件管理、版本、回收站、配额）以及界面改版、文件夹备份、
 “安全与隐私”可视化页面、管理后台与注册审批均已上线；生产部署方式见 [deploy/server/](deploy/server/README.md)。
 
+桌面客户端（Windows / macOS）的下载、安装、首次登录、备份文件夹、托盘、数据位置与卸载说明见
+[docs/desktop-client.md](docs/desktop-client.md)。
+
 ## 设计与契约
 
 - [openspec/specs/](openspec/specs) —— **当前全部行为契约**（8 个能力的主规格，每个 Scenario 都有测试）
