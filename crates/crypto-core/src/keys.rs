@@ -102,6 +102,17 @@ define_key! {
 }
 impl_random_key!(MasterKey);
 
+impl MasterKey {
+    /// 读取主密钥字节，**仅供操作系统的安全凭据存储**使用
+    /// （macOS Keychain / Windows DPAPI，design D3）。
+    ///
+    /// 调用方 MUST 立即用系统提供的保护机制加密，并在写入后清零中间缓冲区；
+    /// 这些字节不得进入日志、API 响应、普通文件或跨进程边界。
+    pub fn expose_for_secret_store(&self) -> &[u8; KEY_LEN] {
+        self.as_bytes()
+    }
+}
+
 define_key! {
     /// 恢复密钥（rk）：与密码相互独立的人类可抄写密钥，用于忘记密码时恢复 MK。
     RecoveryKey
