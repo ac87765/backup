@@ -1,8 +1,16 @@
 # macOS 版接手说明（给在 Mac 上新开会话的 AI）
 
-> 本文件是 macOS 构建、打包与验收的交接文档。用户只有 Windows 开发机，Windows 版在 Windows 上完成；
+> 本文件是 macOS 版验收与修复的交接文档。用户只有 Windows 开发机，Windows 版在 Windows 上完成；
 > macOS 版由用户之后在自己的 Mac 上新开一个 AI 会话完成。请先完整读完本文件再动手。
 > 本文件由审查者维护，每完成一组会更新“当前状态”。
+
+## 0. 分工（2026-10-31 用户确认）
+
+- **macOS 安装包由 CI 生成，不在 Mac 上本地打包。** GitHub Actions 的 macos 运行器构建、ad-hoc 签名并生成 `.dmg`，
+  作为 Actions artifact 下载（第 7 组实现；在此之前 artifact 是 `.app` 的 zip）。
+- **Mac 上的会话默认只做验收**：下载 CI 产物 → 安装 → 按第 7 节清单逐项验收 → 记录问题。这一步不需要安装 Xcode、Rust、Flutter。
+- **只有验收发现需要改代码的问题时**，才按第 4–5 节在 Mac 上搭建开发环境、修复并补测试；修复后仍以 CI 产出的安装包为准再次验收。
+  第 6 节的本地打包步骤只用于排查 CI 打包问题。
 
 ## 1. 先读什么
 
@@ -19,9 +27,20 @@
 | 1–3 | `crates/client-core`：认证、钥匙串、文件、传输、状态库、桌面备份引擎 | 已合并 main |
 | 4 | `apps/client` Flutter 工程 + `apps/client/rust` 桥接 + CI（`.github/workflows/client.yml` 含 macOS 构建 job） | 已完成 |
 | 5–6 | 通用界面、桌面专有界面（托盘 / 菜单栏、备份文件夹页、开机启动） | 未开始 |
-| 7 | Windows 安装包与 Windows 真机验收；**macOS 打包与验收（本文件的任务）** | 未开始 |
+| 7 | Windows 安装包与 Windows 真机验收；CI 生成 macOS `.dmg`；**macOS 验收（本文件的任务）** | 未开始 |
 
-macOS 版应在第 1–6 组全部合并、Windows 版验收通过之后再做。开始前先 `git pull`，并以 `tasks.md` 为准核对状态。
+macOS 验收应在第 1–7 组的 Windows 部分全部合并、Windows 版验收通过之后再做。开始前先 `git pull`，并以 `tasks.md` 为准核对状态。
+
+### 获取 CI 产物并安装
+
+1. 仓库 Actions 页面 → 工作流 “Client (Flutter / bridge / desktop)” → 选 `main` 分支最近一次成功的运行 →
+   页面底部 Artifacts 下载 macOS 产物（`encrypted-backup-macos`）。也可用 `gh run download <run-id> -n encrypted-backup-macos`。
+   artifact 默认保留 90 天，过期后重新运行工作流即可。
+2. 打开 `.dmg`（或解压 zip），把应用拖到“应用程序”。
+3. 首次打开：应用未经 Apple 公证，会提示无法验证开发者。在访达中右键应用 →“打开”→ 确认；或执行
+   `xattr -dr com.apple.quarantine "/Applications/加密备份.app"` 去掉下载隔离标记。
+4. 先确认 Mac 的芯片（ → 关于本机）。CI 运行器是 Apple Silicon；若用户的 Mac 是 Intel 芯片且应用无法启动，
+   用 `lipo -archs "/Applications/加密备份.app/Contents/MacOS/加密备份"` 查看架构，并把“需要 universal / x86_64 构建”作为问题记录。
 
 ## 3. 至今在 macOS 上从未真机运行过的部分（重点验证）
 
@@ -38,7 +57,7 @@ macOS 版应在第 1–6 组全部合并、Windows 版验收通过之后再做�
 - **开机启动**：Login Item（默认关闭，设置中开启）。
 - **窗口外框**：红绿灯按钮位置与 `design/desktop/*.html?os=mac` 一致。
 
-## 4. 环境准备（Mac）
+## 4. 环境准备（Mac，仅在需要修代码时）
 
 - Xcode（App Store）与命令行工具：`xcode-select --install`。
 - Rust：按仓库根 `rust-toolchain.toml` 安装（rustup 会自动选版本）；目标：
@@ -74,9 +93,9 @@ flutter build macos --release
   本仓库只改过 cargokit 的 Windows 构建目录（`cmake/cargokit.cmake`，规避 MAX_PATH），macOS 路径未改动。
 - CI 的 macOS job 只运行不需要 Docker 的 `client-core` 测试目标，并上传未签名的 `.app` zip，可作为对照。
 
-## 6. 打包（tasks 7.1 的 macOS 部分）
+## 6. 本地打包（仅用于排查 CI 打包问题）
 
-自用分发，不做 Apple 公证（design D10）：
+正式安装包由 CI 生成（第 0 节）。以下步骤与 CI 的做法相同，只在需要本地复现时使用。自用分发，不做 Apple 公证（design D10）：
 
 1. ad-hoc 签名：`codesign --force --deep --sign - "<应用名>.app"`，然后 `codesign --verify --deep --strict` 检查。
 2. 生成 dmg：`hdiutil create -volname "加密备份" -srcfolder "<应用名>.app" -ov -format UDZO 加密备份-<版本>.dmg`

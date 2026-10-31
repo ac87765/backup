@@ -93,7 +93,7 @@ crates/crypto-core              现有加密实现（同一测试向量）
 
 ### D10 构建与分发
 
-- 版本号取自 git 标签；CI：`flutter analyze`、`flutter test`、`cargo test -p client-core`；Windows 构建（windows 运行器，Inno Setup 生成安装包）；macOS 构建（macos 运行器，ad-hoc 签名的 .app 打包为 .dmg）。产物作为 Actions artifact 下载。
+- 版本号取自 git 标签；CI：`flutter analyze`、`flutter test`、`cargo test -p client-core`；Windows 构建（windows 运行器，Inno Setup 生成安装包）；macOS 构建（macos 运行器，ad-hoc 签名的 .app 打包为 .dmg）。产物作为 Actions artifact 下载。macOS 安装包只由 CI 生成：用户在 Mac 上下载安装并验收，只有需要修代码时才在 Mac 上搭开发环境（交接说明见 `docs/macos-handoff.md`）。
 - 未签名应用首次打开：Windows SmartScreen 选“仍要运行”；macOS 右键“打开”。在 README 写清楚。
 
 ## Risks / Trade-offs
