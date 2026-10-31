@@ -260,6 +260,16 @@ class TrayService {
   }
 
   Future<void> _quit() async {
+    // 先让用户立刻看到“已退出”：隐藏托盘图标与窗口，再在后台收尾。
+    // 停止引擎会关闭文件监听（Windows 上要等监听线程结束，约 1–2 秒），
+    // 不能让托盘图标和窗口在这段时间里看起来像卡住。
+    _tray?.setVisible(false);
+    final controls = _ref.read(windowControlsProvider);
+    try {
+      await controls.hideToTray();
+    } catch (_) {
+      // 隐藏失败不影响退出。
+    }
     try {
       // 最多等 3 秒：引擎停不下来也必须能退出。
       await _ref
@@ -269,7 +279,7 @@ class TrayService {
     } catch (_) {
       // 退出前尽量停止引擎；失败也要允许退出。
     }
-    await _ref.read(windowControlsProvider).quit();
+    await controls.quit();
   }
 
   void dispose() {
