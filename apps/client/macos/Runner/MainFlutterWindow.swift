@@ -11,5 +11,10 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
+
+    // 开机启动（--background）只进菜单栏，不显示主窗口。
+    if ProcessInfo.processInfo.arguments.contains("--background") {
+      self.orderOut(nil)
+    }
   }
 }
