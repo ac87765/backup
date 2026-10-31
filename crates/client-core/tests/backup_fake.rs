@@ -17,9 +17,12 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
+use client_core::desktop::wechat::{
+    WechatAccount, WechatCategory, WechatLocator, WechatSystemLocations,
+};
 use client_core::desktop::{
     BackupActivityKind, BackupEngine, BackupEngineConfig, BackupFolderDraft, BackupFolderStatus,
-    BackupFolderUpdate, BackupPauseReason, BackupSummaryStatus,
+    BackupFolderUpdate, BackupPauseReason, BackupSummaryStatus, WechatBackupSource,
 };
 use client_core::{
     Client, ClientBuilder, Clock, ConflictPolicy, MemorySecretStore, NodeKind, SleepFuture,
@@ -56,6 +59,27 @@ impl Clock for NoWaitClock {
 
     fn jitter(&self) -> f64 {
         0.0
+    }
+}
+
+/// 假微信系统位置：只提供测试指定的“文档”目录，不读取注册表或真实微信目录。
+struct FakeWechatLocations {
+    documents: Option<PathBuf>,
+}
+
+impl WechatSystemLocations for FakeWechatLocations {
+    fn documents_dir(&self) -> Result<Option<PathBuf>, client_core::desktop::wechat::WechatError> {
+        Ok(self.documents.clone())
+    }
+
+    fn appdata_dir(&self) -> Result<Option<PathBuf>, client_core::desktop::wechat::WechatError> {
+        Ok(None)
+    }
+
+    fn wechat_3_file_save_path(
+        &self,
+    ) -> Result<Option<String>, client_core::desktop::wechat::WechatError> {
+        Ok(None)
     }
 }
 
@@ -122,6 +146,7 @@ struct FakeState {
     fail_create_folder_once: Mutex<bool>,
     mutate_path_on_first_put: Mutex<Option<PathBuf>>,
     lock_client_on_first_put: Mutex<Option<Client>>,
+    quota_bytes: Mutex<i64>,
 }
 
 impl FakeState {
@@ -163,7 +188,12 @@ impl FakeState {
             fail_create_folder_once: Mutex::new(false),
             mutate_path_on_first_put: Mutex::new(None),
             lock_client_on_first_put: Mutex::new(None),
+            quota_bytes: Mutex::new(10 * 1024 * 1024 * 1024),
         })
+    }
+
+    fn set_quota(&self, quota_bytes: i64) {
+        *self.quota_bytes.lock().unwrap() = quota_bytes;
     }
 
     fn profile(&self) -> Value {
@@ -739,11 +769,11 @@ async fn usage(State(state): State<Arc<FakeState>>, headers: HeaderMap) -> Respo
     if !authorized(&state, &headers) {
         return unauthorized();
     }
-    let _ = state;
+    let quota_bytes = *state.quota_bytes.lock().unwrap();
     Json(json!({
         "used_bytes": 0,
         "reserved_bytes": 0,
-        "quota_bytes": 10_i64 * 1024 * 1024 * 1024,
+        "quota_bytes": quota_bytes,
     }))
     .into_response()
 }
@@ -792,6 +822,7 @@ fn build_engine_with_retry(
     debounce: Duration,
     watch_files: bool,
     retry_interval: Duration,
+    wechat_locator: Option<WechatLocator>,
 ) -> BackupEngine {
     BackupEngine::new(
         client.clone(),
@@ -801,6 +832,8 @@ fn build_engine_with_retry(
             full_scan_interval: Duration::from_secs(3600),
             retry_interval,
             watch_files,
+            wechat_locator,
+            wechat_manual_directories: Vec::new(),
         },
     )
     .unwrap()
@@ -871,13 +904,45 @@ async fn harness_with_options(
     debounce: Duration,
     retry_interval: Duration,
 ) -> Harness {
+    harness_full(watch_files, debounce, retry_interval, None).await
+}
+
+/// 带微信系统位置注入的假服务端夹具（“文档”目录由测试指定）。
+async fn harness_with_wechat(documents: PathBuf) -> Harness {
+    harness_full(
+        false,
+        Duration::from_millis(50),
+        Duration::from_secs(60),
+        Some(documents),
+    )
+    .await
+}
+
+async fn harness_full(
+    watch_files: bool,
+    debounce: Duration,
+    retry_interval: Duration,
+    wechat_documents: Option<PathBuf>,
+) -> Harness {
     let state = FakeState::new();
     let base_url = spawn(state.clone()).await;
     let app_data = tempfile::tempdir().unwrap();
     let files = tempfile::tempdir().unwrap();
     let client = build_client(&base_url, app_data.path());
     client.login(&state.email, PASSWORD).await.unwrap();
-    let engine = build_engine_with_retry(&client, debounce, watch_files, retry_interval);
+    // 始终注入假系统位置：测试绝不读取注册表或本机真实微信目录。
+    let wechat_locator = Some(WechatLocator::with_system_locations(Arc::new(
+        FakeWechatLocations {
+            documents: wechat_documents,
+        },
+    )));
+    let engine = build_engine_with_retry(
+        &client,
+        debounce,
+        watch_files,
+        retry_interval,
+        wechat_locator,
+    );
     Harness {
         state,
         client,
@@ -1786,4 +1851,602 @@ async fn folder_path_conflicts_are_rejected() {
             eprintln!("文件系统区分大小写，跳过大小写重复路径断言");
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// 微信文件类别备份（add-wechat-backup 第 2 组）
+// ---------------------------------------------------------------------------
+
+const WECHAT_ACCOUNT: &str = "wxid_test0001";
+const WECHAT_ATTACH_HASH: &str = "0123456789abcdef0123456789abcdef";
+
+/// 构造一个微信 4.x 夹具（全部为虚构数据，不读取真实微信目录）。
+fn create_wechat_fixture(base: &Path) -> PathBuf {
+    let documents = base.join("文档");
+    let account = documents.join("xwechat_files").join(WECHAT_ACCOUNT);
+    let mut directories: Vec<String> = [
+        "msg/file/2026-10",
+        "msg/file/cache",
+        "msg/file/temp",
+        "msg/video/2026-10",
+        "db_storage/message",
+        "cache/2026-10",
+        "temp",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    directories.push(format!("msg/attach/{WECHAT_ATTACH_HASH}/2026-10"));
+    for directory in directories {
+        std::fs::create_dir_all(account.join(directory)).unwrap();
+    }
+    write(&account.join("msg/file/2026-10/报告.pdf"), b"pdf-report");
+    write(&account.join("msg/file/cache/cache.bin"), b"cache-file");
+    write(&account.join("msg/file/temp/temp.bin"), b"temp-file");
+    write(
+        &account
+            .join("msg/attach")
+            .join(WECHAT_ATTACH_HASH)
+            .join("2026-10/pic.dat"),
+        b"image-bytes",
+    );
+    write(&account.join("msg/video/2026-10/clip.mp4"), b"video-bytes");
+    write(
+        &account.join("db_storage/message/message_0.db"),
+        b"database-bytes",
+    );
+    write(&account.join("cache/2026-10/cache.bin"), b"account-cache");
+    write(&account.join("temp/temp.bin"), b"account-temp");
+    documents
+}
+
+async fn discover_wechat_account(documents: &Path) -> WechatAccount {
+    let locator = WechatLocator::with_system_locations(Arc::new(FakeWechatLocations {
+        documents: Some(documents.to_path_buf()),
+    }));
+    locator
+        .discover(&[])
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|account| account.account_name == WECHAT_ACCOUNT)
+        .expect("夹具中应有微信账号")
+}
+
+async fn cloud_folder_by_path(client: &Client, names: &[&str]) -> Uuid {
+    let mut parent = client.account().unwrap().root_node_id;
+    for name in names {
+        let children = cloud_children(client, parent).await;
+        parent = children
+            .into_iter()
+            .find(|node| node.kind == NodeKind::Folder && node.name == *name)
+            .unwrap_or_else(|| panic!("缺少云端文件夹 {name}"))
+            .id;
+    }
+    parent
+}
+
+async fn cloud_file_names(client: &Client, folder_id: Uuid) -> Vec<String> {
+    let mut names: Vec<String> = cloud_children(client, folder_id)
+        .await
+        .into_iter()
+        .map(|node| node.name)
+        .collect();
+    names.sort();
+    names
+}
+
+async fn wechat_source(engine: &BackupEngine, category: WechatCategory) -> WechatBackupSource {
+    engine
+        .list_wechat_sources()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|source| source.category == category)
+        .expect("应有对应类别的微信来源")
+}
+
+fn projected_upload_bytes(size: u64) -> u64 {
+    let chunks = crypto_core::chunk_count_for_size(size).unwrap_or(1);
+    size + u64::from(chunks) * crypto_core::CHUNK_CIPHERTEXT_OVERHEAD as u64
+}
+
+fn tree_snapshot(root: &Path) -> Vec<(PathBuf, u64, i64)> {
+    fn walk(directory: &Path, base: &Path, output: &mut Vec<(PathBuf, u64, i64)>) {
+        let mut entries: Vec<std::fs::DirEntry> = std::fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .collect();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let metadata = entry.metadata().unwrap();
+            let path = entry.path();
+            if metadata.is_dir() {
+                walk(&path, base, output);
+            } else {
+                let modified = metadata
+                    .modified()
+                    .unwrap()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos() as i64;
+                output.push((
+                    path.strip_prefix(base).unwrap().to_path_buf(),
+                    metadata.len(),
+                    modified,
+                ));
+            }
+        }
+    }
+    let mut output = Vec::new();
+    walk(root, root, &mut output);
+    output.sort();
+    output
+}
+
+fn tree_totals(root: &Path) -> (u64, u64) {
+    tree_snapshot(root)
+        .into_iter()
+        .fold((0_u64, 0_u64), |(files, bytes), (_, size, _)| {
+            (files + 1, bytes + size)
+        })
+}
+
+#[tokio::test]
+async fn wechat_chat_files_incremental_and_uncheck_keeps_cloud() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_wechat_fixture(fixture.path());
+    // create_wechat_fixture 的父目录是临时目录，需要让它活得比测试久。
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::ChatFiles])
+        .await
+        .unwrap();
+
+    let sources = h.engine.list_wechat_sources().await.unwrap();
+    assert_eq!(sources.len(), 1, "聊天文件只有一个来源路径");
+    assert_eq!(sources[0].category, WechatCategory::ChatFiles);
+    assert_eq!(sources[0].relative_path, "wxid_test0001/msg/file");
+    // 微信来源不出现在备份文件夹列表。
+    assert!(h.engine.list_folders().await.unwrap().is_empty());
+
+    let report = h.engine.scan_all_now().await.unwrap();
+    assert_eq!(report.len(), 1);
+    assert_eq!(
+        report[0].uploaded_files, 1,
+        "只上传聊天文件，缓存与临时目录不传"
+    );
+
+    let source = wechat_source(&h.engine, WechatCategory::ChatFiles).await;
+    assert_eq!(
+        source.cloud_path.as_deref(),
+        Some("全部文件/微信备份/TEST-PC/wxid_test0001/聊天文件/file")
+    );
+    let target = cloud_folder_by_path(
+        &h.client,
+        &["微信备份", "TEST-PC", WECHAT_ACCOUNT, "聊天文件", "file"],
+    )
+    .await;
+    let pdf_dir = cloud_folder_by_path(
+        &h.client,
+        &[
+            "微信备份",
+            "TEST-PC",
+            WECHAT_ACCOUNT,
+            "聊天文件",
+            "file",
+            "2026-10",
+        ],
+    )
+    .await;
+    assert_eq!(cloud_file_names(&h.client, pdf_dir).await, vec!["报告.pdf"]);
+    assert!(
+        !cloud_file_names(&h.client, target)
+            .await
+            .contains(&"cache".to_owned()),
+        "来源内的缓存目录不得上传"
+    );
+
+    // 新增文件后增量只上传新文件。
+    let later = documents.join("xwechat_files").join(WECHAT_ACCOUNT);
+    std::fs::create_dir_all(later.join("msg/file/2026-11")).unwrap();
+    write(&later.join("msg/file/2026-11/新文件.docx"), b"new-doc");
+    let sessions_before = h.state.upload_sessions();
+    let report = h.engine.scan_folder_now(source.folder_id).await.unwrap();
+    assert_eq!(report.uploaded_files, 1, "只上传新增文件");
+    assert_eq!(report.unchanged_files, 1, "已有文件不重复上传");
+    assert_eq!(h.state.upload_sessions(), sessions_before + 1);
+
+    // 取消勾选：停止备份、云端保留。
+    h.engine.set_wechat_categories(&account, &[]).await.unwrap();
+    assert!(h.engine.list_wechat_sources().await.unwrap().is_empty());
+    let accounts = h.engine.list_wechat_accounts().await.unwrap();
+    assert_eq!(accounts.len(), 1);
+    assert!(
+        accounts[0]
+            .categories
+            .iter()
+            .all(|category| !category.selected),
+        "取消勾选后类别选择状态必须持久化为未勾选"
+    );
+    assert!(
+        accounts[0]
+            .categories
+            .iter()
+            .all(|category| category.status.is_none())
+    );
+    std::fs::create_dir_all(later.join("msg/file/2026-12")).unwrap();
+    write(&later.join("msg/file/2026-12/之后.pdf"), b"after-uncheck");
+    let sessions_before = h.state.upload_sessions();
+    h.engine.scan_all_now().await.unwrap();
+    assert_eq!(
+        h.state.upload_sessions(),
+        sessions_before,
+        "取消勾选后不得再上传"
+    );
+    assert_eq!(
+        cloud_file_names(&h.client, pdf_dir).await,
+        vec!["报告.pdf"],
+        "云端内容必须保留"
+    );
+    let november = cloud_folder_by_path(
+        &h.client,
+        &[
+            "微信备份",
+            "TEST-PC",
+            WECHAT_ACCOUNT,
+            "聊天文件",
+            "file",
+            "2026-11",
+        ],
+    )
+    .await;
+    assert_eq!(
+        cloud_file_names(&h.client, november).await,
+        vec!["新文件.docx"]
+    );
+}
+
+#[tokio::test]
+async fn wechat_images_and_videos_map_to_attach_and_video_folders() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_wechat_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::ImagesAndVideos])
+        .await
+        .unwrap();
+    assert_eq!(
+        h.engine.list_wechat_sources().await.unwrap().len(),
+        2,
+        "图片与视频有两个来源路径"
+    );
+
+    let report = h.engine.scan_all_now().await.unwrap();
+    assert_eq!(report.len(), 2);
+    assert_eq!(
+        report
+            .iter()
+            .map(|report| report.uploaded_files)
+            .sum::<u64>(),
+        2
+    );
+
+    let attach_dir = cloud_folder_by_path(
+        &h.client,
+        &[
+            "微信备份",
+            "TEST-PC",
+            WECHAT_ACCOUNT,
+            "图片与视频",
+            "attach",
+            WECHAT_ATTACH_HASH,
+            "2026-10",
+        ],
+    )
+    .await;
+    assert_eq!(
+        cloud_file_names(&h.client, attach_dir).await,
+        vec!["pic.dat"]
+    );
+    let video_dir = cloud_folder_by_path(
+        &h.client,
+        &[
+            "微信备份",
+            "TEST-PC",
+            WECHAT_ACCOUNT,
+            "图片与视频",
+            "video",
+            "2026-10",
+        ],
+    )
+    .await;
+    assert_eq!(
+        cloud_file_names(&h.client, video_dir).await,
+        vec!["clip.mp4"]
+    );
+
+    let accounts = h.engine.list_wechat_accounts().await.unwrap();
+    assert_eq!(accounts.len(), 1);
+    let images = accounts[0]
+        .categories
+        .iter()
+        .find(|category| category.category == WechatCategory::ImagesAndVideos)
+        .unwrap();
+    assert!(images.selected);
+    assert_eq!(images.status, Some(BackupFolderStatus::IdleOk));
+    assert!(images.last_backup_at.is_some());
+
+    // 暂停一个来源后，类别汇总状态为“已暂停”。
+    let attach_source = h
+        .engine
+        .list_wechat_sources()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|source| source.relative_path.ends_with("msg/attach"))
+        .unwrap();
+    h.engine
+        .pause_folder(attach_source.folder_id)
+        .await
+        .unwrap();
+    let accounts = h.engine.list_wechat_accounts().await.unwrap();
+    let images = accounts[0]
+        .categories
+        .iter()
+        .find(|category| category.category == WechatCategory::ImagesAndVideos)
+        .unwrap();
+    assert_eq!(images.status, Some(BackupFolderStatus::Paused));
+    assert_eq!(images.pause_reason, Some(BackupPauseReason::User));
+    h.engine
+        .resume_folder(attach_source.folder_id)
+        .await
+        .unwrap();
+
+    // 重复应用同一勾选不会产生重复来源（同一路径只注册一次）。
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::ImagesAndVideos])
+        .await
+        .unwrap();
+    assert_eq!(h.engine.list_wechat_sources().await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn wechat_source_cache_temp_and_default_exclusions_apply_inside_source() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_wechat_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::ChatFiles])
+        .await
+        .unwrap();
+    let account_dir = documents.join("xwechat_files").join(WECHAT_ACCOUNT);
+    write(&account_dir.join("msg/file/2026-10/Thumbs.db"), b"system");
+    write(&account_dir.join("msg/file/2026-10/草稿.tmp"), b"temp");
+
+    h.engine.scan_all_now().await.unwrap();
+    let target = cloud_folder_by_path(
+        &h.client,
+        &["微信备份", "TEST-PC", WECHAT_ACCOUNT, "聊天文件", "file"],
+    )
+    .await;
+    let names = cloud_file_names(&h.client, target).await;
+    assert_eq!(
+        names,
+        vec!["2026-10".to_owned()],
+        "来源内的 cache/temp 与默认系统临时文件都不上传"
+    );
+    let month = cloud_folder_by_path(
+        &h.client,
+        &[
+            "微信备份",
+            "TEST-PC",
+            WECHAT_ACCOUNT,
+            "聊天文件",
+            "file",
+            "2026-10",
+        ],
+    )
+    .await;
+    assert_eq!(cloud_file_names(&h.client, month).await, vec!["报告.pdf"]);
+}
+
+#[tokio::test]
+async fn wechat_source_and_ordinary_folder_can_share_a_path() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_wechat_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    let source_path = documents
+        .join("xwechat_files")
+        .join(WECHAT_ACCOUNT)
+        .join("msg/file");
+
+    // 同一路径先作为普通备份文件夹，再作为微信来源：不做嵌套/重复冲突拒绝。
+    let folder = h
+        .engine
+        .add_folder(BackupFolderDraft::new(&source_path))
+        .await
+        .unwrap();
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::ChatFiles])
+        .await
+        .unwrap();
+    assert_eq!(h.engine.list_folders().await.unwrap().len(), 1);
+    assert_eq!(h.engine.list_wechat_sources().await.unwrap().len(), 1);
+
+    // 普通文件夹本身位于微信数据根内：全部由微信备份处理，不上传。
+    let user_report = h.engine.scan_folder_now(folder.id).await.unwrap();
+    assert_eq!(user_report.uploaded_files, 0);
+    assert_eq!(user_report.status, BackupFolderStatus::IdleOk);
+
+    h.engine.scan_all_now().await.unwrap();
+    let wechat_target = cloud_folder_by_path(
+        &h.client,
+        &["微信备份", "TEST-PC", WECHAT_ACCOUNT, "聊天文件", "file"],
+    )
+    .await;
+    assert_eq!(
+        cloud_file_names(&h.client, wechat_target).await,
+        vec!["2026-10".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn ordinary_folder_excludes_wechat_data_and_reports_excluded_size() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_wechat_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    write(&documents.join("笔记.txt"), b"notes");
+
+    let data_root = documents.join("xwechat_files");
+    let (wechat_files, wechat_bytes) = tree_totals(&data_root);
+    assert!(wechat_files > 0 && wechat_bytes > 0);
+
+    // 微信备份未开启时同样排除。
+    let preflight = h
+        .engine
+        .preflight(&BackupFolderDraft::new(&documents))
+        .await
+        .unwrap();
+    assert_eq!(preflight.file_count, 1, "只统计非微信数据");
+    assert_eq!(preflight.total_bytes, 5);
+    assert_eq!(preflight.excluded_wechat_file_count, wechat_files);
+    assert_eq!(preflight.excluded_wechat_bytes, wechat_bytes);
+
+    let (folder_id, report) = add_and_scan(&h.engine, BackupFolderDraft::new(&documents)).await;
+    assert_eq!(report.uploaded_files, 1);
+    let target = default_target(&h.client, "文档").await;
+    assert_eq!(
+        cloud_file_names(&h.client, target).await,
+        vec!["笔记.txt"],
+        "xwechat_files 不得出现在普通备份中"
+    );
+
+    // 微信备份开启后仍然排除（两个来源互不冲突，也不做嵌套拒绝）。
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::ChatFiles])
+        .await
+        .unwrap();
+    h.engine.scan_all_now().await.unwrap();
+    h.engine.scan_folder_now(folder_id).await.unwrap();
+    assert_eq!(cloud_file_names(&h.client, target).await, vec!["笔记.txt"]);
+    let wechat_target = cloud_folder_by_path(
+        &h.client,
+        &["微信备份", "TEST-PC", WECHAT_ACCOUNT, "聊天文件", "file"],
+    )
+    .await;
+    assert!(
+        !cloud_file_names(&h.client, wechat_target).await.is_empty(),
+        "微信来源仍由微信备份单独处理"
+    );
+}
+
+#[tokio::test]
+async fn wechat_preflight_counts_bytes_quota_and_without_images() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_wechat_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+
+    let categories = [
+        WechatCategory::ChatFiles,
+        WechatCategory::ImagesAndVideos,
+        WechatCategory::Databases,
+    ];
+    let preflight = h
+        .engine
+        .preflight_wechat(&account, &categories)
+        .await
+        .unwrap();
+    let chat = b"pdf-report".len() as u64;
+    let image = b"image-bytes".len() as u64;
+    let video = b"video-bytes".len() as u64;
+    let database = b"database-bytes".len() as u64;
+    assert_eq!(preflight.file_count, 4);
+    assert_eq!(preflight.total_bytes, chat + image + video + database);
+    assert_eq!(preflight.database_bytes, database);
+    assert_eq!(
+        preflight.upload_bytes,
+        projected_upload_bytes(chat)
+            + projected_upload_bytes(image)
+            + projected_upload_bytes(video)
+            + projected_upload_bytes(database),
+        "块开销必须逐文件计算"
+    );
+    assert_eq!(
+        preflight.upload_bytes_without_images_and_videos,
+        projected_upload_bytes(chat) + projected_upload_bytes(database)
+    );
+    assert!(!preflight.over_quota, "默认配额足够");
+
+    // 剩余空间不足 → over_quota；取消图片与视频后仍按同一口径计算。
+    h.state.set_quota(1);
+    let tight = h
+        .engine
+        .preflight_wechat(&account, &categories)
+        .await
+        .unwrap();
+    assert!(tight.over_quota);
+    assert_eq!(tight.remaining_quota_bytes, Some(1));
+
+    let without_images = h
+        .engine
+        .preflight_wechat(
+            &account,
+            &[WechatCategory::ChatFiles, WechatCategory::Databases],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        without_images.upload_bytes, tight.upload_bytes_without_images_and_videos,
+        "界面第三格与取消图片视频后的实际预检一致"
+    );
+}
+
+#[tokio::test]
+async fn wechat_backup_does_not_modify_source_directories() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_wechat_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    let account_dir = documents.join("xwechat_files").join(WECHAT_ACCOUNT);
+    let before = tree_snapshot(&account_dir);
+
+    h.engine
+        .set_wechat_categories(
+            &account,
+            &[
+                WechatCategory::ChatFiles,
+                WechatCategory::ImagesAndVideos,
+                WechatCategory::Databases,
+                WechatCategory::PhoneMigration,
+            ],
+        )
+        .await
+        .unwrap();
+    h.engine.scan_all_now().await.unwrap();
+    h.engine.scan_all_now().await.unwrap();
+    let _ = h
+        .engine
+        .preflight_wechat(
+            &account,
+            &[
+                WechatCategory::ChatFiles,
+                WechatCategory::ImagesAndVideos,
+                WechatCategory::Databases,
+            ],
+        )
+        .await
+        .unwrap();
+
+    let after = tree_snapshot(&account_dir);
+    assert_eq!(
+        before, after,
+        "备份期间不得修改微信目录（路径/大小/修改时间）"
+    );
 }

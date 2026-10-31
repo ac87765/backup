@@ -13,6 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use client_core::desktop::wechat::{WechatLocator, WechatSystemLocations};
 use client_core::desktop::{
     BackupEngine, BackupEngineConfig, BackupFolderDraft, BackupFolderStatus,
 };
@@ -20,6 +21,29 @@ use client_core::{Client, ClientBuilder, ConflictPolicy, MemorySecretStore, Node
 use common::{TestServer, TestUser, create_user, environment, start_server};
 
 const PASSWORD: &str = "correct horse battery staple";
+
+/// 空微信系统位置：Docker 集成测试不读取宿主机真实微信目录。
+struct NoWechatLocations;
+
+impl WechatSystemLocations for NoWechatLocations {
+    fn documents_dir(
+        &self,
+    ) -> Result<Option<std::path::PathBuf>, client_core::desktop::wechat::WechatError> {
+        Ok(None)
+    }
+
+    fn appdata_dir(
+        &self,
+    ) -> Result<Option<std::path::PathBuf>, client_core::desktop::wechat::WechatError> {
+        Ok(None)
+    }
+
+    fn wechat_3_file_save_path(
+        &self,
+    ) -> Result<Option<String>, client_core::desktop::wechat::WechatError> {
+        Ok(None)
+    }
+}
 
 fn backup_client(server: &TestServer, app_data: &Path) -> Client {
     ClientBuilder::new(server.base_url.clone())
@@ -84,6 +108,10 @@ async fn folder_backup_incremental_versions_and_local_delete_on_real_server() {
             full_scan_interval: Duration::from_secs(3600),
             retry_interval: Duration::from_secs(60),
             watch_files: false,
+            wechat_locator: Some(WechatLocator::with_system_locations(Arc::new(
+                NoWechatLocations,
+            ))),
+            wechat_manual_directories: Vec::new(),
         },
     )
     .unwrap();
