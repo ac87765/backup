@@ -31,5 +31,5 @@
 
 - `apps/client` 新增 `ios/` 平台工程与 iOS 布局；`client-core` 增加 iOS Keychain（Face ID 访问控制）。
 - CI 新增 iOS 构建（macos 运行器，`--no-codesign`）。
-- Figma：iOS 页面（登录 / 解锁、文件列表与操作菜单、上传来源、传输、分享、设置），在本 change 开始时绘制。
+- 界面稿：`design/ios/` 中的 iOS 页面（登录 / 解锁、文件列表与操作菜单、上传来源、传输、分享、设置），在本 change 开始时绘制。
 - 开发机没有 Mac：编译由 CI 保证，真机验收依赖用户的 iPhone。

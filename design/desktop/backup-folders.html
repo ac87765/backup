@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN" data-default-state="default">
+<head>
+<meta charset="utf-8">
+<title>主窗口 · 备份文件夹</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  .page { padding: 24px 28px; display: flex; flex-direction: column; gap: 20px; }
+  .page-head { display: flex; align-items: flex-start; gap: 12px; }
+  .folder-card { display: grid; grid-template-columns: 40px 1fr auto; gap: 14px; align-items: center; padding: 16px 18px; }
+  .folder-card .paths { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: var(--text-xs); color: var(--ink-500); }
+  .folder-card .paths i[data-icon] { --s: 12px; color: var(--ink-400); }
+  .folder-card .right { display: flex; align-items: center; gap: 12px; }
+  .folder-card .progress { grid-column: 2 / 4; }
+  .big-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--brand-50); color: var(--brand-600); }
+  .activity li { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+  .activity li:last-child { border-bottom: 0; }
+  .activity ul { margin: 0; padding: 0; list-style: none; }
+  .empty { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 72px 0; text-align: center; }
+</style>
+</head>
+<body>
+<!--
+  备份文件夹页 1280×800。状态：
+    default  三个文件夹：已备份 / 正在备份（带进度）/ 有文件无法读取
+    paused   整体已暂停（顶部横幅 + 卡片显示已暂停）
+    empty    还没有备份文件夹
+  卡片 = BackupFolderCard：本地文件夹名、本地路径 → 云端路径、状态胶囊、最近备份时间、更多菜单。
+-->
+<div class="window capture" style="width:1280px;height:800px">
+  <div class="titlebar" data-partial="titlebar"></div>
+  <div class="app">
+    <aside class="sidebar" data-partial="sidebar" data-active="backup"></aside>
+    <section class="main">
+      <div class="toolbar">
+        <div class="crumbs"><span>备份文件夹</span></div>
+        <span class="spacer"></span>
+        <span data-when="default empty"><button class="btn"><i data-icon="pause"></i>暂停备份</button></span>
+        <span data-when="paused"><button class="btn"><i data-icon="play"></i>恢复备份</button></span>
+        <span data-when="default paused"><button class="btn"><i data-icon="refresh"></i>立即备份</button></span>
+        <button class="btn btn-primary"><i data-icon="plus"></i>添加文件夹</button>
+      </div>
+      <div class="content">
+        <div class="page">
+          <p class="muted" style="margin:0">这些文件夹中新增和修改的文件会自动加密备份到云端。<b style="font-weight:500;color:var(--ink-600)">在电脑上删除文件不会删除云端的备份</b>，修改过的文件会保留旧版本。</p>
+
+          <div class="note warn" data-when="paused"><i data-icon="pause"></i><span>备份已暂停。新的改动会在恢复后一起备份。</span></div>
+
+          <div class="stack" style="gap:12px" data-when="default paused">
+            <div class="card folder-card">
+              <span class="big-icon"><i data-icon="folder" style="--s:20px"></i></span>
+              <div>
+                <b style="font-size:var(--text-md)">工作资料</b>
+                <div class="paths"><span class="mono">D:\工作资料</span><i data-icon="arrow-right"></i><span>全部文件 / 电脑备份 / DESKTOP-TLJ / 工作资料</span></div>
+              </div>
+              <div class="right">
+                <span data-when="default"><span class="pill pill-ok"><i data-icon="check"></i>已备份</span></span>
+                <span data-when="paused"><span class="pill pill-paused"><i data-icon="pause"></i>已暂停</span></span>
+                <span class="small muted">5 分钟前</span>
+                <button class="btn btn-ghost btn-icon"><i data-icon="more"></i></button>
+              </div>
+            </div>
+
+            <div class="card folder-card">
+              <span class="big-icon"><i data-icon="image" style="--s:20px"></i></span>
+              <div>
+                <b style="font-size:var(--text-md)">照片</b>
+                <div class="paths"><span class="mono">C:\Users\tlj\Pictures</span><i data-icon="arrow-right"></i><span>全部文件 / 电脑备份 / DESKTOP-TLJ / 照片</span></div>
+              </div>
+              <div class="right">
+                <span data-when="default"><span class="pill pill-busy"><i data-icon="cloud-upload"></i>正在备份 128 / 340</span></span>
+                <span data-when="paused"><span class="pill pill-paused"><i data-icon="pause"></i>已暂停 · 剩余 212 个</span></span>
+                <span class="small muted">约 6 分钟</span>
+                <button class="btn btn-ghost btn-icon"><i data-icon="more"></i></button>
+              </div>
+              <div class="progress" data-when="default"><b style="width:38%"></b></div>
+            </div>
+
+            <div class="card folder-card">
+              <span class="big-icon"><i data-icon="file-text" style="--s:20px"></i></span>
+              <div>
+                <b style="font-size:var(--text-md)">文档</b>
+                <div class="paths"><span class="mono">C:\Users\tlj\Documents</span><i data-icon="arrow-right"></i><span>全部文件 / 电脑备份 / DESKTOP-TLJ / 文档</span></div>
+              </div>
+              <div class="right">
+                <span data-when="default"><span class="pill pill-warn"><i data-icon="alert"></i>2 个文件无法读取</span></span>
+                <span data-when="paused"><span class="pill pill-paused"><i data-icon="pause"></i>已暂停</span></span>
+                <span class="small muted">今天 08:30</span>
+                <button class="btn btn-ghost btn-icon"><i data-icon="more"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card activity" data-when="default paused">
+            <div class="row" style="padding:14px 16px;border-bottom:1px solid var(--line)"><b>最近活动</b><span class="spacer"></span><span class="small muted">只保存在这台电脑上</span></div>
+            <ul>
+              <li><span class="ficon image" style="width:24px;height:24px"><i data-icon="image" style="--s:14px"></i></span><span>IMG_2041.HEIC</span><span class="muted small">照片</span><span class="spacer"></span><span class="small muted">新增 · 刚刚</span></li>
+              <li><span class="ficon sheet" style="width:24px;height:24px"><i data-icon="sheet" style="--s:14px"></i></span><span>Q3 预算.xlsx</span><span class="muted small">工作资料</span><span class="spacer"></span><span class="small muted">新版本 · 5 分钟前</span></li>
+              <li><span class="ficon doc" style="width:24px;height:24px"><i data-icon="file-text" style="--s:14px"></i></span><span>~$周报.docx 等 2 个文件</span><span class="muted small">文档</span><span class="spacer"></span><span class="small" style="color:var(--warning-600)">被其他程序占用，稍后重试</span></li>
+              <li><span class="ficon pdf" style="width:24px;height:24px"><i data-icon="file-text" style="--s:14px"></i></span><span>2026 年度合作协议.pdf</span><span class="muted small">工作资料</span><span class="spacer"></span><span class="small muted">内容未变，已跳过 · 10:05</span></li>
+            </ul>
+          </div>
+
+          <div class="card empty" data-when="empty">
+            <span class="big-icon" style="width:56px;height:56px;border-radius:14px"><i data-icon="cloud-upload" style="--s:28px"></i></span>
+            <b class="h2">让电脑上的文件自动备份</b>
+            <span class="muted" style="max-width:420px">选择文件夹后，其中新增和修改的文件会在后台自动加密上传。关闭窗口也会继续。</span>
+            <button class="btn btn-primary btn-lg"><i data-icon="plus"></i>添加文件夹</button>
+          </div>
+        </div>
+      </div>
+      <div class="statusbar" data-partial="statusbar" data-status="busy"></div>
+    </section>
+  </div>
+</div>
+<script>
+  // 暂停 / 空状态下状态栏文字不同
+  const st = new URLSearchParams(location.search).get('state')
+  if (st === 'paused') document.querySelector('.statusbar').dataset.status = 'paused'
+  if (st === 'empty') document.querySelector('.statusbar').dataset.status = 'none'
+</script>
+<script src="shared.js"></script>
+</body>
+</html>

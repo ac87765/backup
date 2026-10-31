@@ -1,10 +1,10 @@
 # Tasks
 
-> 前置条件：`add-native-clients` 与 `add-wechat-backup` 已完成并归档。迭代流程同其他 change：Figma → 用户确认 → DeepSeek 实现 → 审查者验收。
+> 前置条件：`add-native-clients` 与 `add-wechat-backup` 已完成并归档。迭代流程同其他 change：`design/ios/` 界面稿 → 用户确认 → DeepSeek 实现 → 审查者验收。
 
 ## 0. 设计稿（审查者）
 
-- [ ] 0.1 Figma：iOS 登录 / 解锁（含 Face ID）、文件列表与操作菜单、上传来源选择、传输列表、下载后的分享、设置
+- [ ] 0.1 `design/ios/`：iOS 登录 / 解锁（含 Face ID）、文件列表与操作菜单、上传来源选择、传输列表、下载后的分享、设置
 - [ ] 0.2 用户确认设计稿
 
 ## 1. 平台接入
@@ -15,7 +15,7 @@
 ## 2. 界面
 
 - [ ] 2.1 底部标签栏布局、列表左滑操作、底部操作菜单（design D2）
-- [ ] 2.2 golden 截图测试（iPhone 尺寸），审查者对照 Figma
+- [ ] 2.2 golden 截图测试（iPhone 尺寸），审查者对照 `design/ios/screenshots/`
 
 ## 3. iOS 专有功能
 

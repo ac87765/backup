@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>托盘 / 菜单栏弹窗</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  .board { display: flex; gap: 32px; align-items: flex-start; padding: 32px; border-radius: 12px; background: linear-gradient(135deg, #c9d6e8, #e4dccf); }
+  .tray { width: 340px; }
+  .tray .head { display: flex; align-items: center; gap: 12px; padding: 16px; }
+  .tray .status-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; }
+  .tray .section { padding: 4px 16px 12px; }
+  .tray .section-title { margin: 8px 0 6px; color: var(--ink-500); font-size: var(--text-xs); }
+  .tray li { display: flex; align-items: center; gap: 10px; height: 34px; }
+  .tray ul { margin: 0; padding: 0; list-style: none; }
+  .tray .up { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding: 6px 0; }
+  .tray .up .progress { grid-column: 1 / 3; }
+  .tray .foot { display: flex; align-items: center; gap: 4px; padding: 8px; border-top: 1px solid var(--line); background: var(--canvas); }
+  .label { margin: 0 0 10px; font-size: var(--text-xs); color: #3f3f46; font-weight: 600; }
+</style>
+</head>
+<body>
+<!--
+  托盘（Windows，任务栏右下角）/ 菜单栏（macOS，屏幕顶部）弹窗，宽 340。点击图标弹出，失焦关闭。
+  三种状态并排：
+    已全部备份   绿色勾；最近活动
+    正在备份     蓝色；进行中的上传（最多 3 条）+ 总进度
+    需要解锁     开机自动启动但未“保持解锁”时；主按钮“解锁”打开主窗口的解锁页
+  底部：暂停 / 恢复备份、打开应用、打开网页版、更多（设置、退出）。
+  托盘图标本身：正常 = 品牌锁图标；正在上传 = 叠加蓝色箭头；暂停 = 叠加灰色暂停；需要解锁 = 叠加橙色圆点。
+-->
+<div class="board capture">
+  <div>
+    <p class="label">已全部备份</p>
+    <div class="popover tray">
+      <div class="head"><span class="status-icon" style="background:var(--success-50);color:var(--success-600)"><i data-icon="check-circle" style="--s:20px"></i></span><div class="stack"><b style="font-size:var(--text-md)">已全部备份</b><span class="small muted">3 个文件夹 · 5 分钟前检查</span></div></div>
+      <div class="section">
+        <p class="section-title">最近活动</p>
+        <ul>
+          <li><span class="ficon sheet" style="width:24px;height:24px"><i data-icon="sheet" style="--s:14px"></i></span><span>Q3 预算.xlsx</span><span class="spacer"></span><span class="small muted">5 分钟前</span></li>
+          <li><span class="ficon image" style="width:24px;height:24px"><i data-icon="image" style="--s:14px"></i></span><span>IMG_2040.HEIC 等 12 个</span><span class="spacer"></span><span class="small muted">1 小时前</span></li>
+          <li><span class="ficon doc" style="width:24px;height:24px"><i data-icon="file-text" style="--s:14px"></i></span><span>项目周报-第43周.docx</span><span class="spacer"></span><span class="small muted">昨天</span></li>
+        </ul>
+      </div>
+      <div class="foot"><button class="btn btn-ghost"><i data-icon="pause"></i>暂停</button><span class="spacer"></span><button class="btn btn-ghost btn-icon" title="打开网页版"><i data-icon="external"></i></button><button class="btn btn-ghost btn-icon" title="更多"><i data-icon="more"></i></button><button class="btn btn-primary">打开</button></div>
+    </div>
+  </div>
+
+  <div>
+    <p class="label">正在备份</p>
+    <div class="popover tray">
+      <div class="head"><span class="status-icon" style="background:var(--brand-50);color:var(--brand-600)"><i data-icon="cloud-upload" style="--s:20px"></i></span><div class="stack" style="flex:1"><b style="font-size:var(--text-md)">正在备份 128 / 340</b><span class="small muted">照片 · 约 6 分钟 · 8.4 MB/s</span></div></div>
+      <div class="section" style="padding-top:0">
+        <div class="progress" style="margin-bottom:8px"><b style="width:38%"></b></div>
+        <p class="section-title">正在上传</p>
+        <div class="up"><span>IMG_2041.HEIC</span><span class="small muted">3.6 MB</span><div class="progress"><b style="width:70%"></b></div></div>
+        <div class="up"><span>IMG_2042.HEIC</span><span class="small muted">4.1 MB</span><div class="progress"><b style="width:22%"></b></div></div>
+        <div class="up"><span>VID_0918.MOV</span><span class="small" style="color:var(--warning-600)">服务器繁忙，稍后继续</span><div class="progress paused"><b style="width:10%"></b></div></div>
+      </div>
+      <div class="foot"><button class="btn btn-ghost"><i data-icon="pause"></i>暂停</button><span class="spacer"></span><button class="btn btn-ghost btn-icon"><i data-icon="external"></i></button><button class="btn btn-ghost btn-icon"><i data-icon="more"></i></button><button class="btn btn-primary">打开</button></div>
+    </div>
+  </div>
+
+  <div>
+    <p class="label">需要解锁</p>
+    <div class="popover tray">
+      <div class="head"><span class="status-icon" style="background:var(--warning-50);color:var(--warning-600)"><i data-icon="lock" style="--s:20px"></i></span><div class="stack"><b style="font-size:var(--text-md)">需要解锁才能继续备份</b><span class="small muted">电脑重启后，需要输入一次密码</span></div></div>
+      <div class="section">
+        <div class="note"><i data-icon="info"></i><span>有 3 个文件夹在等待备份。解锁后会自动继续。想免去这一步，可以在设置中开启“保持解锁”。</span></div>
+        <button class="btn btn-primary btn-block btn-lg" style="margin-top:12px"><i data-icon="lock"></i>解锁</button>
+      </div>
+      <div class="foot"><span class="spacer"></span><button class="btn btn-ghost btn-icon"><i data-icon="external"></i></button><button class="btn btn-ghost btn-icon"><i data-icon="more"></i></button></div>
+    </div>
+  </div>
+
+  <div>
+    <p class="label">“更多”菜单</p>
+    <div class="popover menu">
+      <a><i data-icon="settings"></i>设置</a>
+      <a><i data-icon="folder"></i>打开备份文件夹页</a>
+      <hr>
+      <a><i data-icon="power"></i>退出加密备份</a>
+    </div>
+  </div>
+</div>
+<script src="shared.js"></script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN" data-default-state="default">
+<head>
+<meta charset="utf-8">
+<title>对话框 · 下载文件夹到电脑</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  .path-row { display: flex; gap: 8px; }
+  .path-row .input { flex: 1; min-width: 0; }
+  .source { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: var(--radius-control); background: var(--canvas); }
+  .opt { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-control); }
+  .opt.on { border-color: var(--brand-600); background: var(--brand-50); }
+  .opt .radio { margin-top: 1px; }
+</style>
+</head>
+<body>
+<!--
+  下载文件夹到电脑（从文件列表的文件夹菜单“下载到电脑…”或备份文件夹卡片菜单“恢复到电脑…”打开，宽 520）。
+  保留完整目录结构，不打包 zip；同名文件处理默认“保留两份”（新文件名加“ (1)”）。
+  确认后进入传输列表，可暂停 / 继续。
+-->
+<div class="window capture" style="width:1280px;height:800px">
+  <iframe class="backdrop-frame" id="bg"></iframe>
+  <div class="scrim">
+    <div class="dialog" style="--w:520px">
+      <header><span class="ficon folder" style="width:32px;height:32px"><i data-icon="download" style="--s:18px"></i></span><b class="h2">下载文件夹到电脑</b><button class="btn btn-ghost btn-icon"><i data-icon="x"></i></button></header>
+      <div class="body">
+        <div class="source">
+          <span class="ficon folder"><i data-icon="folder"></i></span>
+          <div class="stack"><b>照片 / 2024</b><span class="small muted">2,140 个文件 · 8.7 GB · 含 14 个子文件夹</span></div>
+        </div>
+        <div class="field">
+          <label>保存到</label>
+          <div class="path-row"><div class="input"><i data-icon="hard-drive" class="faint"></i><span class="mono">D:\恢复</span></div><button class="btn" style="height:36px">选择…</button></div>
+          <span class="hint">将创建 <span class="mono">D:\恢复\2024</span>，并保留其中的目录结构。本地磁盘剩余 214 GB。</span>
+        </div>
+        <div class="field">
+          <label>如果电脑上已有同名文件</label>
+          <div class="opt on"><span class="radio on"></span><div class="stack"><b style="font-weight:500">保留两份</b><span class="small muted">下载的文件改名为“名称 (1).jpg”</span></div></div>
+          <div class="opt"><span class="radio"></span><div class="stack"><b style="font-weight:500">替换</b><span class="small muted">用云端的版本覆盖电脑上的文件</span></div></div>
+          <div class="opt"><span class="radio"></span><div class="stack"><b style="font-weight:500">跳过</b><span class="small muted">保留电脑上的文件，不下载</span></div></div>
+        </div>
+      </div>
+      <footer><button class="btn">取消</button><button class="btn btn-primary"><i data-icon="download"></i>开始下载</button></footer>
+    </div>
+  </div>
+</div>
+<script>
+  const q = new URLSearchParams(location.search)
+  document.getElementById('bg').src = `files.html?embed=1&os=${q.get('os') || 'win'}`
+</script>
+<script src="shared.js"></script>
+</body>
+</html>

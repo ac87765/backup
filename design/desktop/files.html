@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN" data-default-state="default">
+<head>
+<meta charset="utf-8">
+<title>主窗口 · 全部文件</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  .transfers { position: absolute; right: 16px; bottom: 44px; z-index: 5; width: 380px; }
+  .transfers header { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .transfers .item { display: grid; grid-template-columns: 28px 1fr auto; gap: 4px 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .transfers .item:last-child { border-bottom: 0; }
+  .transfers .item .progress { grid-column: 2 / 4; }
+  .transfers .meta { grid-column: 2 / 4; display: flex; justify-content: space-between; font-size: var(--text-xs); color: var(--ink-500); }
+  .ctx { position: absolute; left: 820px; top: 236px; z-index: 5; }
+  .drop { position: absolute; inset: 56px 0 32px; z-index: 5; display: grid; place-items: center; margin: 12px; border: 2px dashed var(--brand-600); border-radius: var(--radius-card); background: rgb(238 244 255 / 0.92); color: var(--brand-700); }
+</style>
+</head>
+<body>
+<!--
+  主窗口 1280×800。状态：
+    default    普通浏览（一行悬停、一行选中）
+    menu       行操作菜单展开
+    transfers  传输面板展开（从状态栏右侧打开）
+    drop       从系统拖入文件时的放置提示
+-->
+<div class="window capture" style="width:1280px;height:800px">
+  <div class="titlebar" data-partial="titlebar"></div>
+  <div class="app">
+    <aside class="sidebar" data-partial="sidebar" data-active="files"></aside>
+    <section class="main">
+      <div class="toolbar">
+        <div class="crumbs"><span class="up">全部文件</span><i data-icon="chevron-right"></i><span>工作资料</span></div>
+        <span class="spacer"></span>
+        <div class="input input-sm" style="width:240px"><i data-icon="search" class="faint"></i><span class="ph">筛选当前文件夹</span></div>
+        <div class="segmented"><span class="on"><i data-icon="list" style="--s:14px"></i></span><span><i data-icon="grid" style="--s:14px"></i></span></div>
+        <button class="btn"><i data-icon="folder-plus"></i>新建文件夹</button>
+        <button class="btn btn-primary"><i data-icon="upload"></i>上传<i data-icon="chevron-down" style="--s:14px"></i></button>
+      </div>
+      <div class="content">
+        <table class="table">
+          <thead><tr><th style="padding-left:20px">名称 <i data-icon="chevron-down" style="--s:12px;vertical-align:-2px"></i></th><th style="width:180px">修改时间</th><th style="width:110px">大小</th><th class="actions"></th></tr></thead>
+          <tbody>
+            <tr><td style="padding-left:20px"><div class="name"><span class="ficon folder"><i data-icon="folder"></i></span>合同</div></td><td class="muted">今天 09:12</td><td class="muted">—</td><td class="actions"></td></tr>
+            <tr><td style="padding-left:20px"><div class="name"><span class="ficon folder"><i data-icon="folder"></i></span>设计稿</div></td><td class="muted">昨天 18:40</td><td class="muted">—</td><td class="actions"></td></tr>
+            <tr class="hover"><td style="padding-left:20px"><div class="name"><span class="ficon pdf"><i data-icon="file-text"></i></span>2026 年度合作协议.pdf</div></td><td class="muted">今天 10:05</td><td class="muted">2.4 MB</td><td class="actions"><button class="btn btn-ghost btn-icon"><i data-icon="more"></i></button></td></tr>
+            <tr class="selected"><td style="padding-left:20px"><div class="name"><span class="ficon sheet"><i data-icon="sheet"></i></span>Q3 预算.xlsx</div></td><td class="muted">10月27日 16:22</td><td class="muted">186 KB</td><td class="actions"><button class="btn btn-ghost btn-icon"><i data-icon="more"></i></button></td></tr>
+            <tr><td style="padding-left:20px"><div class="name"><span class="ficon doc"><i data-icon="file-text"></i></span>项目周报-第43周.docx</div></td><td class="muted">10月25日 11:03</td><td class="muted">48 KB</td><td class="actions"></td></tr>
+            <tr><td style="padding-left:20px"><div class="name"><span class="ficon image"><i data-icon="image"></i></span>白板照片.jpg</div></td><td class="muted">10月24日 15:47</td><td class="muted">3.1 MB</td><td class="actions"></td></tr>
+            <tr><td style="padding-left:20px"><div class="name"><span class="ficon video"><i data-icon="video"></i></span>产品演示.mp4</div></td><td class="muted">10月20日 20:15</td><td class="muted">412 MB</td><td class="actions"></td></tr>
+            <tr><td style="padding-left:20px"><div class="name"><span class="ficon archive"><i data-icon="archive"></i></span>旧版本素材.zip</div></td><td class="muted">9月30日 09:00</td><td class="muted">1.2 GB</td><td class="actions"></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="statusbar" data-partial="statusbar" data-status="ok"></div>
+
+      <div class="popover menu ctx" data-when="menu">
+        <a><i data-icon="download"></i>下载</a>
+        <a class="hover"><i data-icon="history"></i>版本历史</a>
+        <hr>
+        <a><i data-icon="file"></i>重命名</a>
+        <a><i data-icon="arrow-right"></i>移动到…</a>
+        <hr>
+        <a class="danger"><i data-icon="trash"></i>移到回收站</a>
+      </div>
+
+      <div class="popover transfers" data-when="transfers">
+        <header><b class="h2" style="font-size:var(--text-md)">传输</b><span class="muted small">3 项进行中</span><span class="spacer"></span><button class="btn btn-ghost btn-icon"><i data-icon="pause"></i></button><button class="btn btn-ghost btn-icon"><i data-icon="x"></i></button></header>
+        <div class="item">
+          <span class="ficon video"><i data-icon="video"></i></span><b style="font-weight:500">产品演示-终版.mp4</b><button class="btn btn-ghost btn-icon"><i data-icon="pause"></i></button>
+          <div class="progress"><b style="width:62%"></b></div>
+          <div class="meta"><span>上传 · 255 MB / 412 MB</span><span>8.4 MB/s · 约 19 秒</span></div>
+        </div>
+        <div class="item">
+          <span class="ficon image"><i data-icon="image"></i></span><b style="font-weight:500">IMG_2041.HEIC</b><button class="btn btn-ghost btn-icon"><i data-icon="x"></i></button>
+          <div class="progress"><b style="width:30%"></b></div>
+          <div class="meta"><span style="color:var(--warning-600)">服务器繁忙，12 秒后自动继续</span><span>1.1 / 3.6 MB</span></div>
+        </div>
+        <div class="item">
+          <span class="ficon folder"><i data-icon="folder"></i></span><b style="font-weight:500">照片 / 2024</b><button class="btn btn-ghost btn-icon"><i data-icon="play"></i></button>
+          <div class="progress paused"><b style="width:44%"></b></div>
+          <div class="meta"><span>下载到 D:\恢复 · 已暂停</span><span>942 / 2,140 个文件</span></div>
+        </div>
+        <div class="item">
+          <span class="ficon pdf"><i data-icon="file-text"></i></span><b style="font-weight:500">扫描件.pdf</b><button class="btn btn-icon"><i data-icon="refresh"></i></button>
+          <div class="meta"><span style="color:var(--danger-700)">上传失败：文件在上传过程中被修改</span><span></span></div>
+        </div>
+      </div>
+
+      <div class="drop" data-when="drop">
+        <div class="stack" style="align-items:center;gap:10px">
+          <i data-icon="cloud-upload" style="--s:40px"></i>
+          <b style="font-size:var(--text-lg)">松开即可上传到“工作资料”</b>
+          <span class="small">文件夹会保留目录结构</span>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+<script src="shared.js"></script>
+</body>
+</html>

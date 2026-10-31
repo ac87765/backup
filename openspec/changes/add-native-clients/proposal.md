@@ -34,5 +34,5 @@ Web 版已经稳定上线，但“备份”这件事最需要的是不用打开�
 
 - 新增 `crates/client-core`（Rust 客户端核心）、`apps/client`（Flutter 工程，含 `rust/` 桥接 crate，flutter_rust_bridge 生成 Dart 绑定；启用 Windows 与 macOS 平台，iOS 平台在 `add-ios-client` 中启用）。
 - CI 新增：Rust 客户端核心测试（连接测试服务端）、Flutter 静态检查与组件测试、Windows 构建（windows 运行器）、macOS 构建（macos 运行器，ad-hoc 签名）。
-- 设计稿：沿用 Figma 文件“加密备份 · 桌面端 UI”，已补充备份文件夹、添加文件夹、恢复、首次引导、托盘需要解锁等界面。
+- 设计稿：仓库内 `design/desktop/` 的静态 HTML 界面稿（与 Web 共用设计令牌）及其截图，实现以 HTML 源码中的数值与文案为准。
 - 开发机没有 Mac：macOS 的编译由 CI 保证，实际运行验收依赖用户本人的 Mac。

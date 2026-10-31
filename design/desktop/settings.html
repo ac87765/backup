@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN" data-default-state="general">
+<head>
+<meta charset="utf-8">
+<title>设置</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  .settings { flex: 1; display: flex; min-height: 0; }
+  .tabs { width: 188px; padding: 16px 12px; background: var(--canvas); border-right: 1px solid var(--line); }
+  .panel { flex: 1; padding: 24px 32px; overflow: hidden; }
+  .group { margin-top: 20px; }
+  .group-title { margin: 0 0 4px; color: var(--ink-500); font-size: var(--text-xs); font-weight: 600; }
+  .setting { display: flex; align-items: flex-start; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .setting:last-child { border-bottom: 0; }
+  .setting .text { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+  .setting .text span { color: var(--ink-500); font-size: var(--text-xs); }
+  .select { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-control); }
+  dl { display: grid; grid-template-columns: 96px 1fr; gap: 10px 16px; margin: 16px 0 0; }
+  dt { color: var(--ink-500); }
+  dd { margin: 0; }
+</style>
+</head>
+<body>
+<!--
+  设置窗口 760×600（独立窗口，从侧边栏账号行的设置按钮或托盘“更多 → 设置”打开）。标签：
+    general   通用：开机启动、上传限速、排除隐藏文件、语言跟随系统
+    security  安全：保持解锁（开启前弹确认，见 confirm）、自动锁定、退出登录
+    confirm   安全页 + “保持解锁”确认对话框
+    about     关于：版本、提交、检查更新（自用：链接到 GitHub Actions 产物）、开源许可
+-->
+<div class="window capture" style="width:760px;height:600px">
+  <div class="titlebar" data-partial="titlebar" data-title="设置"></div>
+  <div class="settings">
+    <nav class="tabs nav">
+      <a class="" data-tab="general"><i data-icon="sliders"></i>通用</a>
+      <a class="" data-tab="security"><i data-icon="shield"></i>安全</a>
+      <a class="" data-tab="account"><i data-icon="user"></i>账号</a>
+      <a class="" data-tab="about"><i data-icon="info"></i>关于</a>
+    </nav>
+
+    <div class="panel" data-when="general">
+      <h2 class="h1">通用</h2>
+      <div class="group">
+        <p class="group-title">启动</p>
+        <div class="setting"><div class="text"><b>开机时自动启动</b><span>登录系统后在后台启动，继续备份。</span></div><span class="toggle on"></span></div>
+        <div class="setting"><div class="text"><b>关闭窗口时</b><span>加密备份会留在<b style="font-weight:400">任务栏右下角的托盘</b>里继续工作。要完全退出，请在托盘菜单中选择“退出”。</span></div></div>
+      </div>
+      <div class="group">
+        <p class="group-title">备份</p>
+        <div class="setting"><div class="text"><b>上传速度限制</b><span>限制后台备份占用的带宽，手动上传不受影响。</span></div><div class="select">不限制<i data-icon="chevron-down" style="--s:14px"></i></div></div>
+        <div class="setting"><div class="text"><b>使用电池时暂停备份</b><span>笔记本未接电源时暂停，接上电源后自动继续。</span></div><span class="toggle"></span></div>
+        <div class="setting"><div class="text"><b>备份隐藏文件</b><span>以“.”开头或带隐藏属性的文件。系统与临时文件始终不备份。</span></div><span class="toggle"></span></div>
+      </div>
+    </div>
+
+    <div class="panel" data-when="security confirm">
+      <h2 class="h1">安全</h2>
+      <div class="group">
+        <div class="setting"><div class="text"><b>在这台电脑上保持解锁</b><span>重启电脑后无需输入密码即可继续备份。密钥由 <b style="font-weight:400">Windows 凭据保护</b>保管，只有这台电脑的当前系统账号能读取。</span></div><span class="toggle"></span></div>
+        <div class="setting"><div class="text"><b>空闲时锁定</b><span>未开启“保持解锁”时，应用窗口空闲一段时间后需要重新输入密码；后台备份不受影响。</span></div><div class="select">从不<i data-icon="chevron-down" style="--s:14px"></i></div></div>
+      </div>
+      <div class="group">
+        <p class="group-title">这台电脑</p>
+        <div class="setting"><div class="text"><b>DESKTOP-TLJ</b><span>本机只保存文件路径与备份记录，不保存文件内容；云端看不到这些路径。</span></div><button class="btn">清除本机记录…</button></div>
+        <div class="setting"><div class="text"><b>退出登录</b><span>删除这台电脑上保存的登录状态与密钥。已备份的文件不受影响。</span></div><button class="btn" style="color:var(--danger-700)">退出登录</button></div>
+      </div>
+    </div>
+
+    <div class="panel" data-when="about">
+      <h2 class="h1">关于</h2>
+      <div class="row" style="gap:14px;margin-top:20px"><span class="logo" style="--s:48px;--s-inner:26px"><i data-icon="lock"></i></span><div class="stack"><b style="font-size:var(--text-lg)">加密备份</b><span class="muted">端对端加密的文件备份</span></div></div>
+      <dl>
+        <dt>版本</dt><dd>0.1.0</dd>
+        <dt>提交</dt><dd class="mono">68ec11d</dd>
+        <dt>服务器</dt><dd>https://120.79.245.99</dd>
+      </dl>
+      <div class="row" style="margin-top:20px"><button class="btn"><i data-icon="external"></i>下载最新版本</button><button class="btn btn-ghost"><i data-icon="shield"></i>安全与隐私说明</button><button class="btn btn-ghost">开源许可</button></div>
+    </div>
+
+    <div class="scrim" data-when="confirm">
+      <div class="dialog" style="--w:440px">
+        <header><span class="ficon" style="width:32px;height:32px;background:var(--warning-50);color:var(--warning-600)"><i data-icon="alert" style="--s:18px"></i></span><b class="h2">开启“保持解锁”？</b></header>
+        <div class="body" style="gap:12px">
+          <span>开启后，任何能登录这台电脑系统账号的人都可以打开加密备份并查看、下载你的文件。</span>
+          <span class="muted small">只建议在你独自使用、并设有开机密码的电脑上开启。退出登录或修改密码时会自动关闭。</span>
+          <div class="field"><label>输入密码以确认</label><div class="input focus"><span>••••••••••••</span></div></div>
+        </div>
+        <footer><button class="btn">取消</button><button class="btn btn-primary">开启</button></footer>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  const s = new URLSearchParams(location.search).get('state') || 'general'
+  const tab = s === 'confirm' ? 'security' : s
+  document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active')
+</script>
+<script src="shared.js"></script>
+</body>
+</html>

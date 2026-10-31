@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN" data-default-state="folders">
+<head>
+<meta charset="utf-8">
+<title>首次引导</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  .ob { flex: 1; display: flex; flex-direction: column; padding: 32px 48px 0; }
+  .steps { display: flex; gap: 6px; margin-bottom: 20px; }
+  .steps b { width: 28px; height: 4px; border-radius: 2px; background: var(--canvas-strong); }
+  .steps b.on { background: var(--brand-600); }
+  .title { margin: 0 0 6px; font-size: var(--text-2xl); font-weight: 600; }
+  .choice { display: grid; grid-template-columns: 18px 40px 1fr auto; gap: 14px; align-items: center; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-card); }
+  .choice.on { border-color: var(--brand-600); background: var(--brand-50); }
+  .big-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--canvas); color: var(--ink-600); }
+  .choice.on .big-icon { background: #fff; color: var(--brand-600); }
+  .add { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border: 1px dashed var(--line-strong); border-radius: var(--radius-card); color: var(--brand-700); font-weight: 500; }
+  .opt { display: flex; gap: 14px; align-items: flex-start; padding: 16px 0; border-bottom: 1px solid var(--line); }
+  .opt:last-child { border-bottom: 0; }
+  .footer { display: flex; align-items: center; gap: 8px; padding: 16px 48px 24px; margin-top: auto; }
+</style>
+</head>
+<body>
+<!--
+  首次引导窗口 760×720（登录成功后第一次打开时显示，可跳过）。状态：
+    folders     第 1 步：选择要自动备份的文件夹（预选“桌面”“文档”，显示大小）
+    background  第 2 步：后台运行选项（开机启动、保持解锁，均默认关闭；保持解锁带风险说明）
+-->
+<div class="window capture" style="width:760px;height:720px">
+  <div class="titlebar" data-partial="titlebar" data-title="欢迎使用加密备份"></div>
+
+  <div class="ob" data-when="folders">
+    <div class="steps"><b class="on"></b><b></b></div>
+    <h1 class="title">选择要自动备份的文件夹</h1>
+    <p class="muted" style="margin:0 0 22px">这些文件夹里新增和修改的文件会在后台自动加密上传。之后随时可以在“备份文件夹”中修改。</p>
+    <div class="stack" style="gap:10px">
+      <div class="choice on"><span class="check on"><i data-icon="check"></i></span><span class="big-icon"><i data-icon="monitor" style="--s:20px"></i></span><div class="stack"><b>桌面</b><span class="small muted mono">C:\Users\tlj\Desktop</span></div><span class="muted small">326 个文件 · 1.4 GB</span></div>
+      <div class="choice on"><span class="check on"><i data-icon="check"></i></span><span class="big-icon"><i data-icon="file-text" style="--s:20px"></i></span><div class="stack"><b>文档</b><span class="small muted mono">C:\Users\tlj\Documents</span></div><span class="muted small">2,018 个文件 · 4.9 GB</span></div>
+      <div class="choice"><span class="check"></span><span class="big-icon"><i data-icon="image" style="--s:20px"></i></span><div class="stack"><b>图片</b><span class="small muted mono">C:\Users\tlj\Pictures</span></div><span class="muted small">8,410 个文件 · 31.2 GB</span></div>
+      <div class="add"><i data-icon="plus"></i>添加其他文件夹…</div>
+    </div>
+    <div class="note" style="margin-top:18px"><i data-icon="cloud"></i><span>将备份到 <b style="font-weight:500">全部文件 / 电脑备份 / DESKTOP-TLJ</b>。已选 6.3 GB，剩余云端空间 37.6 GB。</span></div>
+  </div>
+
+  <div class="ob" data-when="background">
+    <div class="steps"><b class="on"></b><b class="on"></b></div>
+    <h1 class="title">在后台继续备份</h1>
+    <p class="muted" style="margin:0 0 12px">关闭窗口后，加密备份会留在<span data-os-text>任务栏右下角的托盘</span>里继续工作。</p>
+    <div class="stack">
+      <div class="opt"><span class="toggle"></span><div class="stack" style="gap:2px"><b>开机时自动启动</b><span class="small muted">只会启动程序；如果没有开启下面的选项，仍需要输入密码解锁后才会继续备份。</span></div></div>
+      <div class="opt"><span class="toggle"></span><div class="stack" style="gap:6px"><b>在这台电脑上保持解锁</b><span class="small muted">重启后无需输入密码即可继续备份。你的密钥会交给系统保管（<span data-os-text2>Windows 凭据保护</span>），只有这台电脑的当前系统账号能读取。</span>
+        <div class="note warn"><i data-icon="alert"></i><span>任何能登录这台电脑系统账号的人，都可能打开你的备份。只在你独自使用、并设有开机密码的电脑上开启。</span></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span data-when="folders"><button class="btn btn-ghost">稍后再说</button></span>
+    <span data-when="background"><button class="btn btn-ghost"><i data-icon="chevron-left"></i>上一步</button></span>
+    <span class="spacer"></span>
+    <span data-when="folders"><button class="btn btn-primary btn-lg">下一步<i data-icon="arrow-right"></i></button></span>
+    <span data-when="background"><button class="btn btn-primary btn-lg">开始备份</button></span>
+  </div>
+</div>
+<script src="shared.js"></script>
+</body>
+</html>

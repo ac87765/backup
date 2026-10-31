@@ -9,7 +9,7 @@
 
 ## Goals / Non-Goals
 
-**Goals：** Windows 与 macOS 共用一份 Rust 核心与一份 Flutter 界面代码；与 Web 完全互通（同一账号、同一数据、同一加密格式）；可靠的后台增量备份；界面延续 Dropbox 风格与现有 Figma 设计；核心与界面结构为之后的 iOS 客户端（`add-ios-client`）直接复用做好准备。
+**Goals：** Windows 与 macOS 共用一份 Rust 核心与一份 Flutter 界面代码；与 Web 完全互通（同一账号、同一数据、同一加密格式）；可靠的后台增量备份；界面延续 Dropbox 风格与 `design/desktop/` 界面稿；核心与界面结构为之后的 iOS 客户端（`add-ios-client`）直接复用做好准备。
 
 **Non-Goals：** iOS（单独的 change）；双向同步；Android / Linux；应用商店正式上架；离线文件缓存；在客户端注册账号或用恢复密钥重置密码（跳转网页完成）。
 
@@ -75,20 +75,20 @@ crates/crypto-core              现有加密实现（同一测试向量）
 
 ### D7 后台运行与托盘
 
-- 关闭主窗口只隐藏到托盘（Windows）/ 菜单栏（macOS），从托盘菜单退出才结束进程；托盘弹窗按 Figma“托盘 / 菜单栏弹窗”设计：备份状态、正在上传、最近活动、暂停 / 恢复、打开应用、打开网页版、设置。
+- 关闭主窗口只隐藏到托盘（Windows）/ 菜单栏（macOS），从托盘菜单退出才结束进程；托盘弹窗按 `design/desktop/tray.html`：备份状态、正在上传、最近活动、暂停 / 恢复、打开应用、打开网页版、设置。
 - 开机自动启动（默认关闭，设置中开启）：Windows 注册表 Run 项 / macOS Login Item（`launch_at_startup`），只启动程序，不涉及密钥（未“保持解锁”时托盘提示需要解锁）。
 - 单实例：重复启动时激活已有窗口。
 
 ### D8 Flutter 界面结构
 
 - 状态管理 Riverpod；路由 go_router；设计令牌与 Web D2 一致（颜色、圆角、间距、字号），按平台使用系统字体（Windows：Segoe UI Variable + 微软雅黑；macOS：SF Pro + 苹方）。
-- 布局按已有 Figma：左侧导航（全部文件、最近、回收站、备份文件夹、安全与隐私）+ 顶部工具栏 + 文件列表 + 状态栏；窗口外框遵循平台（Windows 11 标题栏按钮 / macOS 红绿灯，`window_manager`）。
+- 布局按 `design/desktop/` 界面稿：左侧导航（全部文件、最近、回收站、备份文件夹、安全与隐私）+ 顶部工具栏 + 文件列表 + 状态栏；窗口外框遵循平台（Windows 11 标题栏按钮 / macOS 红绿灯，`window_manager`）。
 - 动效遵循 Web D10（轻、快、尊重系统“减少动态效果”）。
 
 ### D9 跨端一致性与测试
 
 - `client-core` 集成测试复用服务端测试工具（testcontainers 启动 PostgreSQL + MinIO + 服务端），覆盖登录、浏览、上传下载、版本、回收站、文件夹备份增量、429 退避、续传；并验证 Web 上传的文件能被客户端解密、客户端上传的文件能被 Web 解密（共用测试向量 + 端到端互通测试）。
-- Flutter：组件测试 + 关键页面 golden 截图（桌面尺寸），审查者对照 Figma 验收。
+- Flutter：组件测试 + 关键页面 golden 截图（桌面尺寸），审查者对照 `design/desktop/screenshots/` 验收。
 - 桥接边界测试（D2）。
 
 ### D10 构建与分发

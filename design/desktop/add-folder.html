@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN" data-default-state="default">
+<head>
+<meta charset="utf-8">
+<title>对话框 · 添加备份文件夹</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  .path-row { display: flex; gap: 8px; }
+  .path-row .input { flex: 1; min-width: 0; }
+  .rules { display: flex; flex-wrap: wrap; gap: 6px; }
+  .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 14px 16px; border-radius: var(--radius-control); background: var(--canvas); }
+  .summary b { display: block; font-size: var(--text-lg); }
+  .summary span { font-size: var(--text-xs); color: var(--ink-500); }
+  .sub { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-control); }
+  .sub div { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+  .sub div:last-child { border-bottom: 0; }
+</style>
+</head>
+<body>
+<!--
+  添加备份文件夹（窗口内模态对话框，宽 560）。状态：
+    default   已选择本地文件夹，显示云端目标、排除规则、预计大小
+    quota     预计大小超过剩余空间（摘要变红 + 警告，开始按钮禁用）
+  云端目标默认：全部文件 / 电脑备份 / <设备名> / <本地文件夹名>，可点“更改”选择其他云端文件夹。
+  “系统与临时文件”规则始终生效、不可删除（design D6 默认排除列表）。
+-->
+<div class="window capture" style="width:1280px;height:800px">
+  <iframe class="backdrop-frame" id="bg"></iframe>
+  <div class="scrim">
+    <div class="dialog" style="--w:560px">
+      <header><span class="ficon folder" style="width:32px;height:32px"><i data-icon="folder-plus" style="--s:18px"></i></span><b class="h2">添加备份文件夹</b><button class="btn btn-ghost btn-icon"><i data-icon="x"></i></button></header>
+      <div class="body">
+        <div class="field">
+          <label>电脑上的文件夹</label>
+          <div class="path-row"><div class="input"><i data-icon="hard-drive" class="faint"></i><span class="mono">D:\工作资料</span></div><button class="btn" style="height:36px">选择…</button></div>
+        </div>
+        <div class="field">
+          <label>备份到</label>
+          <div class="path-row"><div class="input"><i data-icon="cloud" class="faint"></i><span>全部文件 / 电脑备份 / DESKTOP-TLJ / 工作资料</span></div><button class="btn" style="height:36px">更改</button></div>
+          <span class="hint">云端已有同名文件夹时会合并到其中。</span>
+        </div>
+        <div class="field">
+          <label>不备份这些内容</label>
+          <div class="rules">
+            <span class="chip locked"><i data-icon="lock" style="--s:12px"></i>系统与临时文件</span>
+            <span class="chip">node_modules<i data-icon="x" style="--s:12px"></i></span>
+            <span class="chip">*.psd<i data-icon="x" style="--s:12px"></i></span>
+            <span class="chip" style="background:transparent;border:1px dashed var(--line-strong);color:var(--brand-700)"><i data-icon="plus" style="--s:12px"></i>添加规则</span>
+          </div>
+          <div class="sub">
+            <div><span class="check on"><i data-icon="check"></i></span><i data-icon="folder" class="faint"></i>合同</div>
+            <div><span class="check on"><i data-icon="check"></i></span><i data-icon="folder" class="faint"></i>设计稿</div>
+            <div><span class="check"></span><i data-icon="folder" class="faint"></i><span class="muted">临时导出</span><span class="spacer"></span><span class="small muted">不备份</span></div>
+          </div>
+        </div>
+        <div class="summary" data-when="default">
+          <div><b>1,284</b><span>个文件</span></div>
+          <div><b>3.2 GB</b><span>首次需要上传</span></div>
+          <div><b>37.6 GB</b><span>剩余云端空间</span></div>
+        </div>
+        <div class="summary" data-when="quota" style="background:var(--danger-50)">
+          <div><b>18,902</b><span>个文件</span></div>
+          <div><b style="color:var(--danger-700)">52.8 GB</b><span>首次需要上传</span></div>
+          <div><b>37.6 GB</b><span>剩余云端空间</span></div>
+        </div>
+        <div class="note" data-when="default"><i data-icon="info"></i><span>之后在电脑上删除或重命名的文件，会继续保留在云端；修改过的文件会保存为新版本。</span></div>
+        <div class="note warn" data-when="quota"><i data-icon="alert"></i><span>空间不够备份整个文件夹。可以取消勾选部分子文件夹，或添加排除规则。</span></div>
+      </div>
+      <footer>
+        <button class="btn">取消</button>
+        <span data-when="default"><button class="btn btn-primary">开始备份</button></span>
+        <span data-when="quota"><button class="btn btn-primary" style="opacity:.45">开始备份</button></span>
+      </footer>
+    </div>
+  </div>
+</div>
+<script>
+  const q = new URLSearchParams(location.search)
+  document.getElementById('bg').src = `backup-folders.html?embed=1&os=${q.get('os') || 'win'}`
+</script>
+<script src="shared.js"></script>
+</body>
+</html>
