@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../core/platform/window_controls.dart';
 import '../../core/theme/design_tokens.dart';
 
 /// 品牌图标：蓝色圆角方块 + 白色锁（tokens.css `.logo`）。
@@ -27,8 +29,9 @@ class BrandLogo extends StatelessWidget {
 
 /// 窗口内框：视觉标题栏 + 内容。
 ///
-/// 真正的窗口拖拽/窗口按钮在桌面专有组（6.1）接平台外框；这里只提供与
-/// design/desktop 一致的 32px（macOS 28px）标题栏，让页面布局与截图一致。
+/// 视觉标题栏就是真正的窗口标题栏（`TitleBarStyle.hidden`）：拖动区域、
+/// 双击最大化与最小化 / 最大化 / 关闭按钮都接到 [WindowControls]。
+/// macOS 保留系统红绿灯，这里只留出它们的位置，标题居中。
 class WindowFrame extends StatelessWidget {
   const WindowFrame({
     required this.child,
@@ -42,7 +45,7 @@ class WindowFrame extends StatelessWidget {
   final String title;
   final bool showTitleBar;
 
-  /// 标题栏关闭按钮；桌面专有窗口外框（6.1）接入前，设置页用它返回主界面。
+  /// 非空时关闭按钮执行页面自己的返回（设置页）；为空时关闭到托盘。
   final VoidCallback? onClose;
 
   @override
@@ -81,7 +84,7 @@ class WindowFrame extends StatelessWidget {
   }
 }
 
-class _TitleBar extends StatelessWidget {
+class _TitleBar extends ConsumerWidget {
   const _TitleBar({
     required this.title,
     required this.tokens,
@@ -95,7 +98,8 @@ class _TitleBar extends StatelessWidget {
   final VoidCallback? onClose;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final controls = ref.read(windowControlsProvider);
     final height = isMac
         ? DesktopMetrics.titleBarHeightMac
         : DesktopMetrics.titleBarHeight;
@@ -116,110 +120,97 @@ class _TitleBar extends StatelessWidget {
         ),
       ],
     );
-    return Container(
-      height: height,
-      color: tokens.canvas,
-      child: Row(
-        children: [
-          if (isMac)
-            Padding(
-              padding: EdgeInsets.only(left: tokens.space3),
-              child: Row(
+    final content = isMac
+        // macOS：系统红绿灯浮在 Flutter 内容之上，左侧留出位置，标题居中。
+        ? Stack(
+            fit: StackFit.expand,
+            children: [
+              Center(child: appTitle),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: SizedBox(width: 80),
+              ),
+            ],
+          )
+        : Row(
+            children: [
+              Padding(
+                padding: EdgeInsets.only(left: tokens.space3),
+                child: appTitle,
+              ),
+              const Spacer(),
+              Row(
                 children: [
-                  _TrafficLight(color: tokens.trafficRed, onTap: onClose),
-                  SizedBox(width: tokens.space2),
-                  _TrafficLight(color: tokens.trafficYellow),
-                  SizedBox(width: tokens.space2),
-                  _TrafficLight(color: tokens.trafficGreen),
+                  _CaptionButton(
+                    icon: LucideIcons.minus,
+                    size: 14,
+                    tokens: tokens,
+                    onPressed: controls.minimize,
+                  ),
+                  _CaptionButton(
+                    icon: LucideIcons.square,
+                    size: 12,
+                    tokens: tokens,
+                    onPressed: controls.toggleMaximize,
+                  ),
+                  _CaptionButton(
+                    icon: LucideIcons.x,
+                    size: 14,
+                    tokens: tokens,
+                    onPressed: onClose == null
+                        ? controls.hideToTray
+                        : () async => onClose!(),
+                  ),
                 ],
               ),
-            )
-          else
-            Padding(
-              padding: EdgeInsets.only(left: tokens.space3),
-              child: appTitle,
-            ),
-          if (isMac) ...[
-            const Spacer(),
-            Center(child: appTitle),
-            const Spacer(),
-          ] else
-            const Spacer(),
-          if (!isMac)
-            Row(
-              children: [
-                _CaptionButton(
-                  icon: LucideIcons.minus,
-                  size: 14,
-                  tokens: tokens,
-                ),
-                _CaptionButton(
-                  icon: LucideIcons.square,
-                  size: 12,
-                  tokens: tokens,
-                ),
-                _CaptionButton(
-                  icon: LucideIcons.x,
-                  size: 14,
-                  tokens: tokens,
-                  onPressed: onClose,
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TrafficLight extends StatelessWidget {
-  const _TrafficLight({required this.color, this.onTap});
-
-  final Color color;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = DesktopTokens.of(context);
+            ],
+          );
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: DesktopMetrics.trafficLightSize,
-        height: DesktopMetrics.trafficLightSize,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(color: tokens.trafficShadow, spreadRadius: 0.5),
-          ],
-        ),
-      ),
+      behavior: HitTestBehavior.opaque,
+      onPanStart: (_) => controls.startDragging(),
+      onDoubleTap: controls.toggleMaximize,
+      child: Container(height: height, color: tokens.canvas, child: content),
     );
   }
 }
 
-class _CaptionButton extends StatelessWidget {
+class _CaptionButton extends StatefulWidget {
   const _CaptionButton({
     required this.icon,
     required this.size,
     required this.tokens,
-    this.onPressed,
+    required this.onPressed,
   });
 
   final IconData icon;
   final double size;
   final DesktopTokens tokens;
-  final VoidCallback? onPressed;
+  final Future<void> Function() onPressed;
+
+  @override
+  State<_CaptionButton> createState() => _CaptionButtonState();
+}
+
+class _CaptionButtonState extends State<_CaptionButton> {
+  bool _hover = false;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: DesktopMetrics.captionButtonWidth,
-      height: DesktopMetrics.titleBarHeight,
-      child: InkWell(
-        onTap: onPressed,
-        child: Center(
-          child: Icon(icon, size: size, color: tokens.ink900),
+    final tokens = widget.tokens;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onPressed,
+        child: Container(
+          width: DesktopMetrics.captionButtonWidth,
+          height: DesktopMetrics.titleBarHeight,
+          color: _hover ? tokens.canvasStrong : Colors.transparent,
+          child: Center(
+            child: Icon(widget.icon, size: widget.size, color: tokens.ink900),
+          ),
         ),
       ),
     );
@@ -228,8 +219,8 @@ class _CaptionButton extends StatelessWidget {
 
 /// 独立窗口尺寸的页面容器：在画布中央放一个固定尺寸的窗口。
 ///
-/// 认证页 440×600、设置页 760×600 与设计稿一致；窗口大于设计尺寸时居中显示
-/// 卡片，小于设计尺寸时铺满（例如用户缩小窗口）。
+/// 认证页 440×600、设置页 760×600、首次引导 760×720 与设计稿一致；窗口大于
+/// 设计尺寸时居中显示卡片，小于设计尺寸时铺满（例如用户缩小窗口）。
 class AppWindowScaffold extends StatelessWidget {
   const AppWindowScaffold({
     required this.width,

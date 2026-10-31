@@ -11,10 +11,13 @@ import '../widgets/controls.dart';
 import '../widgets/file_icon.dart';
 
 class FolderTarget {
-  const FolderTarget({required this.id, required this.name});
+  const FolderTarget({required this.id, required this.name, this.path});
 
   final String id;
   final String name;
+
+  /// 从根开始的展示路径（`全部文件 / 电脑备份 / …`），用于备份目标。
+  final String? path;
 }
 
 /// 选择目标文件夹（移动文件、恢复到新位置共用）。
@@ -24,6 +27,7 @@ Future<FolderTarget?> showFolderPickerDialog({
   required String title,
   String? excludeNodeId,
   String? currentParentId,
+  String confirmLabel = '移动到这里',
 }) {
   return showTokensDialog<FolderTarget>(
     context: context,
@@ -32,6 +36,7 @@ Future<FolderTarget?> showFolderPickerDialog({
       title: title,
       excludeNodeId: excludeNodeId,
       currentParentId: currentParentId,
+      confirmLabel: confirmLabel,
     ),
   );
 }
@@ -42,12 +47,14 @@ class _FolderPickerDialog extends ConsumerStatefulWidget {
     required this.title,
     this.excludeNodeId,
     this.currentParentId,
+    this.confirmLabel = '移动到这里',
   });
 
   final String rootId;
   final String title;
   final String? excludeNodeId;
   final String? currentParentId;
+  final String confirmLabel;
 
   @override
   ConsumerState<_FolderPickerDialog> createState() =>
@@ -60,6 +67,7 @@ class _FolderPickerDialogState extends ConsumerState<_FolderPickerDialog> {
   final List<FolderTarget> _crumbs = <FolderTarget>[
     const FolderTarget(id: '', name: '全部文件'),
   ];
+  String _path = '全部文件';
   List<NodeDto> _folders = const <NodeDto>[];
   bool _loading = true;
   String? _error;
@@ -67,7 +75,7 @@ class _FolderPickerDialogState extends ConsumerState<_FolderPickerDialog> {
   @override
   void initState() {
     super.initState();
-    _crumbs[0] = FolderTarget(id: widget.rootId, name: '全部文件');
+    _crumbs[0] = FolderTarget(id: widget.rootId, name: '全部文件', path: '全部文件');
     _load(widget.rootId);
   }
 
@@ -107,7 +115,8 @@ class _FolderPickerDialogState extends ConsumerState<_FolderPickerDialog> {
     setState(() {
       _folderId = folder.id;
       _folderName = folder.name;
-      _crumbs.add(FolderTarget(id: folder.id, name: folder.name));
+      _path = '$_path / ${folder.name}';
+      _crumbs.add(FolderTarget(id: folder.id, name: folder.name, path: _path));
       _folders = const <NodeDto>[];
     });
     _load(folder.id);
@@ -118,6 +127,7 @@ class _FolderPickerDialogState extends ConsumerState<_FolderPickerDialog> {
     setState(() {
       _folderId = target.id;
       _folderName = target.name;
+      _path = target.path ?? target.name;
       _crumbs.removeRange(index + 1, _crumbs.length);
       _folders = const <NodeDto>[];
     });
@@ -188,13 +198,13 @@ class _FolderPickerDialogState extends ConsumerState<_FolderPickerDialog> {
       actions: [
         TokensButton(label: '取消', onPressed: () => Navigator.of(context).pop()),
         TokensButton(
-          label: '移动到这里',
+          label: widget.confirmLabel,
           variant: TokensButtonVariant.primary,
           onPressed: _disabled
               ? null
-              : () =>
-                    Navigator.of(context)
-                        .pop(FolderTarget(id: _folderId, name: _folderName)),
+              : () => Navigator.of(context).pop(
+                  FolderTarget(id: _folderId, name: _folderName, path: _path),
+                ),
         ),
       ],
     );

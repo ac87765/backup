@@ -50,6 +50,12 @@ final backupSummaryProvider = FutureProvider<BackupSummaryDto>((ref) async {
   return ref.watch(nativeBridgeProvider).backupSummary();
 });
 
+/// 全局备份设置（隐藏文件、上传限速、全局暂停）；设置页读取/写回。
+final backupSettingsProvider = FutureProvider<BackupSettingsDto>((ref) async {
+  await ref.watch(bootstrapProvider.future);
+  return ref.watch(nativeBridgeProvider).backupSettings();
+});
+
 /// 已用 / 预留 / 配额；登录后加载，写操作后 invalidate。
 final usageProvider = FutureProvider<UsageDto>((ref) async {
   await ref.watch(bootstrapProvider.future);

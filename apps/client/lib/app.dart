@@ -9,6 +9,7 @@ import 'core/router/app_router.dart';
 import 'core/router/destinations.dart';
 import 'core/theme/app_theme.dart';
 import 'desktop/router/desktop_routes.dart';
+import 'desktop/settings/local_settings.dart';
 
 /// 当前构建是否启用桌面专有路由（Windows / macOS）。
 final bool isDesktopPlatform = Platform.isWindows || Platform.isMacOS;
@@ -23,7 +24,7 @@ List<AppDestination> destinationsForPlatform({bool? desktop}) {
             .toList(growable: false);
 }
 
-/// 生产路由：认证守卫 + 桌面入口注入备份文件夹页面。
+/// 生产路由：认证守卫 + 桌面入口注入备份文件夹 / 首次引导。
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = _AuthRefresh(ref);
   ref.onDispose(refresh.dispose);
@@ -32,23 +33,34 @@ final routerProvider = Provider<GoRouter>((ref) {
     extraShellRoutes: isDesktopPlatform
         ? <RouteBase>[backupFoldersRoute]
         : const <RouteBase>[],
+    extraRoutes: isDesktopPlatform
+        ? <RouteBase>[onboardingRoute]
+        : const <RouteBase>[],
     authStage: () => ref.read(authControllerProvider).stage,
+    needsOnboarding: isDesktopPlatform
+        ? () => ref.read(onboardingRequiredProvider)
+        : null,
     refreshListenable: refresh,
   );
 });
 
 class _AuthRefresh extends ChangeNotifier {
   _AuthRefresh(Ref ref) {
-    _subscription = ref.listen(authControllerProvider, (previous, next) {
+    _auth = ref.listen(authControllerProvider, (previous, next) {
+      notifyListeners();
+    });
+    _settings = ref.listen(localSettingsProvider, (previous, next) {
       notifyListeners();
     });
   }
 
-  late final ProviderSubscription<AuthState> _subscription;
+  late final ProviderSubscription<AuthState> _auth;
+  late final ProviderSubscription<LocalSettings?> _settings;
 
   @override
   void dispose() {
-    _subscription.close();
+    _auth.close();
+    _settings.close();
     super.dispose();
   }
 }

@@ -72,7 +72,12 @@ class _TokensButtonState extends State<TokensButton> {
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: Opacity(
-        opacity: enabled ? 1.0 : 0.8,
+        // 设计稿：处理中（login.html working）0.8；不可用（add-folder.html quota）0.45。
+        opacity: enabled
+            ? 1.0
+            : widget.busy
+            ? DesktopMetrics.busyOpacity
+            : DesktopMetrics.disabledOpacity,
         child: SizedBox(
           width: widget.block ? double.infinity : null,
           height: height,

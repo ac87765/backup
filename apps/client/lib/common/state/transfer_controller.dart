@@ -251,6 +251,18 @@ class TransferController extends Notifier<TransferState> {
     }
   }
 
+  Future<void> startUploadFolder(String parentId, String localDir) async {
+    _requireWritable();
+    final id = await ref
+        .read(nativeBridgeProvider)
+        .startUploadFolder(parentId, localDir);
+    final name = baseName(localDir);
+    _knownNames[id] = name;
+    _upsert(
+      TransferItem(id: id, name: name, kind: TransferJobKind.uploadFolder),
+    );
+  }
+
   Future<void> startUploadNewVersion(String nodeId, String path) async {
     _requireWritable();
     final id = await ref
@@ -287,6 +299,7 @@ class TransferController extends Notifier<TransferState> {
     required String folderId,
     required String folderName,
     required String destinationRoot,
+    ConflictPolicyDto policy = ConflictPolicyDto.keepBoth,
   }) async {
     final id = await ref
         .read(nativeBridgeProvider)
@@ -294,7 +307,7 @@ class TransferController extends Notifier<TransferState> {
           folderId: folderId,
           folderName: folderName,
           destinationRoot: destinationRoot,
-          policy: ConflictPolicyDto.keepBoth,
+          policy: policy,
         );
     _knownNames[id] = folderName;
     _upsert(

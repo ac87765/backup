@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -8,10 +11,13 @@ import '../../core/format/format.dart';
 import '../../core/platform/file_picker.dart';
 import '../../core/rust/models.dart';
 import '../../core/theme/design_tokens.dart';
+import '../../desktop/dialogs/restore_folder_dialog.dart';
+import '../../desktop/transfer/drop_router.dart';
 import '../dialogs/folder_picker_dialog.dart';
 import '../dialogs/name_dialog.dart';
 import '../dialogs/versions_dialog.dart';
 import '../state/file_browser_controller.dart';
+import '../state/file_drop_controller.dart';
 import '../state/transfer_controller.dart';
 import '../widgets/controls.dart';
 import '../widgets/file_icon.dart';
@@ -50,16 +56,49 @@ class _FilesPageState extends ConsumerState<FilesPage> {
         );
       });
     }
+    final canWrite = ref.read(fileBrowserProvider.notifier).canWrite;
+    final dragging = ref.watch(fileDropOverlayProvider);
     return Column(
       children: [
         _Toolbar(
           state: state,
           filterController: _filter,
           onUpload: _uploadFiles,
+          onUploadFolder: _uploadFolder,
           onCreateFolder: _createFolder,
           onRefresh: () => ref.read(fileBrowserProvider.notifier).refresh(),
         ),
-        Expanded(child: _content(state)),
+        Expanded(
+          child: DropTarget(
+            key: const Key('file-drop-target'),
+            enable: canWrite,
+            onDragEntered: (_) =>
+                ref.read(fileDropOverlayProvider.notifier).setVisible(true),
+            onDragExited: (_) =>
+                ref.read(fileDropOverlayProvider.notifier).setVisible(false),
+            onDragDone: (details) {
+              ref.read(fileDropOverlayProvider.notifier).setVisible(false);
+              unawaited(
+                _handleDropped(<String>[
+                  for (final file in details.files) file.path,
+                ]),
+              );
+            },
+            child: Stack(
+              children: [
+                Positioned.fill(child: _content(state)),
+                if (dragging)
+                  Positioned.fill(
+                    child: _DropOverlay(
+                      folderName: state.crumbs.isEmpty
+                          ? '全部文件'
+                          : state.crumbs.last.name,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -192,6 +231,12 @@ class _FilesPageState extends ConsumerState<FilesPage> {
             label: '打开',
             icon: LucideIcons.folderOpen,
             onSelected: () => _openNode(node),
+          ),
+        if (folder)
+          TokensMenuItem(
+            label: '下载到电脑…',
+            icon: LucideIcons.download,
+            onSelected: () => _downloadFolder(node),
           ),
         if (!folder)
           TokensMenuItem(
@@ -375,6 +420,75 @@ class _FilesPageState extends ConsumerState<FilesPage> {
     }
   }
 
+  Future<void> _uploadFolder() async {
+    if (!ref.read(fileBrowserProvider.notifier).canWrite) {
+      _showMessage('账号通过审核后才能上传和备份文件');
+      return;
+    }
+    final parent = ref.read(fileBrowserProvider).currentFolderId;
+    if (parent == null) {
+      return;
+    }
+    final path = await ref.read(filePickerProvider).pickDirectory();
+    if (path == null || !mounted) {
+      return;
+    }
+    try {
+      await ref
+          .read(transferControllerProvider.notifier)
+          .startUploadFolder(parent, path);
+      if (mounted) {
+        _showMessage('已开始上传文件夹“${baseName(path)}”');
+      }
+    } catch (error) {
+      if (mounted) {
+        _showMessage(bridgeErrorText(error));
+      }
+    }
+  }
+
+  Future<void> _handleDropped(List<String> paths) async {
+    if (paths.isEmpty || !mounted) {
+      return;
+    }
+    if (!ref.read(fileBrowserProvider.notifier).canWrite) {
+      _showMessage('账号通过审核后才能上传和备份文件');
+      return;
+    }
+    final parent = ref.read(fileBrowserProvider).currentFolderId;
+    if (parent == null) {
+      return;
+    }
+    final transfers = ref.read(transferControllerProvider.notifier);
+    try {
+      await handleDroppedPaths(
+        paths: paths,
+        uploadFiles: (files) => transfers.startUploadFiles(parent, files),
+        uploadFolder: (folder) => transfers.startUploadFolder(parent, folder),
+      );
+      if (mounted) {
+        _showMessage('已开始上传 ${paths.length} 项');
+      }
+    } catch (error) {
+      if (mounted) {
+        _showMessage(bridgeErrorText(error));
+      }
+    }
+  }
+
+  Future<void> _downloadFolder(NodeDto node) async {
+    final started = await showRestoreFolderDialog(
+      context: context,
+      folderId: node.id,
+      folderName: node.name,
+      detail: '文件夹 · 保留完整目录结构',
+    );
+    if (started && mounted) {
+      ref.read(transferPanelOpenProvider.notifier).open();
+      _showMessage('已开始下载“${node.name}”');
+    }
+  }
+
   Future<void> _uploadNewVersion(NodeDto node) async {
     final paths = await ref.read(filePickerProvider).pickFiles();
     if (paths.isEmpty || !mounted) {
@@ -410,6 +524,7 @@ class _Toolbar extends ConsumerWidget {
     required this.state,
     required this.filterController,
     required this.onUpload,
+    required this.onUploadFolder,
     required this.onCreateFolder,
     required this.onRefresh,
   });
@@ -417,6 +532,7 @@ class _Toolbar extends ConsumerWidget {
   final FileBrowserState state;
   final TextEditingController filterController;
   final VoidCallback onUpload;
+  final VoidCallback onUploadFolder;
   final VoidCallback onCreateFolder;
   final VoidCallback onRefresh;
 
@@ -481,7 +597,11 @@ class _Toolbar extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 8),
-          _UploadButton(canWrite: canWrite, onUpload: onUpload),
+          _UploadButton(
+            canWrite: canWrite,
+            onUpload: onUpload,
+            onUploadFolder: onUploadFolder,
+          ),
         ],
       ),
     );
@@ -489,21 +609,89 @@ class _Toolbar extends ConsumerWidget {
 }
 
 class _UploadButton extends StatelessWidget {
-  const _UploadButton({required this.canWrite, required this.onUpload});
+  const _UploadButton({
+    required this.canWrite,
+    required this.onUpload,
+    required this.onUploadFolder,
+  });
 
   final bool canWrite;
   final VoidCallback onUpload;
+  final VoidCallback onUploadFolder;
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: canWrite ? '上传文件' : '账号通过审核后才能上传',
-      child: TokensButton(
-        label: '上传',
-        icon: LucideIcons.upload,
-        trailingIcon: LucideIcons.chevronDown,
-        variant: TokensButtonVariant.primary,
-        onPressed: canWrite ? onUpload : null,
+      message: canWrite ? '上传文件或文件夹' : '账号通过审核后才能上传',
+      child: Builder(
+        builder: (buttonContext) => TokensButton(
+          key: const Key('upload-menu-button'),
+          label: '上传',
+          icon: LucideIcons.upload,
+          trailingIcon: LucideIcons.chevronDown,
+          variant: TokensButtonVariant.primary,
+          onPressed: canWrite
+              ? () => showTokensMenu(
+                  context: context,
+                  anchor: anchorOf(buttonContext),
+                  items: [
+                    TokensMenuItem(
+                      label: '上传文件',
+                      icon: LucideIcons.upload,
+                      onSelected: onUpload,
+                    ),
+                    TokensMenuItem(
+                      label: '上传文件夹',
+                      icon: LucideIcons.folderUp,
+                      onSelected: onUploadFolder,
+                    ),
+                  ],
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+class _DropOverlay extends StatelessWidget {
+  const _DropOverlay({required this.folderName});
+
+  final String folderName;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DesktopTokens.of(context);
+    return Container(
+      key: const Key('file-drop-overlay'),
+      margin: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: tokens.brand50.withValues(alpha: 0.92),
+        border: Border.all(color: tokens.brand600, width: 2),
+        borderRadius: BorderRadius.circular(tokens.radiusCard),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.cloudUpload, size: 40, color: tokens.brand700),
+            const SizedBox(height: 10),
+            Text(
+              '松开即可上传到“$folderName”',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: tokens.brand700,
+                fontSize: tokens.textLg,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '文件夹会保留目录结构',
+              style: TextStyle(color: tokens.brand700, fontSize: tokens.textXs),
+            ),
+          ],
+        ),
       ),
     );
   }

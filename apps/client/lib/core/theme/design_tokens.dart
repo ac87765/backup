@@ -353,6 +353,20 @@ class DesktopTokens {
 /// 对应的 CSS 变量，但同样来自 `design/desktop/tokens.css` 与各 HTML 的
 /// 源码（注释中标出出处）。集中放在这里，避免组件里出现零散魔法数字。
 abstract final class DesktopMetrics {
+  // 等宽字体（tokens.css `.mono`）：本地路径等。等宽字体没有中文字形，
+  // macOS 没有 Cascadia，因此带回退列表。
+  static const String monoFamily = 'Cascadia Mono';
+  static const List<String> monoFallback = <String>[
+    'Consolas',
+    'Menlo',
+    'Microsoft YaHei UI',
+    'PingFang SC',
+  ];
+
+  // 按钮不透明度（login.html working / add-folder.html quota 的内联样式）。
+  static const double busyOpacity = 0.8;
+  static const double disabledOpacity = 0.45;
+
   // 窗口（tokens.css `.window` / `.titlebar`）。
   static const double windowRadius = 8;
   static const double windowRadiusMac = 10;
@@ -416,6 +430,13 @@ abstract final class DesktopMetrics {
   static const double settingsWindowWidth = 760;
   static const double settingsWindowHeight = 600;
   static const double settingsTabsWidth = 188;
+
+  // 首次引导窗口（onboarding.html）。
+  static const double onboardingWindowWidth = 760;
+  static const double onboardingWindowHeight = 720;
+
+  // 添加备份文件夹对话框（add-folder.html，宽 560）。
+  static const double backupFolderDialogWidth = 560;
 
   /// 文件列表每页显示数量。桥接 `list_folder` 目前一次返回全部（client-core
   /// 内部已聚合服务端分页），界面按这个大小做本地分页加载。

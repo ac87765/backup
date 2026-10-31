@@ -5,14 +5,16 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/config/app_config.dart';
-import '../../core/errors/bridge_error_text.dart';
 import '../../core/platform/external_links.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/rust/models.dart';
 import '../../core/theme/design_tokens.dart';
+import '../../desktop/startup/startup_service.dart';
+import '../dialogs/keep_unlocked_dialog.dart';
 import '../state/auth_controller.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/controls.dart';
+import '../widgets/popover_menu.dart';
 import '../widgets/window_frame.dart';
 
 enum SettingsTab { general, security, account, about }
@@ -124,10 +126,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       await auth.disableKeepUnlocked();
       return;
     }
-    await showTokensDialog<bool>(
-      context: context,
-      builder: (dialogContext) => const _KeepUnlockedDialog(),
-    );
+    await showKeepUnlockedDialog(context);
   }
 
   Future<void> _logout() async {
@@ -231,13 +230,93 @@ class _TabItem extends StatelessWidget {
   }
 }
 
-class _GeneralPanel extends StatelessWidget {
+class _GeneralPanel extends ConsumerStatefulWidget {
   const _GeneralPanel({required this.tokens});
 
   final DesktopTokens tokens;
 
   @override
+  ConsumerState<_GeneralPanel> createState() => _GeneralPanelState();
+}
+
+class _GeneralPanelState extends ConsumerState<_GeneralPanel> {
+  bool _busy = false;
+
+  static const _speeds = <_SpeedOption>[
+    _SpeedOption(label: '不限制', bytesPerSecond: null),
+    _SpeedOption(label: '1 MB/s', bytesPerSecond: 1000000),
+    _SpeedOption(label: '5 MB/s', bytesPerSecond: 5000000),
+    _SpeedOption(label: '10 MB/s', bytesPerSecond: 10000000),
+  ];
+
+  Future<void> _setStartup(bool enabled) async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(startupServiceProvider).setEnabled(enabled);
+      ref.invalidate(startupEnabledProvider);
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<void> _setSpeed(int? bytesPerSecond) async {
+    final settings = ref.read(backupSettingsProvider).value;
+    if (settings == null) {
+      return;
+    }
+    await _save(
+      BackupSettingsDto(
+        includeHidden: settings.includeHidden,
+        uploadLimitBytesPerSecond: bytesPerSecond,
+        paused: settings.paused,
+      ),
+    );
+  }
+
+  Future<void> _setIncludeHidden(bool includeHidden) async {
+    final settings = ref.read(backupSettingsProvider).value;
+    if (settings == null) {
+      return;
+    }
+    await _save(
+      BackupSettingsDto(
+        includeHidden: includeHidden,
+        uploadLimitBytesPerSecond: settings.uploadLimitBytesPerSecond,
+        paused: settings.paused,
+      ),
+    );
+  }
+
+  Future<void> _save(BackupSettingsDto settings) async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(nativeBridgeProvider).backupSetSettings(settings);
+      ref.invalidate(backupSettingsProvider);
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  String _speedLabel(int? bytesPerSecond) {
+    for (final speed in _speeds) {
+      if (speed.bytesPerSecond == bytesPerSecond) {
+        return speed.label;
+      }
+    }
+    return '不限制';
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final tokens = widget.tokens;
+    final settings = ref.watch(backupSettingsProvider).value;
+    final startup = ref.watch(startupEnabledProvider).value ?? false;
+    final isMac = defaultTargetPlatform == TargetPlatform.macOS;
+    final trayName = isMac ? '屏幕顶部的菜单栏' : '任务栏右下角的托盘';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -247,39 +326,116 @@ class _GeneralPanel extends StatelessWidget {
           tokens: tokens,
           title: '开机时自动启动',
           description: '登录系统后在后台启动，继续备份。',
-          control: TokensToggle(value: false, onChanged: null),
+          control: TokensToggle(
+            key: const Key('startup-toggle'),
+            value: startup,
+            onChanged: _busy ? null : _setStartup,
+          ),
         ),
         _SettingRow(
           tokens: tokens,
           title: '关闭窗口时',
-          description: '加密备份会留在任务栏右下角的托盘里继续工作。要完全退出，请在托盘菜单中选择“退出”。',
+          description: '加密备份会留在$trayName里继续工作。要完全退出，请在托盘菜单中选择“退出”。',
         ),
         _GroupTitle(tokens: tokens, text: '备份'),
         _SettingRow(
           tokens: tokens,
           title: '上传速度限制',
           description: '限制后台备份占用的带宽，手动上传不受影响。',
-          control: const _SelectPlaceholder(label: '不限制'),
-        ),
-        _SettingRow(
-          tokens: tokens,
-          title: '使用电池时暂停备份',
-          description: '笔记本未接电源时暂停，接上电源后自动继续。',
-          control: TokensToggle(value: false, onChanged: null),
+          control: _SpeedSelect(
+            key: const Key('speed-limit-select'),
+            tokens: tokens,
+            label: _speedLabel(settings?.uploadLimitBytesPerSecond),
+            enabled: settings != null && !_busy,
+            options: _speeds,
+            onSelected: _setSpeed,
+          ),
         ),
         _SettingRow(
           tokens: tokens,
           title: '备份隐藏文件',
           description: '以“.”开头或带隐藏属性的文件。系统与临时文件始终不备份。',
-          control: TokensToggle(value: false, onChanged: null),
-        ),
-        SizedBox(height: tokens.space4),
-        const TokensNote(
-          text:
-              '开机启动、关闭到托盘、上传限速与隐藏文件属于桌面专有功能，'
-              '将在后续版本接入（当前仅展示位置）。',
+          control: TokensToggle(
+            key: const Key('backup-hidden-toggle'),
+            value: settings?.includeHidden ?? false,
+            onChanged: settings == null || _busy ? null : _setIncludeHidden,
+          ),
         ),
       ],
+    );
+  }
+}
+
+class _SpeedOption {
+  const _SpeedOption({required this.label, required this.bytesPerSecond});
+
+  final String label;
+  final int? bytesPerSecond;
+}
+
+class _SpeedSelect extends StatelessWidget {
+  const _SpeedSelect({
+    required this.tokens,
+    required this.label,
+    required this.enabled,
+    required this.options,
+    required this.onSelected,
+    super.key,
+  });
+
+  final DesktopTokens tokens;
+  final String label;
+  final bool enabled;
+  final List<_SpeedOption> options;
+  final ValueChanged<int?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Builder(
+      builder: (buttonContext) => Opacity(
+        opacity: enabled ? 1 : 0.55,
+        child: InkWell(
+          onTap: enabled
+              ? () => showTokensMenu(
+                  context: context,
+                  anchor: anchorOf(buttonContext),
+                  items: [
+                    for (final option in options)
+                      TokensMenuItem(
+                        label: option.label,
+                        icon: option.label == label
+                            ? LucideIcons.check
+                            : LucideIcons.minus,
+                        onSelected: () => onSelected(option.bytesPerSecond),
+                      ),
+                  ],
+                )
+              : null,
+          borderRadius: BorderRadius.circular(tokens.radiusControl),
+          child: Container(
+            height: DesktopMetrics.buttonHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              border: Border.all(color: tokens.lineStrong),
+              borderRadius: BorderRadius.circular(tokens.radiusControl),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: tokens.ink900,
+                    fontSize: tokens.textSm,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(LucideIcons.chevronDown, size: 14, color: tokens.ink500),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -680,139 +836,13 @@ class _DescriptionRow extends StatelessWidget {
               style: TextStyle(
                 color: tokens.ink900,
                 fontSize: mono ? tokens.textXs : tokens.textSm,
-                fontFamily: mono ? 'Cascadia Mono' : null,
+                fontFamily: mono ? DesktopMetrics.monoFamily : null,
+                fontFamilyFallback: mono ? DesktopMetrics.monoFallback : null,
               ),
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-/// 开启“保持解锁”前的风险确认（settings.html 的 confirm 状态）。
-class _KeepUnlockedDialog extends ConsumerStatefulWidget {
-  const _KeepUnlockedDialog();
-
-  @override
-  ConsumerState<_KeepUnlockedDialog> createState() =>
-      _KeepUnlockedDialogState();
-}
-
-class _KeepUnlockedDialogState extends ConsumerState<_KeepUnlockedDialog> {
-  final TextEditingController _password = TextEditingController();
-  String? _error;
-  bool _busy = false;
-
-  @override
-  void dispose() {
-    _password.dispose();
-    super.dispose();
-  }
-
-  Future<void> _confirm() async {
-    if (_password.text.isEmpty) {
-      setState(() => _error = '请输入密码');
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      await ref
-          .read(authControllerProvider.notifier)
-          .enableKeepUnlocked(_password.text);
-      if (!mounted) {
-        return;
-      }
-      Navigator.of(context).pop(true);
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _busy = false;
-        _error = bridgeErrorText(error);
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = DesktopTokens.of(context);
-    return TokensDialogShell(
-      title: '开启“保持解锁”？',
-      width: DesktopMetrics.dialogWidthSmall,
-      headerIcon: LucideIcons.alertTriangle,
-      headerIconColor: tokens.warning600,
-      headerIconBackground: tokens.warning50,
-      onClose: _busy ? () {} : () => Navigator.of(context).pop(false),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '开启后，任何能登录这台电脑系统账号的人都可以打开加密备份并查看、下载你的文件。',
-            style: TextStyle(
-              color: tokens.ink900,
-              fontSize: tokens.textSm,
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '只建议在你独自使用、并设有开机密码的电脑上开启。退出登录或修改密码时会自动关闭。',
-            style: TextStyle(
-              color: tokens.ink500,
-              fontSize: tokens.textXs,
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            '输入密码以确认',
-            style: TextStyle(
-              color: tokens.ink900,
-              fontSize: tokens.textSm,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 6),
-          AppTextField(
-            key: const Key('keep-unlocked-password'),
-            controller: _password,
-            obscure: true,
-            enabled: !_busy,
-            error: _error != null,
-            autofocus: true,
-            autofillHints: const <String>[AutofillHints.password],
-            onSubmitted: (_) => _confirm(),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              _error!,
-              style: TextStyle(
-                color: tokens.danger700,
-                fontSize: tokens.textXs,
-              ),
-            ),
-          ],
-        ],
-      ),
-      actions: [
-        TokensButton(
-          key: const Key('keep-unlocked-cancel'),
-          label: '取消',
-          onPressed: _busy ? null : () => Navigator.of(context).pop(false),
-        ),
-        TokensButton(
-          key: const Key('keep-unlocked-confirm'),
-          label: _busy ? '开启中…' : '开启',
-          variant: TokensButtonVariant.primary,
-          onPressed: _busy ? null : _confirm,
-        ),
-      ],
     );
   }
 }

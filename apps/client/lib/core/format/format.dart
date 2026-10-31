@@ -1,6 +1,6 @@
 /// 界面展示用的格式化函数（中文文案、十进制单位）。
 ///
-/// 与 Web 的 `web/src/files/format.ts` 对齐：字节用 KB/MB/GB（1000 进制），
+/// 按 `design/desktop/` 界面稿：字节用 KB/MB/GB（1000 进制，Web 端用 KiB 等二进制单位，两者不同），
 /// 时间显示为“今天 09:12 / 昨天 18:40 / 10月27日 16:22”。
 library;
 
@@ -22,9 +22,14 @@ String formatBytes(int? bytes) {
     value /= 1000;
     unit += 1;
   }
-  final text = value >= 10
-      ? value.round().toString()
-      : value.toStringAsFixed(1);
+  // 与设计稿一致：KB / MB 小于 10 时保留一位小数（2.4 MB、48 KB、412 MB）；
+  // GB 及以上小于 100 时保留一位小数（12.4 GB、37.6 GB），配额对比需要这个精度。
+  final decimals = unit >= 2 ? value < 100 : value < 10;
+  var text = decimals ? value.toStringAsFixed(1) : value.round().toString();
+  // 整数值不显示 “.0”（设计稿：50 GB，而不是 50.0 GB）。
+  if (text.endsWith('.0')) {
+    text = text.substring(0, text.length - 2);
+  }
   return '$text ${units[unit]}';
 }
 
@@ -91,6 +96,54 @@ String formatDateTime(DateTime value, {DateTime? now}) {
     return '${local.month}月${local.day}日 $clock';
   }
   return '${local.year}年${local.month}月${local.day}日 $clock';
+}
+
+/// 最近活动时间：`刚刚` / `5 分钟前` / `10:05` / 日期。
+String formatRelativeTime(int unixSeconds, {DateTime? now}) {
+  if (unixSeconds <= 0) {
+    return '—';
+  }
+  final at = DateTime.fromMillisecondsSinceEpoch(unixSeconds * 1000).toLocal();
+  final current = now ?? DateTime.now();
+  final difference = current.difference(at);
+  if (difference.inSeconds < 60) {
+    return '刚刚';
+  }
+  if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} 分钟前';
+  }
+  final today = DateTime(current.year, current.month, current.day);
+  final day = DateTime(at.year, at.month, at.day);
+  if (today == day) {
+    return '${_pad(at.hour)}:${_pad(at.minute)}';
+  }
+  return formatDateTime(at, now: current);
+}
+
+/// Unix 秒 → 当天的 `HH:mm`（最近活动里的“内容未变”时间）。
+String formatClockTime(int unixSeconds) {
+  if (unixSeconds <= 0) {
+    return '—';
+  }
+  final at = DateTime.fromMillisecondsSinceEpoch(unixSeconds * 1000).toLocal();
+  return '${_pad(at.hour)}:${_pad(at.minute)}';
+}
+
+/// 备份文件夹卡片上的最近备份时间：一小时以内用相对时间，否则用日期时间。
+String formatBackupTime(int? unixSeconds, {DateTime? now}) {
+  if (unixSeconds == null || unixSeconds <= 0) {
+    return '—';
+  }
+  final at = DateTime.fromMillisecondsSinceEpoch(unixSeconds * 1000).toLocal();
+  final current = now ?? DateTime.now();
+  final difference = current.difference(at);
+  if (difference.inSeconds < 60) {
+    return '刚刚';
+  }
+  if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} 分钟前';
+  }
+  return formatDateTime(at, now: current);
 }
 
 /// 千分位计数，例如 `2,140`。

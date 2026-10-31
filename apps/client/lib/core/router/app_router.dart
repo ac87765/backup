@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../common/pages/files_page.dart';
@@ -21,7 +21,9 @@ import 'destinations.dart';
 GoRouter buildAppRouter({
   List<AppDestination>? destinations,
   List<RouteBase> extraShellRoutes = const <RouteBase>[],
+  List<RouteBase> extraRoutes = const <RouteBase>[],
   AuthStage Function()? authStage,
+  bool Function()? needsOnboarding,
   Listenable? refreshListenable,
 }) {
   final visibleDestinations =
@@ -30,6 +32,10 @@ GoRouter buildAppRouter({
           .where((destination) => !destination.desktopOnly)
           .toList(growable: false);
   return GoRouter(
+    // 每个路由实例使用自己的 key：全局共享的 GlobalKey 会在路由重建或多个
+    // ProviderScope（测试）时出现重复 key。需要根上下文时用
+    // router.routerDelegate.navigatorKey。
+    navigatorKey: GlobalKey<NavigatorState>(),
     initialLocation: '/splash',
     refreshListenable: refreshListenable,
     redirect: (context, state) {
@@ -49,6 +55,12 @@ GoRouter buildAppRouter({
         case AuthStage.pending:
           return path == '/pending' ? null : '/pending';
         case AuthStage.ready:
+          if (needsOnboarding?.call() ?? false) {
+            return path == '/onboarding' ? null : '/onboarding';
+          }
+          if (path == '/onboarding') {
+            return '/files';
+          }
           if (path == '/splash' ||
               path == '/login' ||
               path == '/unlock' ||
@@ -71,6 +83,7 @@ GoRouter buildAppRouter({
         path: '/settings',
         builder: (context, state) => const SettingsPage(),
       ),
+      ...extraRoutes,
       ShellRoute(
         builder: (context, state, child) {
           return AppShell(

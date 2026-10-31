@@ -8,6 +8,10 @@ abstract class FilePicker {
 
   /// 选择保存位置；取消时返回 null。
   Future<String?> pickSaveLocation(String suggestedName);
+
+  /// 选择本地文件夹（添加备份文件夹、上传文件夹、下载到本地）；
+  /// 取消时返回 null。
+  Future<String?> pickDirectory();
 }
 
 /// 生产实现：调用系统文件选择器。
@@ -25,6 +29,9 @@ class PlatformFilePicker implements FilePicker {
     final location = await getSaveLocation(suggestedName: suggestedName);
     return location?.path;
   }
+
+  @override
+  Future<String?> pickDirectory() => getDirectoryPath();
 }
 
 /// 文件选择器入口；测试中 override 成假实现，避免触达平台通道。
