@@ -53,7 +53,7 @@
 
 ## 7. 打包与验收
 
-- [ ] 7.1 Windows 安装包（Inno Setup，本机与 CI 均可生成）与 macOS .dmg（由 CI 的 macos 运行器构建、ad-hoc 签名，作为 Actions artifact 下载，用户 Mac 上无需开发环境）
+- [x] 7.1 Windows 安装包（Inno Setup，本机与 CI 均可生成）与 macOS .dmg（由 CI 的 macos 运行器构建、ad-hoc 签名，作为 Actions artifact 下载，用户 Mac 上无需开发环境）
 - [x] 7.2 安装与使用说明（未签名应用首次打开方法）
 - [ ] 7.3 Windows 真机验收：登录、浏览、上传下载、文件夹备份全流程、托盘、开机启动、保持解锁、与 Web 互通
 - [ ] 7.4 macOS：CI 构建通过并产出 .dmg；编写 macOS 验收清单并更新 `docs/macos-handoff.md`（用户之后在 Mac 上新开会话，下载 CI 产物安装验收，发现问题时才在 Mac 上搭环境修复）

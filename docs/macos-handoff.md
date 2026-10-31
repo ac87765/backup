@@ -41,9 +41,8 @@ macOS 验收应在第 1–7 组的 Windows 部分全部合并、Windows 版验�
 2. 解压得到 `加密备份-<版本>-macos.dmg`，双击打开，把应用拖到“应用程序”，然后推出 dmg。
 3. 首次打开：应用未经 Apple 公证，会提示无法验证开发者。在访达中右键应用 →“打开”→ 确认；或执行
    `xattr -dr com.apple.quarantine "/Applications/加密备份.app"` 去掉下载隔离标记。
-4. 先确认 Mac 的芯片（ → 关于本机）。CI 运行器是 Apple Silicon，产物默认为 **arm64**；若用户的 Mac 是 Intel 芯片且应用无法启动，
-   用 `lipo -archs "/Applications/加密备份.app/Contents/MacOS/加密备份"` 查看架构，并把“需要 x86_64 / universal 构建”作为问题记录
-   （CI 日志中也会打印同一命令的结果）。
+4. 架构：CI 产物是 **universal**（2026-10-31 的 CI 日志 `lipo -archs` 输出 `x86_64 arm64`），Intel 与 Apple Silicon 都能运行。
+   若应用无法启动，用 `lipo -archs "/Applications/加密备份.app/Contents/MacOS/加密备份"` 核对，并记录为问题。
 
 ## 3. 至今在 macOS 上从未真机运行过的部分（重点验证）
 
