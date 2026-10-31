@@ -133,6 +133,27 @@ async fn pending_account_login_reports_pending_and_no_write_access() {
 }
 
 #[tokio::test]
+async fn pending_account_write_is_rejected_locally_before_http() {
+    let env = environment().await;
+    let server = start_server(env).await;
+    let user = create_user(&server.database, "pending", false, PASSWORD).await;
+    let client = Client::new(&server.base_url, Arc::new(MemorySecretStore::new())).unwrap();
+    client.login(&user.email, &user.password).await.unwrap();
+
+    let error = client
+        .create_folder(user.root_node_id, "pending-folder")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ClientError::AccountNotWritable(AccountStatus::Pending)
+        ),
+        "待审核账号必须在客户端直接得到明确错误：{error:?}"
+    );
+}
+
+#[tokio::test]
 async fn invalid_session_clears_session_and_master_key() {
     let env = environment().await;
     let server = start_server(env).await;

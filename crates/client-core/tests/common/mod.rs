@@ -336,6 +336,8 @@ pub struct TestUser {
     pub email: String,
     pub password: String,
     pub root_node_id: Uuid,
+    /// 测试账号的主密钥；仅测试用于独立验证客户端上传的密文。
+    pub master_key: MasterKey,
 }
 
 /// 直接写库创建一个账号（不经过注册接口；注册不在第 1 组范围）。
@@ -411,6 +413,7 @@ pub async fn create_user(
         email,
         password: password.to_owned(),
         root_node_id,
+        master_key,
     }
 }
 
