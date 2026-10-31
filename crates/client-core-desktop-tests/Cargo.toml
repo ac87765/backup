@@ -1,0 +1,19 @@
+[package]
+name = "client-core-desktop-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "仅用于让 workspace 的 CI 构建启用 client-core 的 desktop feature（无运行时代码）"
+
+# 本 crate 没有运行时代码。它的唯一作用是作为 workspace 成员把 client-core
+# 以 `features = ["desktop"]` 引入：Cargo 在一次 `--workspace` 构建中统一
+# package feature，因此 `cargo test --workspace` / `cargo clippy --workspace
+# --all-targets` 会编译并运行 client-core 的桌面备份引擎及其测试。
+# 没有它时，`cargo test --workspace` 不会启用 desktop feature，备份引擎只能靠
+# 单独的 `-p client-core --features desktop` 才会被检查。
+[dev-dependencies]
+client-core = { version = "0.1.0", path = "../client-core", features = ["desktop"] }
+
+[lints]
+workspace = true
