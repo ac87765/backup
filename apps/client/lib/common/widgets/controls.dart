@@ -19,6 +19,7 @@ class TokensButton extends StatefulWidget {
     this.large = false,
     this.block = false,
     this.busy = false,
+    this.progress = false,
     super.key,
   });
 
@@ -31,12 +32,53 @@ class TokensButton extends StatefulWidget {
   final bool block;
   final bool busy;
 
+  /// 处理中在按钮底部循环扫过的 2px 进度条（login.html `.btn-progress`）。
+  /// “减少动态效果”时不绘制。
+  final bool progress;
+
   @override
   State<TokensButton> createState() => _TokensButtonState();
 }
 
-class _TokensButtonState extends State<TokensButton> {
+class _TokensButtonState extends State<TokensButton>
+    with SingleTickerProviderStateMixin {
   bool _hover = false;
+  bool _reduce = false;
+
+  late final AnimationController _progressController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduce = MediaQuery.disableAnimationsOf(context);
+    _syncProgress();
+  }
+
+  @override
+  void didUpdateWidget(TokensButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncProgress();
+  }
+
+  void _syncProgress() {
+    if (widget.progress && !_reduce) {
+      if (!_progressController.isAnimating) {
+        _progressController.repeat();
+      }
+    } else {
+      _progressController.stop();
+      _progressController.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _progressController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,44 +123,100 @@ class _TokensButtonState extends State<TokensButton> {
         child: SizedBox(
           width: widget.block ? double.infinity : null,
           height: height,
-          child: Material(
-            color: background,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(tokens.radiusControl),
-              side: BorderSide(color: borderColor),
-            ),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(tokens.radiusControl),
-              onTap: enabled ? widget.onPressed : null,
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: widget.large ? 18 : tokens.space3,
+          // passthrough：按钮本身按原来的约束布局（非块级按钮在 Row 中宽度
+          // 不受限）；expand 会把无限宽度传给 Material 导致布局错误。
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: [
+              Material(
+                color: background,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(tokens.radiusControl),
+                  side: BorderSide(color: borderColor),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (widget.icon != null) ...[
-                      Icon(widget.icon!, size: 16, color: foreground),
-                      SizedBox(width: tokens.space1 + 2),
-                    ],
-                    Text(
-                      widget.label,
-                      style: TextStyle(
-                        color: foreground,
-                        fontSize: widget.large ? tokens.textMd : tokens.textSm,
-                        fontWeight: FontWeight.w500,
-                      ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(tokens.radiusControl),
+                  onTap: enabled ? widget.onPressed : null,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: widget.large ? 18 : tokens.space3,
                     ),
-                    if (widget.trailingIcon != null) ...[
-                      SizedBox(width: tokens.space1 + 2),
-                      Icon(widget.trailingIcon!, size: 14, color: foreground),
-                    ],
-                  ],
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (widget.icon != null) ...[
+                          Icon(widget.icon!, size: 16, color: foreground),
+                          SizedBox(width: tokens.space1 + 2),
+                        ],
+                        Text(
+                          widget.label,
+                          style: TextStyle(
+                            color: foreground,
+                            fontSize: widget.large
+                                ? tokens.textMd
+                                : tokens.textSm,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (widget.trailingIcon != null) ...[
+                          SizedBox(width: tokens.space1 + 2),
+                          Icon(
+                            widget.trailingIcon!,
+                            size: 14,
+                            color: foreground,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
+              if (widget.progress && !_reduce) _progressBar(tokens),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// 底部 2px 细条从 -40% 扫到 100%（login.html `@keyframes sweep`，1.1s
+  /// ease-in-out）。减少动态效果时整个条不绘制。
+  Widget _progressBar(DesktopTokens tokens) {
+    return Positioned(
+      key: const Key('button-progress'),
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: 2,
+      child: ClipRRect(
+        borderRadius: BorderRadius.vertical(
+          bottom: Radius.circular(tokens.radiusControl),
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth * 0.4;
+            return AnimatedBuilder(
+              animation: _progressController,
+              builder: (context, child) {
+                final t = Curves.easeInOut.transform(_progressController.value);
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned(
+                      left: -width + (constraints.maxWidth + width) * t,
+                      top: 0,
+                      bottom: 0,
+                      width: width,
+                      child: ColoredBox(
+                        color: tokens.onBrand.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
         ),
       ),
     );
@@ -195,6 +293,7 @@ class AppTextField extends StatefulWidget {
     this.hint,
     this.obscure = false,
     this.enabled = true,
+    this.readOnly = false,
     this.error = false,
     this.small = false,
     this.prefixIcon,
@@ -210,6 +309,9 @@ class AppTextField extends StatefulWidget {
   final String? hint;
   final bool obscure;
   final bool enabled;
+
+  /// 只读但保持正常外观（processing 时邮箱输入框仍为白底）。
+  final bool readOnly;
   final bool error;
   final bool small;
   final IconData? prefixIcon;
@@ -279,6 +381,7 @@ class _AppTextFieldState extends State<AppTextField> {
               controller: widget.controller,
               focusNode: _focus,
               enabled: widget.enabled,
+              readOnly: widget.readOnly,
               obscureText: widget.obscure,
               obscuringCharacter: '•',
               autofocus: widget.autofocus,

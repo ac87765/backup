@@ -22,7 +22,7 @@ Future<void> main(List<String> args) async {
       overrides: desktop
           ? <Override>[
               windowControlsProvider.overrideWithValue(
-                const DesktopWindowControls(),
+                DesktopWindowControls(startVisible: !startHidden),
               ),
               startupServiceProvider.overrideWithValue(
                 LaunchAtStartupService(),

@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'common/state/auth_controller.dart';
+import 'common/widgets/window_mode_driver.dart';
+import 'core/platform/window_controls.dart';
 import 'core/router/app_router.dart';
 import 'core/router/destinations.dart';
 import 'core/theme/app_theme.dart';
@@ -79,15 +81,29 @@ class EncryptedBackupApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return RepaintBoundary(
-      key: const Key('golden-root'),
-      child: MaterialApp.router(
-        title: '加密备份',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light,
-        darkTheme: AppTheme.dark,
-        themeMode: ThemeMode.system,
-        routerConfig: router ?? ref.watch(routerProvider),
+    // 显式类型：否则 ?? 会把 GoRouter? 作为 ref.watch 的推断类型。
+    final GoRouter routerConfig = router ?? ref.watch(routerProvider);
+    final controls = ref.watch(windowControlsProvider);
+    return ValueListenableBuilder<bool>(
+      valueListenable: controls.visible,
+      // 窗口隐藏到托盘（或 --background 启动）时静音所有 Ticker：
+      // 循环动画不再请求帧，展开窗口后从暂停处继续。
+      builder: (context, visible, child) {
+        return TickerMode(enabled: visible, child: child!);
+      },
+      child: WindowModeDriver(
+        router: routerConfig,
+        child: RepaintBoundary(
+          key: const Key('golden-root'),
+          child: MaterialApp.router(
+            title: '加密备份',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.light,
+            darkTheme: AppTheme.dark,
+            themeMode: ThemeMode.system,
+            routerConfig: routerConfig,
+          ),
+        ),
       ),
     );
   }

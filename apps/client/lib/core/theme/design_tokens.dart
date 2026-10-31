@@ -419,11 +419,15 @@ abstract final class DesktopMetrics {
   static const double transferPanelWidth = 380;
   static const double transferPanelBottom = 44;
 
-  // 认证窗口（login.html）。
-  static const double authWindowWidth = 440;
-  static const double authWindowHeight = 600;
-  static const double authPadding = 48;
-  static const double authPaddingBottom = 28;
+  // 认证窗口（login.html：880×560，左侧 400 品牌面板 + 右侧表单）。
+  static const double authWindowWidth = 880;
+  static const double authWindowHeight = 560;
+  static const double authBrandWidth = 400;
+  static const double authBrandPadding = 40;
+  static const double authBrandPaddingBottom = 32;
+  static const double authPanePaddingTop = 40;
+  static const double authPanePaddingHorizontal = 56;
+  static const double authPanePaddingBottom = 28;
   static const double authFormGap = 14;
 
   // 设置窗口（settings.html）。
@@ -434,6 +438,12 @@ abstract final class DesktopMetrics {
   // 首次引导窗口（onboarding.html）。
   static const double onboardingWindowWidth = 760;
   static const double onboardingWindowHeight = 720;
+
+  // 主窗口（D8：1280×800，最小 960×600）。
+  static const double mainWindowWidth = 1280;
+  static const double mainWindowHeight = 800;
+  static const double mainWindowMinWidth = 960;
+  static const double mainWindowMinHeight = 600;
 
   // 添加备份文件夹对话框（add-folder.html，宽 560）。
   static const double backupFolderDialogWidth = 560;

@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/platform/external_links.dart';
 import '../../core/providers/app_providers.dart';
-import '../../core/theme/design_tokens.dart';
 import '../state/auth_controller.dart';
 import '../widgets/auth_layout.dart';
 import '../widgets/controls.dart';
-import '../widgets/window_frame.dart';
 
 /// 登录（login.html 的 login / working / error 状态）。
 class LoginPage extends ConsumerStatefulWidget {
@@ -63,44 +60,39 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
-    final tokens = DesktopTokens.of(context);
     final busy = auth.busy;
     final error = busy ? null : auth.error;
-    return AppWindowScaffold(
-      width: DesktopMetrics.authWindowWidth,
-      height: DesktopMetrics.authWindowHeight,
-      child: AuthLayout(
-        trust: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(LucideIcons.shieldCheck, size: 14, color: tokens.ink500),
-            const SizedBox(width: 6),
-            const Text('服务器无法看到你的密码和文件内容'),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(child: BrandLogo(size: DesktopMetrics.logoSizeLarge)),
-            const AuthTitle('登录加密备份'),
-            const AuthSubtitle('文件在这台电脑上加密后才上传'),
-            AuthForm(
-              children: [
-                AuthField(
-                  label: '邮箱',
-                  child: AppTextField(
-                    key: const Key('login-email'),
-                    controller: _email,
-                    enabled: !busy,
-                    autofillHints: const <String>[AutofillHints.email],
-                    textInputAction: TextInputAction.next,
-                    onChanged: (_) =>
-                        ref.read(authControllerProvider.notifier).clearError(),
-                  ),
+    return AuthWindow(
+      child: AuthPane(
+        replayKey: busy
+            ? 'working'
+            : error == null
+            ? 'login'
+            : 'error',
+        footer: const AuthTrust(text: '登录需要 1–2 秒：密码只在本机用来派生密钥'),
+        children: [
+          const AuthTitle('登录', key: Key('login-title')),
+          const SizedBox(height: 6),
+          const AuthSubtitle('使用网页版注册的账号'),
+          AuthForm(
+            children: [
+              AuthField(
+                label: '邮箱',
+                child: AppTextField(
+                  key: const Key('login-email'),
+                  controller: _email,
+                  readOnly: busy,
+                  autofillHints: const <String>[AutofillHints.email],
+                  textInputAction: TextInputAction.next,
+                  onChanged: (_) =>
+                      ref.read(authControllerProvider.notifier).clearError(),
                 ),
-                AuthField(
-                  label: '密码',
-                  error: error,
+              ),
+              AuthField(
+                label: '密码',
+                error: error,
+                child: ShakeOnTrigger(
+                  trigger: error != null,
                   child: AppTextField(
                     key: const Key('login-password'),
                     controller: _password,
@@ -114,35 +106,36 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     onSubmitted: (_) => _submit(),
                   ),
                 ),
-                TokensButton(
-                  key: const Key('login-submit'),
-                  label: busy ? '正在验证…' : '登录',
-                  variant: TokensButtonVariant.primary,
-                  large: true,
-                  block: true,
-                  busy: busy,
-                  onPressed: busy ? null : _submit,
-                ),
-                AuthLinks(
-                  children: [
-                    AuthLink(
-                      key: const Key('login-register'),
-                      label: '注册账号',
-                      external: true,
-                      onPressed: () => _openWeb('/register'),
-                    ),
-                    AuthLink(
-                      key: const Key('login-forgot'),
-                      label: '忘记密码',
-                      external: true,
-                      onPressed: () => _openWeb('/reset'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
+              ),
+              TokensButton(
+                key: const Key('login-submit'),
+                label: busy ? '正在验证…' : '登录',
+                variant: TokensButtonVariant.primary,
+                large: true,
+                block: true,
+                busy: busy,
+                progress: busy,
+                onPressed: busy ? null : _submit,
+              ),
+              AuthLinks(
+                children: [
+                  AuthLink(
+                    key: const Key('login-register'),
+                    label: '注册账号',
+                    external: true,
+                    onPressed: () => _openWeb('/register'),
+                  ),
+                  AuthLink(
+                    key: const Key('login-forgot'),
+                    label: '忘记密码',
+                    external: true,
+                    onPressed: () => _openWeb('/reset'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

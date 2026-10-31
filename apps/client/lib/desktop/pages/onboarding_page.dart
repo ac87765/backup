@@ -210,22 +210,25 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       '电脑备份',
       if (deviceName.isNotEmpty) deviceName,
     ].join(' / ');
-    return AppWindowScaffold(
-      width: DesktopMetrics.onboardingWindowWidth,
-      height: DesktopMetrics.onboardingWindowHeight,
-      title: '欢迎使用加密备份',
-      child: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(48, 32, 48, 0),
-              child: _stepTwo
-                  ? _backgroundStep(tokens)
-                  : _foldersStep(tokens, folderPath),
+    // 首次引导是整窗 760×720（onboarding.html），不再画主窗口内的居中卡片；
+    // 窗口尺寸由 WindowModeDriver 切到 onboarding 模式（D8）。
+    return ColoredBox(
+      color: tokens.designCanvas,
+      child: WindowFrame(
+        title: '欢迎使用加密备份',
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(48, 32, 48, 0),
+                child: _stepTwo
+                    ? _backgroundStep(tokens)
+                    : _foldersStep(tokens, folderPath),
+              ),
             ),
-          ),
-          _footer(tokens),
-        ],
+            _footer(tokens),
+          ],
+        ),
       ),
     );
   }

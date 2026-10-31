@@ -100,6 +100,9 @@ class _TitleBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controls = ref.read(windowControlsProvider);
+    final mode = ref.watch(windowModeProvider);
+    // 认证 / 引导窗口不可最大化：Windows 只显示最小化与关闭（login.html 注释）。
+    final canMaximize = mode == WindowMode.main;
     final height = isMac
         ? DesktopMetrics.titleBarHeightMac
         : DesktopMetrics.titleBarHeight;
@@ -142,18 +145,22 @@ class _TitleBar extends ConsumerWidget {
               Row(
                 children: [
                   _CaptionButton(
+                    key: const Key('caption-minimize'),
                     icon: LucideIcons.minus,
                     size: 14,
                     tokens: tokens,
                     onPressed: controls.minimize,
                   ),
+                  if (canMaximize)
+                    _CaptionButton(
+                      key: const Key('caption-maximize'),
+                      icon: LucideIcons.square,
+                      size: 12,
+                      tokens: tokens,
+                      onPressed: controls.toggleMaximize,
+                    ),
                   _CaptionButton(
-                    icon: LucideIcons.square,
-                    size: 12,
-                    tokens: tokens,
-                    onPressed: controls.toggleMaximize,
-                  ),
-                  _CaptionButton(
+                    key: const Key('caption-close'),
                     icon: LucideIcons.x,
                     size: 14,
                     tokens: tokens,
@@ -166,9 +173,10 @@ class _TitleBar extends ConsumerWidget {
             ],
           );
     return GestureDetector(
+      key: const Key('window-titlebar'),
       behavior: HitTestBehavior.opaque,
       onPanStart: (_) => controls.startDragging(),
-      onDoubleTap: controls.toggleMaximize,
+      onDoubleTap: canMaximize ? controls.toggleMaximize : null,
       child: Container(height: height, color: tokens.canvas, child: content),
     );
   }
@@ -180,6 +188,7 @@ class _CaptionButton extends StatefulWidget {
     required this.size,
     required this.tokens,
     required this.onPressed,
+    super.key,
   });
 
   final IconData icon;
@@ -219,8 +228,8 @@ class _CaptionButtonState extends State<_CaptionButton> {
 
 /// 独立窗口尺寸的页面容器：在画布中央放一个固定尺寸的窗口。
 ///
-/// 认证页 440×600、设置页 760×600、首次引导 760×720 与设计稿一致；窗口大于
-/// 设计尺寸时居中显示卡片，小于设计尺寸时铺满（例如用户缩小窗口）。
+/// 设置页 760×600 使用；认证页与首次引导已改为整窗布局（D8），不再用居中
+/// 卡片。窗口大于设计尺寸时居中显示卡片，小于设计尺寸时铺满。
 class AppWindowScaffold extends StatelessWidget {
   const AppWindowScaffold({
     required this.width,

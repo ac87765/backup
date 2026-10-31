@@ -4,11 +4,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/platform/external_links.dart';
 import '../../core/providers/app_providers.dart';
-import '../../core/theme/design_tokens.dart';
 import '../state/auth_controller.dart';
 import '../widgets/auth_layout.dart';
 import '../widgets/controls.dart';
-import '../widgets/window_frame.dart';
 
 /// 解锁（login.html 的 unlock 状态）：已登录会话只需输入密码。
 class UnlockPage extends ConsumerStatefulWidget {
@@ -56,52 +54,31 @@ class _UnlockPageState extends ConsumerState<UnlockPage> {
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
-    final tokens = DesktopTokens.of(context);
     final account = auth.account;
     final email = account?.email ?? '';
     final initial = email.isEmpty ? '?' : email.characters.first.toUpperCase();
     final error = auth.busy ? null : auth.error;
-    return AppWindowScaffold(
-      width: DesktopMetrics.authWindowWidth,
-      height: DesktopMetrics.authWindowHeight,
-      child: AuthLayout(
-        trust: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(LucideIcons.info, size: 14, color: tokens.ink500),
-            const SizedBox(width: 6),
-            const Text('解锁后备份会自动继续'),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: DesktopMetrics.avatarSizeLarge,
-                height: DesktopMetrics.avatarSizeLarge,
-                decoration: BoxDecoration(
-                  color: tokens.brand100,
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  initial,
-                  style: TextStyle(
-                    color: tokens.brand700,
-                    fontSize: DesktopMetrics.avatarSizeLarge * 0.42,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-            const AuthTitle('欢迎回来'),
-            AuthSubtitle(email),
-            AuthForm(
-              children: [
-                AuthField(
-                  label: '密码',
-                  error: error,
+    return AuthWindow(
+      child: AuthPane(
+        replayKey: auth.busy
+            ? 'unlocking'
+            : error == null
+            ? 'unlock'
+            : 'unlock-error',
+        footer: const AuthTrust(text: '可在设置中开启“在这台电脑上保持解锁”'),
+        children: [
+          const AuthTitle('欢迎回来', key: Key('unlock-title')),
+          const SizedBox(height: 6),
+          const AuthSubtitle('输入密码解锁，备份会自动继续'),
+          AuthAccountCard(email: email, initial: initial),
+          AuthForm(
+            top: 20,
+            children: [
+              AuthField(
+                label: '密码',
+                error: error,
+                child: ShakeOnTrigger(
+                  trigger: error != null,
                   child: AppTextField(
                     key: const Key('unlock-password'),
                     controller: _password,
@@ -116,38 +93,40 @@ class _UnlockPageState extends ConsumerState<UnlockPage> {
                     onSubmitted: (_) => _submit(),
                   ),
                 ),
-                TokensButton(
-                  key: const Key('unlock-submit'),
-                  label: auth.busy ? '解锁中…' : '解锁',
-                  icon: LucideIcons.lock,
-                  variant: TokensButtonVariant.primary,
-                  large: true,
-                  block: true,
-                  onPressed: auth.busy ? null : _submit,
-                ),
-                AuthLinks(
-                  children: [
-                    AuthLink(
-                      key: const Key('switch-account'),
-                      label: '切换账号',
-                      onPressed: auth.busy
-                          ? null
-                          : () => ref
-                                .read(authControllerProvider.notifier)
-                                .switchAccount(),
-                    ),
-                    AuthLink(
-                      key: const Key('unlock-forgot'),
-                      label: '忘记密码',
-                      external: true,
-                      onPressed: _openReset,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
+              ),
+              TokensButton(
+                key: const Key('unlock-submit'),
+                label: auth.busy ? '解锁中…' : '解锁',
+                icon: LucideIcons.lock,
+                variant: TokensButtonVariant.primary,
+                large: true,
+                block: true,
+                busy: auth.busy,
+                progress: auth.busy,
+                onPressed: auth.busy ? null : _submit,
+              ),
+              AuthLinks(
+                children: [
+                  AuthLink(
+                    key: const Key('switch-account'),
+                    label: '切换账号',
+                    onPressed: auth.busy
+                        ? null
+                        : () => ref
+                              .read(authControllerProvider.notifier)
+                              .switchAccount(),
+                  ),
+                  AuthLink(
+                    key: const Key('unlock-forgot'),
+                    label: '忘记密码',
+                    external: true,
+                    onPressed: _openReset,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
