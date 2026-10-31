@@ -1,0 +1,159 @@
+name: Client (Flutter / bridge / desktop)
+
+# 与 .github/workflows/ci.yml 一致：功能分支以 impl/ 开头，合并前拿到完整结果。
+on:
+  push:
+    branches: [main, "impl/**"]
+  pull_request:
+  workflow_dispatch:
+
+# 最小权限：CI 只读仓库内容；不使用任何 secrets。
+permissions:
+  contents: read
+
+concurrency:
+  group: client-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # client-core 的 dev-dependencies 会编译 server（sqlx 宏）；使用仓库中提交的
+  # .sqlx 缓存，CI 不连接数据库。
+  SQLX_OFFLINE: "true"
+  FLUTTER_VERSION: 3.47.7
+  FLUTTER_RUST_BRIDGE_VERSION: 2.13.0
+
+jobs:
+  flutter:
+    name: Flutter (format / analyze / test / bridge codegen)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # 固定 Flutter 版本（design D10）；action 与仓库其它 action 一样固定到 commit SHA。
+      - name: 安装 Flutter ${{ env.FLUTTER_VERSION }}
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: flutter pub get
+        working-directory: apps/client
+        run: flutter pub get
+
+      # 生成文件（lib/src/rust/**）不参与格式检查：保持生成器原始输出，由下一步
+      # 的 codegen + git diff 保证最新。范围与本地验证命令一致。
+      - name: dart format --set-exit-if-changed
+        working-directory: apps/client
+        run: >-
+          dart format --set-exit-if-changed
+          lib/main.dart lib/app.dart lib/core lib/common lib/desktop test
+
+      - name: flutter analyze
+        working-directory: apps/client
+        run: flutter analyze
+
+      - name: flutter test
+        working-directory: apps/client
+        run: flutter test
+
+      - name: 安装 flutter_rust_bridge_codegen 2.13.0
+        run: |
+          cargo install flutter_rust_bridge_codegen \
+            --version "$FLUTTER_RUST_BRIDGE_VERSION" --locked
+
+      # design D2 / tasks 4.1：生成产物必须提交且与源码一致。
+      - name: 生成 Dart 绑定并校验无漂移
+        working-directory: apps/client
+        run: |
+          flutter_rust_bridge_codegen generate
+          cd ../..
+          git diff --exit-code -- apps/client/rust/src/frb_generated.rs apps/client/lib/src/rust
+
+      # 桥接边界测试（DTO 不含字节数组/密钥字段）不需要 Flutter/桌面环境。
+      - name: cargo test -p rust_lib_client
+        run: cargo test -p rust_lib_client
+
+  windows:
+    name: Windows (client-core tests / release build)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+
+      - name: 安装 Flutter ${{ env.FLUTTER_VERSION }}
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # Windows runner 没有 Docker：只运行不依赖 testcontainers 的测试目标（单元测试、
+      # 假服务端、退避、测试向量）。真实 PostgreSQL + MinIO 的集成测试由 ci.yml 的 Linux job 运行。
+      # 新增不需要 Docker 的测试文件时，把它加到这里的 --test 列表。
+      - name: cargo test -p client-core --features desktop（排除 Docker 测试）
+        run: >-
+          cargo test -p client-core --features desktop
+          --lib --test fake_auth --test retry --test transfer_fake --test backup_fake --test vectors
+
+- name: flutter pub get
+        working-directory: apps/client
+        run: flutter pub get
+
+      - name: flutter build windows --release
+        working-directory: apps/client
+        run: flutter build windows --release
+
+      - name: 上传 Windows 产物
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: encrypted-backup-windows
+          path: apps/client/build/windows/x64/runner/Release
+          if-no-files-found: error
+
+  macos:
+    name: macOS (client-core tests / release build)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+
+      - name: 安装 Flutter ${{ env.FLUTTER_VERSION }}
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # 同 Windows：macOS runner 没有 Docker，跳过 testcontainers 集成测试。
+      - name: cargo test -p client-core --features desktop（排除 Docker 测试）
+        run: >-
+          cargo test -p client-core --features desktop
+          --lib --test fake_auth --test retry --test transfer_fake --test backup_fake --test vectors
+
+- name: flutter pub get
+        working-directory: apps/client
+        run: flutter pub get
+
+      - name: flutter build macos --release
+        working-directory: apps/client
+        run: flutter build macos --release
+
+      # 打包 .app（保留资源分支），产物作为 artifact 下载。
+      - name: 打包 .app 为 zip
+        working-directory: apps/client/build/macos/Build/Products/Release
+        run: ditto -c -k --sequesterRsrc --keepParent "加密备份.app" "加密备份.app.zip"
+
+      - name: 上传 macOS 产物
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: encrypted-backup-macos
+          path: apps/client/build/macos/Build/Products/Release/加密备份.app.zip
+          if-no-files-found: error
