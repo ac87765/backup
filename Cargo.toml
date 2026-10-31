@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "apps/client/rust",
     "crates/client-core",
     "crates/client-core-desktop-tests",
     "crates/crypto-core",
@@ -21,6 +22,9 @@ publish = false
 # 测试代码若确实需要，在对应测试模块顶部显式 `#[allow(...)]`（不允许在库代码里全局放宽）。
 [workspace.lints.rust]
 unsafe_code = "deny"
+# flutter_rust_bridge 生成的代码使用 `cfg(frb_expand)`；为它声明 check-cfg，
+# 避免生成模块触发 unexpected_cfgs 警告（不影响其它 crate）。
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(frb_expand)"] }
 
 [workspace.lints.clippy]
 # 以下为 clippy 的 restriction 组，默认不启用，必须显式开启。

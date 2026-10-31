@@ -1,0 +1,27 @@
+name: encrypted_backup_client
+description: "加密备份桌面客户端：Flutter 界面 + Rust 核心（E2EE），Windows 与 macOS。"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 桥接与状态管理（版本固定，升级需与 flutter_rust_bridge_codegen 同步）。
+  flutter_rust_bridge: 2.13.0
+  flutter_riverpod: 3.4.3
+  go_router: 18.1.2
+  rust_lib_client:
+    path: rust_builder
+  window_manager: 0.5.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: 6.0.0
+
+flutter:
+  uses-material-design: true

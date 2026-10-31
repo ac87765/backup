@@ -1,0 +1,29 @@
+# This file configures the analyzer, which statically analyzes Dart code to
+# check for errors, warnings, and lints.
+#
+# The issues identified by the analyzer are surfaced in the UI of Dart-enabled
+# IDEs (https://dart.dev/tools#ides-and-editors). The analyzer can also be
+# invoked from the command line by running `flutter analyze`.
+
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
+
+    # flutter_rust_bridge 生成代码：CI 用 codegen + git diff 保证最新，
+    # 由 flutter test / 构建负责编译验证；这里排除 lint 噪声。
+    - lib/src/rust/**
+    - rust_builder/cargokit/**
+
+linter:
+  rules:
+    # 项目统一风格：显式类型、单引号；不需要在模板注释里逐条说明。
+    prefer_single_quotes: true
+    always_declare_return_types: true

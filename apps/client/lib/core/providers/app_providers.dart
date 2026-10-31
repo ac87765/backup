@@ -1,0 +1,48 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../config/app_config.dart';
+import '../rust/models.dart';
+import '../rust/native_bridge.dart';
+
+/// 桥接 API 的单一入口（测试可 override 成假实现）。
+final nativeBridgeProvider = Provider<NativeBridge>((ref) {
+  return const NativeBridge();
+});
+
+/// 启动配置（服务器地址、应用数据目录、设备名）。
+final appConfigProvider = Provider<AppConfig>((ref) {
+  return AppConfig.platformDefaults();
+});
+
+/// 初始化 Rust 核心；需要调用桥接 API 的界面先 await 这个 provider。
+final bootstrapProvider = FutureProvider<void>((ref) async {
+  final config = ref.watch(appConfigProvider);
+  await ref
+      .watch(nativeBridgeProvider)
+      .initialize(
+        appDataDir: config.appDataDir,
+        serverUrl: config.serverUrl,
+        deviceName: config.deviceName,
+      );
+});
+
+/// 单文件传输进度事件。
+final transferProgressProvider = StreamProvider<TransferProgressDto>((ref) {
+  return ref.watch(nativeBridgeProvider).transferProgressStream();
+});
+
+/// 文件夹任务进度事件。
+final folderProgressProvider = StreamProvider<FolderProgressDto>((ref) {
+  return ref.watch(nativeBridgeProvider).folderProgressStream();
+});
+
+/// 备份引擎状态/活动/汇总事件。
+final backupEventsProvider = StreamProvider<BackupEventDto>((ref) {
+  return ref.watch(nativeBridgeProvider).backupEventsStream();
+});
+
+/// 全局备份汇总（托盘/状态栏）。
+final backupSummaryProvider = FutureProvider<BackupSummaryDto>((ref) async {
+  await ref.watch(bootstrapProvider.future);
+  return ref.watch(nativeBridgeProvider).backupSummary();
+});

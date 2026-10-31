@@ -1,0 +1,29 @@
+[package]
+name = "rust_lib_client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "加密备份桌面客户端的 Flutter ↔ Rust 桥接层（薄层：类型转换 + 调用 client-core）"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+# 依赖理由（AGENTS.md 要求）：
+# - client-core：唯一业务实现。本 crate 只做 DTO 转换与状态编排，不复制任何
+#   业务逻辑。desktop feature 提供备份引擎（design D6）。
+#   iOS（add-ios-client）会改为按 target 拆分依赖：iOS 目标不启用 desktop，
+#   因此不会编译 notify / globset 与桌面备份模块。
+# - flutter_rust_bridge：固定 2.13.0，与 pubspec / CI codegen 版本一致。
+# - tokio：为长时间传输/进度转发提供独立运行时（rt/sync/time）。
+# - uuid：解析 Dart 传入的 ID；解析失败统一转成 BridgeError，不 panic。
+# - thiserror：BridgeError 的中文 Display。
+[dependencies]
+client-core = { version = "0.1.0", path = "../../../crates/client-core", features = ["desktop"] }
+flutter_rust_bridge = "=2.13.0"
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+uuid = "1"
+
+[lints]
+workspace = true

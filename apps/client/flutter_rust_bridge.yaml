@@ -1,0 +1,21 @@
+# flutter_rust_bridge 代码生成配置（固定 2.13.0；升级需同时更新 CI 与 pubspec）。
+#
+# 工程只构建 Windows / macOS；仍生成 web 绑定，只是为了满足生成的
+# `frb_generated.dart` 中的条件导入（VM 构建不会编译 web 分支）。
+# - type_64bit_int: Dart 侧 u64/i64 都用 int，避免界面代码到处转换 BigInt。
+# - deps_check / auto_upgrade_dependency / build_runner: 全部关闭，生成是离线的、
+#   可重复的；依赖版本由 pubspec.lock 与 Cargo.lock 固定。
+# - dart_format / dart_fix / rust_format: 关闭。生成文件按生成器原始输出提交，
+#   CI 用 codegen + git diff 校验是否最新；手写代码仍由 dart format / cargo fmt
+#   检查（生成文件在这些检查的排除范围内）。
+rust_input: crate::api
+rust_root: rust/
+dart_output: lib/src/rust
+type_64bit_int: true
+web: true
+deps_check: false
+auto_upgrade_dependency: false
+build_runner: false
+dart_format: false
+dart_fix: false
+rust_format: false
