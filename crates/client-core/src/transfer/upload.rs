@@ -15,8 +15,8 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::{
-    CHUNK_CONCURRENCY, MAX_BATCH_CHUNKS, ProgressSink, TransferControl, UploadRequest, emit,
-    failure, file_name, transfer_error,
+    CHUNK_CONCURRENCY, MAX_BATCH_CHUNKS, ProgressSink, TokenBucket, TransferControl, UploadRequest,
+    emit, failure, file_name, transfer_error,
 };
 use crate::Client;
 use crate::error::ClientError;
@@ -121,9 +121,19 @@ pub(super) async fn run(
     transfer_id: Uuid,
     control: &TransferControl,
     sink: &ProgressSink,
+    limiter: Option<std::sync::Arc<TokenBucket>>,
 ) -> Result<UploadOutcome, ClientError> {
     let mut context = RunContext::default();
-    let result = run_inner(client, request, transfer_id, control, sink, &mut context).await;
+    let result = run_inner(
+        client,
+        request,
+        transfer_id,
+        control,
+        sink,
+        &mut context,
+        limiter.as_ref(),
+    )
+    .await;
 
     match &result {
         Ok(outcome) => {
@@ -185,6 +195,7 @@ async fn run_inner(
     control: &TransferControl,
     sink: &ProgressSink,
     context: &mut RunContext,
+    limiter: Option<&std::sync::Arc<TokenBucket>>,
 ) -> Result<UploadOutcome, ClientError> {
     client.ensure_writable()?;
     let master_key = client.master_key()?;
@@ -312,6 +323,7 @@ async fn run_inner(
                 control,
                 sink,
                 context,
+                limiter,
             )
             .await;
         }
@@ -332,6 +344,7 @@ async fn run_inner(
         control,
         sink,
         context,
+        limiter,
     )
     .await
 }
@@ -350,6 +363,7 @@ async fn start_new(
     control: &TransferControl,
     sink: &ProgressSink,
     context: &mut RunContext,
+    limiter: Option<&std::sync::Arc<TokenBucket>>,
 ) -> Result<UploadOutcome, ClientError> {
     // 流式哈希；完成后再次校验指纹，文件在上传开始前被修改就放弃。
     let content_sha256 = hash_file(path, before, control).await?;
@@ -485,6 +499,7 @@ async fn start_new(
         control,
         sink,
         context,
+        limiter,
     )
     .await
 }
@@ -500,6 +515,7 @@ async fn run_session(
     control: &TransferControl,
     sink: &ProgressSink,
     context: &mut RunContext,
+    limiter: Option<&std::sync::Arc<TokenBucket>>,
 ) -> Result<UploadOutcome, ClientError> {
     let confirmed: ConfirmedChunksWire = client
         .api
@@ -623,6 +639,7 @@ async fn run_session(
             let count = record.chunk_count;
             let session_id = record.session_id;
             let semaphore = semaphore.clone();
+            let limiter = limiter.cloned();
             join_set.spawn(async move {
                 let _permit = match semaphore.acquire_owned().await {
                     Ok(permit) => permit,
@@ -640,6 +657,7 @@ async fn run_session(
                     idx,
                     &url,
                     expected_size as u64,
+                    limiter.as_ref(),
                 )
                 .await;
                 (idx, result)
@@ -767,6 +785,7 @@ async fn upload_one_chunk(
     idx: u32,
     url: &str,
     expected_size: u64,
+    limiter: Option<&std::sync::Arc<TokenBucket>>,
 ) -> Result<ConfirmInput, ClientError> {
     control.checkpoint().await?;
     let path = path.to_path_buf();
@@ -814,6 +833,10 @@ async fn upload_one_chunk(
     loop {
         if control.is_cancelled() {
             return Err(ClientError::Cancelled);
+        }
+        if let Some(limiter) = limiter {
+            // 令牌桶按实际发送的密文字节计费；手动上传不经过这里。
+            limiter.acquire(expected_size).await;
         }
         let response = client
             .storage_http

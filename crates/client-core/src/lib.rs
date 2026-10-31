@@ -44,8 +44,9 @@ pub use secret_store::{
 pub use state::{DATABASE_FILE_NAME, SCHEMA_VERSION, StateError, StateStore};
 pub use transfer::{DownloadTask, FolderDownloadTask, FolderUploadTask, UploadTask};
 
-/// 桌面专有能力的入口。
+/// 桌面专有能力的入口（design D1）。
 ///
-/// 目前为空：本组只建立 feature 边界。文件监听、备份调度、开机启动等会在后续组加入。
+/// 只在 `desktop` feature 下编译：文件监听、备份调度与本地备份索引。iOS 构建
+/// 不启用该 feature，因此不会引入 `notify` / `globset`，也不会编译这些代码。
 #[cfg(feature = "desktop")]
-pub mod desktop {}
+pub mod desktop;

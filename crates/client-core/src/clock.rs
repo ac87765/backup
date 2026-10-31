@@ -5,7 +5,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 /// 退避等待的 future 类型（对象安全，便于注入 `Arc<dyn Clock>`）。
 pub type SleepFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
@@ -14,6 +14,12 @@ pub type SleepFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 pub trait Clock: Send + Sync {
     /// 等待指定时长。
     fn sleep(&self, duration: Duration) -> SleepFuture<'_>;
+
+    /// 当前墙上时间；备份调度器用它比较防抖窗口、6 小时全量核对与限速重试时间。
+    /// 测试注入的假时钟可以覆盖它，从而不必真的等待。
+    fn now(&self) -> SystemTime {
+        SystemTime::now()
+    }
 
     /// 0–1 的随机抖动系数；默认使用操作系统 CSPRNG。
     fn jitter(&self) -> f64 {

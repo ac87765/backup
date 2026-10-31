@@ -23,6 +23,12 @@ description = "原生客户端核心：认证、密钥边界与凭据存储（�
 #   crypto-core 的名称令牌规则保持一致；这是 crypto-core 已使用的同一依赖。
 # - subtle：文件夹增量判定会比较明文内容 SHA-256，AGENTS.md 要求哈希比较为
 #   常量时间；crypto-core 内部使用的同一常量时间实现。
+# - notify（desktop feature）：design D6 指定的跨平台文件系统监听（Windows
+#   ReadDirectoryChangesW / macOS FSEvents / Linux inotify）。CC0-1.0，已在
+#   deny.toml 允许列表中；只在 desktop feature 下编译，iOS 构建不引入。
+# - globset（desktop feature）：用户排除规则的成熟 glob 实现（ripgrep 的
+#   glob 引擎），Unlicense OR MIT，已在 deny.toml 允许列表中。自己写 glob
+#   容易出现转义/字符类/分隔符语义偏差，因此使用该库。
 # - axum / http-body-util（dev）：429 退避测试的本地假服务器。
 # - sqlx / testcontainers / tempfile（dev）：参照 server 集成测试，启动 PostgreSQL + MinIO。
 # - server（dev）：进程内启动真实服务端路由，验证客户端与真实实现互通。
@@ -30,6 +36,9 @@ description = "原生客户端核心：认证、密钥边界与凭据存储（�
 [dependencies]
 crypto-core = { version = "0.1.0", path = "../crypto-core" }
 getrandom = "0.2"
+# desktop feature 专用依赖（理由见文件头注释）。
+globset = { version = "0.4", optional = true }
+notify = { version = "6.1", optional = true }
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
 ] }
@@ -38,7 +47,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 subtle = "2"
 thiserror = "2"
-tokio = { version = "1", features = ["fs", "rt", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "macros", "rt", "sync", "time"] }
 tracing = "0.1"
 unicode-normalization = "0.1"
 uuid = { version = "1", features = ["serde", "v4"] }
@@ -83,10 +92,27 @@ tokio = { version = "1", features = [
 ] }
 tower = { version = "0.5", features = ["util"] }
 
+# 这两个集成测试直接使用 `client_core::desktop`；必须声明 required-features，
+# 否则 `cargo test -p client-core`（未启用 desktop）会因为缺少模块而编译失败。
+# 工作区构建由 `client-core-desktop-tests` 统一启用 desktop，仍会编译并运行它们。
+[[test]]
+name = "backup"
+path = "tests/backup.rs"
+required-features = ["desktop"]
+
+[[test]]
+name = "backup_fake"
+path = "tests/backup_fake.rs"
+required-features = ["desktop"]
+
 [features]
-# 桌面专有能力的入口（文件监听、备份调度、开机启动等，从第 2/3 组开始放入）。
-# 本组只建立 feature 边界，使 iOS 构建可以完全不编译桌面代码。
-desktop = []
+# 桌面专有能力的入口（文件监听、备份调度等）。默认关闭，iOS 构建不启用，
+# 因此不会编译 notify / globset 与桌面备份模块。
+# 为了让 CI 的 `cargo test --workspace` / `cargo clippy --workspace --all-targets`
+# 覆盖备份引擎，工作区增加了只含测试的 `client-core-desktop-tests` crate，
+# 它把 client-core 作为启用了 desktop 的 dev-dependency 引入；Cargo 在一次
+# 工作区构建中统一 feature，因此 client-core 的桌面单元测试与集成测试都会编译运行。
+desktop = ["dep:notify", "dep:globset"]
 
 [lints]
 workspace = true

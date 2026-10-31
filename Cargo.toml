@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/client-core",
+    "crates/client-core-desktop-tests",
     "crates/crypto-core",
     "crates/crypto-wasm",
     "crates/server",

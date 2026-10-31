@@ -19,7 +19,7 @@ use crate::io_path::{StatePathError, path_for_io};
 use crate::model::{PendingUpload, PendingUploadStatus};
 
 /// 当前 schema 版本。
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 /// 状态库文件名（位于调用方传入的应用数据目录）。
 pub const DATABASE_FILE_NAME: &str = "client-state.sqlite3";
 
@@ -110,6 +110,53 @@ pub(crate) struct ConfirmedChunk {
     pub idx: u32,
     pub declared_size: i64,
     pub sha256: String,
+}
+
+/// 备份文件夹配置（design D5/D6）。只存本机元数据，不含任何密钥。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BackupFolderRecord {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub local_path: PathBuf,
+    /// 云端显示用的本地文件夹名（NFC）。
+    pub local_name: String,
+    /// 用户指定的云端目标文件夹节点；`None` 表示使用默认路径。
+    pub cloud_target_id: Option<Uuid>,
+    /// 已解析的云端叶子文件夹节点；首次备份前为 `None`。
+    pub cloud_folder_id: Option<Uuid>,
+    /// 默认目标的展示路径（`全部文件/电脑备份/<设备名>/<名称>`）；自定义目标为 `None`。
+    pub cloud_path: Option<String>,
+    pub exclude_globs: Vec<String>,
+    pub exclude_subfolders: Vec<String>,
+    pub enabled: bool,
+    pub last_backup_at: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// 本地增量索引：大小/修改时间未变即可跳过，不读文件。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BackupIndexRecord {
+    pub user_id: Uuid,
+    pub folder_id: Uuid,
+    pub relative_path: String,
+    pub size: u64,
+    pub mtime_ns: i64,
+    pub cloud_node_id: Uuid,
+    pub content_sha256: String,
+    pub updated_at: i64,
+}
+
+/// 最近活动（只存本机；界面展示文件相对路径）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BackupActivityRecord {
+    pub id: i64,
+    pub user_id: Uuid,
+    pub folder_id: Uuid,
+    pub relative_path: String,
+    pub kind: String,
+    pub occurred_at: i64,
+    pub message: Option<String>,
 }
 
 /// SQLite 状态库。`Clone` 共享同一个连接（连接由 `Mutex` 串行化）。
@@ -244,6 +291,78 @@ impl StateStore {
                 );
 
                 PRAGMA user_version = 1;
+                "#,
+            )?;
+            tx.commit()?;
+        }
+        if current < 2 {
+            // 第 3 组：桌面备份文件夹、增量索引、最近活动与全局设置。
+            // 仍然只存本机元数据；路径属于用户本机信息，设计 D5 已说明在
+            // “安全与隐私”中告知用户。云端名称仍是密文。
+            let tx = connection.transaction()?;
+            tx.execute_batch(
+                r#"
+                CREATE TABLE backup_folders (
+                    id                  TEXT PRIMARY KEY NOT NULL,
+                    user_id             TEXT NOT NULL,
+                    local_path          TEXT NOT NULL,
+                    local_name          TEXT NOT NULL,
+                    cloud_target_id     TEXT,
+                    cloud_folder_id     TEXT,
+                    cloud_path          TEXT,
+                    exclude_globs       TEXT NOT NULL DEFAULT '[]',
+                    exclude_subfolders  TEXT NOT NULL DEFAULT '[]',
+                    enabled             INTEGER NOT NULL DEFAULT 1,
+                    last_backup_at      INTEGER,
+                    created_at          INTEGER NOT NULL,
+                    updated_at          INTEGER NOT NULL,
+                    UNIQUE (user_id, local_path)
+                );
+
+                CREATE INDEX backup_folders_user_idx
+                    ON backup_folders (user_id, enabled);
+
+                CREATE TABLE backup_index (
+                    user_id         TEXT NOT NULL,
+                    folder_id       TEXT NOT NULL,
+                    relative_path   TEXT NOT NULL,
+                    size            INTEGER NOT NULL CHECK (size >= 0),
+                    mtime_ns        INTEGER NOT NULL,
+                    cloud_node_id   TEXT NOT NULL,
+                    content_sha256  TEXT NOT NULL,
+                    updated_at      INTEGER NOT NULL,
+                    PRIMARY KEY (folder_id, relative_path),
+                    FOREIGN KEY (folder_id)
+                        REFERENCES backup_folders (id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX backup_index_user_idx
+                    ON backup_index (user_id, folder_id);
+
+                CREATE TABLE backup_activity (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id         TEXT NOT NULL,
+                    folder_id       TEXT NOT NULL,
+                    relative_path   TEXT NOT NULL,
+                    kind            TEXT NOT NULL,
+                    occurred_at     INTEGER NOT NULL,
+                    message         TEXT,
+                    FOREIGN KEY (folder_id)
+                        REFERENCES backup_folders (id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX backup_activity_user_idx
+                    ON backup_activity (user_id, id DESC);
+
+                CREATE TABLE backup_settings (
+                    user_id     TEXT NOT NULL,
+                    key         TEXT NOT NULL,
+                    value       TEXT NOT NULL,
+                    updated_at  INTEGER NOT NULL,
+                    PRIMARY KEY (user_id, key)
+                );
+
+                PRAGMA user_version = 2;
                 "#,
             )?;
             tx.commit()?;
@@ -554,6 +673,485 @@ impl StateStore {
         .await
         .map_err(|_| StateError::LockPoisoned)?
     }
+
+    /// 在阻塞线程上执行一个数据库任务；所有备份元数据 API 共用。
+    async fn run_db<T, F>(&self, job: F) -> Result<T, StateError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut Connection) -> Result<T, StateError> + Send + 'static,
+    {
+        let connection = self.connection.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut guard = connection.lock().map_err(|_| StateError::LockPoisoned)?;
+            job(&mut guard)
+        })
+        .await
+        .map_err(|_| StateError::LockPoisoned)?
+    }
+
+    /// 新建备份文件夹配置。
+    pub(crate) async fn insert_backup_folder(
+        &self,
+        record: BackupFolderRecord,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            connection.execute(
+                r#"
+                INSERT INTO backup_folders (
+                    id, user_id, local_path, local_name, cloud_target_id,
+                    cloud_folder_id, cloud_path, exclude_globs, exclude_subfolders,
+                    enabled, last_backup_at, created_at, updated_at
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                "#,
+                params![
+                    record.id.to_string(),
+                    record.user_id.to_string(),
+                    record.local_path.to_str().ok_or(StateError::PathEncoding)?,
+                    record.local_name,
+                    record.cloud_target_id.map(|id| id.to_string()),
+                    record.cloud_folder_id.map(|id| id.to_string()),
+                    record.cloud_path,
+                    json_text(&record.exclude_globs)?,
+                    json_text(&record.exclude_subfolders)?,
+                    i64::from(record.enabled),
+                    record.last_backup_at,
+                    record.created_at,
+                    record.updated_at,
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// 列出某用户的全部备份文件夹（新到旧）。
+    pub(crate) async fn list_backup_folders(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<BackupFolderRecord>, StateError> {
+        self.run_db(move |connection| {
+            let mut statement = connection.prepare(
+                r#"
+                SELECT id, user_id, local_path, local_name, cloud_target_id,
+                       cloud_folder_id, cloud_path, exclude_globs, exclude_subfolders,
+                       enabled, last_backup_at, created_at, updated_at
+                FROM backup_folders
+                WHERE user_id = ?1
+                ORDER BY created_at DESC
+                "#,
+            )?;
+            let rows = statement.query_map(params![user_id.to_string()], row_to_backup_folder)?;
+            let mut folders = Vec::new();
+            for row in rows {
+                folders.push(row??);
+            }
+            Ok(folders)
+        })
+        .await
+    }
+
+    /// 读取单个备份文件夹；不存在或不属于该用户时返回 `None`。
+    pub(crate) async fn get_backup_folder(
+        &self,
+        user_id: Uuid,
+        folder_id: Uuid,
+    ) -> Result<Option<BackupFolderRecord>, StateError> {
+        self.run_db(move |connection| {
+            let row = connection
+                .query_row(
+                    r#"
+                    SELECT id, user_id, local_path, local_name, cloud_target_id,
+                           cloud_folder_id, cloud_path, exclude_globs, exclude_subfolders,
+                           enabled, last_backup_at, created_at, updated_at
+                    FROM backup_folders
+                    WHERE user_id = ?1 AND id = ?2
+                    "#,
+                    params![user_id.to_string(), folder_id.to_string()],
+                    row_to_backup_folder,
+                )
+                .optional()?;
+            match row {
+                Some(row) => Ok(Some(row?)),
+                None => Ok(None),
+            }
+        })
+        .await
+    }
+
+    /// 覆盖备份文件夹的可编辑字段（不改 id/created_at）。
+    pub(crate) async fn replace_backup_folder(
+        &self,
+        record: BackupFolderRecord,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            connection.execute(
+                r#"
+                UPDATE backup_folders SET
+                    local_path = ?3,
+                    local_name = ?4,
+                    cloud_target_id = ?5,
+                    cloud_folder_id = ?6,
+                    cloud_path = ?7,
+                    exclude_globs = ?8,
+                    exclude_subfolders = ?9,
+                    enabled = ?10,
+                    last_backup_at = ?11,
+                    updated_at = ?12
+                WHERE user_id = ?1 AND id = ?2
+                "#,
+                params![
+                    record.user_id.to_string(),
+                    record.id.to_string(),
+                    record.local_path.to_str().ok_or(StateError::PathEncoding)?,
+                    record.local_name,
+                    record.cloud_target_id.map(|id| id.to_string()),
+                    record.cloud_folder_id.map(|id| id.to_string()),
+                    record.cloud_path,
+                    json_text(&record.exclude_globs)?,
+                    json_text(&record.exclude_subfolders)?,
+                    i64::from(record.enabled),
+                    record.last_backup_at,
+                    record.updated_at,
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// 只更新已解析的云端目标与最近备份时间（每次扫描后的轻量写回）。
+    pub(crate) async fn update_backup_folder_cloud(
+        &self,
+        user_id: Uuid,
+        folder_id: Uuid,
+        cloud_folder_id: Option<Uuid>,
+        cloud_path: Option<String>,
+        last_backup_at: Option<i64>,
+        updated_at: i64,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            connection.execute(
+                r#"
+                UPDATE backup_folders SET
+                    cloud_folder_id = ?3,
+                    cloud_path = COALESCE(?4, cloud_path),
+                    last_backup_at = COALESCE(?5, last_backup_at),
+                    updated_at = ?6
+                WHERE user_id = ?1 AND id = ?2
+                "#,
+                params![
+                    user_id.to_string(),
+                    folder_id.to_string(),
+                    cloud_folder_id.map(|id| id.to_string()),
+                    cloud_path,
+                    last_backup_at,
+                    updated_at,
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// 只更新备份文件夹的启用/暂停状态。
+    pub(crate) async fn set_backup_folder_enabled(
+        &self,
+        user_id: Uuid,
+        folder_id: Uuid,
+        enabled: bool,
+        updated_at: i64,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            connection.execute(
+                r#"
+                UPDATE backup_folders
+                SET enabled = ?3, updated_at = ?4
+                WHERE user_id = ?1 AND id = ?2
+                "#,
+                params![
+                    user_id.to_string(),
+                    folder_id.to_string(),
+                    i64::from(enabled),
+                    updated_at,
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// 删除备份文件夹配置；索引与活动通过外键级联删除。云端内容不受影响。
+    pub(crate) async fn delete_backup_folder(
+        &self,
+        user_id: Uuid,
+        folder_id: Uuid,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            connection.execute(
+                "DELETE FROM backup_folders WHERE user_id = ?1 AND id = ?2",
+                params![user_id.to_string(), folder_id.to_string()],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// 读取某备份文件夹的完整本地索引（用于一次扫描内的快速判定）。
+    pub(crate) async fn list_backup_index(
+        &self,
+        user_id: Uuid,
+        folder_id: Uuid,
+    ) -> Result<Vec<BackupIndexRecord>, StateError> {
+        self.run_db(move |connection| {
+            let mut statement = connection.prepare(
+                r#"
+                SELECT relative_path, size, mtime_ns, cloud_node_id, content_sha256, updated_at
+                FROM backup_index
+                WHERE user_id = ?1 AND folder_id = ?2
+                "#,
+            )?;
+            let rows = statement.query_map(
+                params![user_id.to_string(), folder_id.to_string()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, i64>(5)?,
+                    ))
+                },
+            )?;
+            let mut entries = Vec::new();
+            for row in rows {
+                let (relative_path, size, mtime_ns, cloud_node_id, content_sha256, updated_at) =
+                    row?;
+                let size = u64::try_from(size)
+                    .map_err(|_| StateError::Corrupt("备份索引中的文件大小无效"))?;
+                let cloud_node_id = Uuid::parse_str(&cloud_node_id)
+                    .map_err(|_| StateError::Corrupt("备份索引中的节点 ID 无效"))?;
+                entries.push(BackupIndexRecord {
+                    user_id,
+                    folder_id,
+                    relative_path,
+                    size,
+                    mtime_ns,
+                    cloud_node_id,
+                    content_sha256,
+                    updated_at,
+                });
+            }
+            Ok(entries)
+        })
+        .await
+    }
+
+    /// 插入或更新一条本地索引。
+    pub(crate) async fn upsert_backup_index(
+        &self,
+        record: BackupIndexRecord,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            connection.execute(
+                r#"
+                INSERT INTO backup_index (
+                    user_id, folder_id, relative_path, size, mtime_ns,
+                    cloud_node_id, content_sha256, updated_at
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                ON CONFLICT (folder_id, relative_path) DO UPDATE SET
+                    user_id = excluded.user_id,
+                    size = excluded.size,
+                    mtime_ns = excluded.mtime_ns,
+                    cloud_node_id = excluded.cloud_node_id,
+                    content_sha256 = excluded.content_sha256,
+                    updated_at = excluded.updated_at
+                "#,
+                params![
+                    record.user_id.to_string(),
+                    record.folder_id.to_string(),
+                    record.relative_path,
+                    i64::try_from(record.size).unwrap_or(i64::MAX),
+                    record.mtime_ns,
+                    record.cloud_node_id.to_string(),
+                    record.content_sha256,
+                    record.updated_at,
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// 删除一条本地索引（本地文件已删除时调用；不影响云端）。
+    pub(crate) async fn delete_backup_index(
+        &self,
+        user_id: Uuid,
+        folder_id: Uuid,
+        relative_path: String,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            connection.execute(
+                "DELETE FROM backup_index WHERE user_id = ?1 AND folder_id = ?2 AND relative_path = ?3",
+                params![
+                    user_id.to_string(),
+                    folder_id.to_string(),
+                    relative_path
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// 清空一个备份文件夹的本地索引（本地路径被更换时使用；云端不删除）。
+    pub(crate) async fn clear_backup_index(
+        &self,
+        user_id: Uuid,
+        folder_id: Uuid,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            connection.execute(
+                "DELETE FROM backup_index WHERE user_id = ?1 AND folder_id = ?2",
+                params![user_id.to_string(), folder_id.to_string()],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// 写入一条最近活动，并只保留该用户最近 200 条。
+    pub(crate) async fn insert_backup_activity(
+        &self,
+        record: BackupActivityRecord,
+    ) -> Result<i64, StateError> {
+        self.run_db(move |connection| {
+            let tx = connection.transaction()?;
+            tx.execute(
+                r#"
+                INSERT INTO backup_activity (
+                    user_id, folder_id, relative_path, kind, occurred_at, message
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "#,
+                params![
+                    record.user_id.to_string(),
+                    record.folder_id.to_string(),
+                    record.relative_path,
+                    record.kind,
+                    record.occurred_at,
+                    record.message,
+                ],
+            )?;
+            let id = tx.last_insert_rowid();
+            tx.execute(
+                r#"
+                DELETE FROM backup_activity
+                WHERE user_id = ?1 AND id NOT IN (
+                    SELECT id FROM backup_activity
+                    WHERE user_id = ?1
+                    ORDER BY id DESC
+                    LIMIT 200
+                )
+                "#,
+                params![record.user_id.to_string()],
+            )?;
+            tx.commit()?;
+            Ok(id)
+        })
+        .await
+    }
+
+    /// 最近活动（新到旧）。
+    pub(crate) async fn list_backup_activity(
+        &self,
+        user_id: Uuid,
+        limit: u32,
+    ) -> Result<Vec<BackupActivityRecord>, StateError> {
+        let limit = i64::from(limit.clamp(1, 200));
+        self.run_db(move |connection| {
+            let mut statement = connection.prepare(
+                r#"
+                SELECT id, folder_id, relative_path, kind, occurred_at, message
+                FROM backup_activity
+                WHERE user_id = ?1
+                ORDER BY id DESC
+                LIMIT ?2
+                "#,
+            )?;
+            let rows = statement.query_map(params![user_id.to_string(), limit], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            })?;
+            let mut activities = Vec::new();
+            for row in rows {
+                let (id, folder_id, relative_path, kind, occurred_at, message) = row?;
+                let folder_id = Uuid::parse_str(&folder_id)
+                    .map_err(|_| StateError::Corrupt("备份活动中的文件夹 ID 无效"))?;
+                activities.push(BackupActivityRecord {
+                    id,
+                    user_id,
+                    folder_id,
+                    relative_path,
+                    kind,
+                    occurred_at,
+                    message,
+                });
+            }
+            Ok(activities)
+        })
+        .await
+    }
+
+    /// 读取一个备份设置；不存在时返回 `None`。
+    pub(crate) async fn backup_setting(
+        &self,
+        user_id: Uuid,
+        key: String,
+    ) -> Result<Option<String>, StateError> {
+        self.run_db(move |connection| {
+            let value = connection
+                .query_row(
+                    "SELECT value FROM backup_settings WHERE user_id = ?1 AND key = ?2",
+                    params![user_id.to_string(), key],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?;
+            Ok(value)
+        })
+        .await
+    }
+
+    /// 写入一个备份设置（幂等）。
+    pub(crate) async fn set_backup_setting(
+        &self,
+        user_id: Uuid,
+        key: String,
+        value: String,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            connection.execute(
+                r#"
+                INSERT INTO backup_settings (user_id, key, value, updated_at)
+                VALUES (?1, ?2, ?3, ?4)
+                ON CONFLICT (user_id, key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                "#,
+                params![user_id.to_string(), key, value, unix_seconds()],
+            )?;
+            Ok(())
+        })
+        .await
+    }
 }
 
 fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<UploadRecord, StateError>> {
@@ -634,6 +1232,75 @@ fn unix_seconds() -> i64 {
         .unwrap_or_default()
 }
 
+fn json_text(values: &[String]) -> Result<String, StateError> {
+    serde_json::to_string(values).map_err(|_| StateError::Corrupt("排除规则不是有效 JSON"))
+}
+
+fn parse_json_list(value: &str) -> Result<Vec<String>, StateError> {
+    serde_json::from_str(value).map_err(|_| StateError::Corrupt("排除规则不是有效 JSON"))
+}
+
+fn parse_optional_uuid(value: Option<String>) -> Result<Option<Uuid>, StateError> {
+    match value {
+        Some(value) => Uuid::parse_str(&value)
+            .map(Some)
+            .map_err(|_| StateError::Corrupt("状态库中的 UUID 无效")),
+        None => Ok(None),
+    }
+}
+
+fn row_to_backup_folder(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<BackupFolderRecord, StateError>> {
+    let id = match Uuid::parse_str(&row.get::<_, String>(0)?) {
+        Ok(id) => id,
+        Err(_) => return Ok(Err(StateError::Corrupt("状态库中的 UUID 无效"))),
+    };
+    let user_id = match Uuid::parse_str(&row.get::<_, String>(1)?) {
+        Ok(id) => id,
+        Err(_) => return Ok(Err(StateError::Corrupt("状态库中的 UUID 无效"))),
+    };
+    let local_path = PathBuf::from(row.get::<_, String>(2)?);
+    let local_name = row.get::<_, String>(3)?;
+    let cloud_target_id = match parse_optional_uuid(row.get(4)?) {
+        Ok(value) => value,
+        Err(error) => return Ok(Err(error)),
+    };
+    let cloud_folder_id = match parse_optional_uuid(row.get(5)?) {
+        Ok(value) => value,
+        Err(error) => return Ok(Err(error)),
+    };
+    let cloud_path = row.get::<_, Option<String>>(6)?;
+    let exclude_globs = match parse_json_list(&row.get::<_, String>(7)?) {
+        Ok(value) => value,
+        Err(error) => return Ok(Err(error)),
+    };
+    let exclude_subfolders = match parse_json_list(&row.get::<_, String>(8)?) {
+        Ok(value) => value,
+        Err(error) => return Ok(Err(error)),
+    };
+    let enabled = row.get::<_, i64>(9)? != 0;
+    let last_backup_at = row.get::<_, Option<i64>>(10)?;
+    let created_at = row.get::<_, i64>(11)?;
+    let updated_at = row.get::<_, i64>(12)?;
+
+    Ok(Ok(BackupFolderRecord {
+        id,
+        user_id,
+        local_path,
+        local_name,
+        cloud_target_id,
+        cloud_folder_id,
+        cloud_path,
+        exclude_globs,
+        exclude_subfolders,
+        enabled,
+        last_backup_at,
+        created_at,
+        updated_at,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
@@ -672,6 +1339,10 @@ mod tests {
             .unwrap();
         assert!(sql.contains("pending_uploads"));
         assert!(sql.contains("confirmed_chunks"));
+        assert!(sql.contains("backup_folders"));
+        assert!(sql.contains("backup_index"));
+        assert!(sql.contains("backup_activity"));
+        assert!(sql.contains("backup_settings"));
         // 只存本机元数据：表结构中不得出现密钥/令牌/密文字段。
         for forbidden in ["wrapped", "token", "ciphertext", "plaintext", "secret"] {
             assert!(
@@ -679,6 +1350,47 @@ mod tests {
                 "状态库中不应出现字段 {forbidden}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn backup_activity_keeps_only_latest_two_hundred() {
+        let store = StateStore::open_in_memory().unwrap();
+        let user_id = Uuid::new_v4();
+        let folder_id = Uuid::new_v4();
+        // 直接插入文件夹行以避开外键；活动只按 user_id 裁剪。
+        {
+            let connection = store.lock().unwrap();
+            connection
+                .execute(
+                    r#"
+                    INSERT INTO backup_folders (
+                        id, user_id, local_path, local_name, exclude_globs,
+                        exclude_subfolders, enabled, created_at, updated_at
+                    )
+                    VALUES (?1, ?2, 'C:/backup', 'backup', '[]', '[]', 1, 0, 0)
+                    "#,
+                    params![folder_id.to_string(), user_id.to_string()],
+                )
+                .unwrap();
+        }
+        for index in 0..205_i64 {
+            store
+                .insert_backup_activity(BackupActivityRecord {
+                    id: 0,
+                    user_id,
+                    folder_id,
+                    relative_path: format!("file-{index}.txt"),
+                    kind: "added".to_owned(),
+                    occurred_at: index,
+                    message: None,
+                })
+                .await
+                .unwrap();
+        }
+        let activities = store.list_backup_activity(user_id, 500).await.unwrap();
+        assert_eq!(activities.len(), 200);
+        assert_eq!(activities[0].relative_path, "file-204.txt");
+        assert_eq!(activities[199].relative_path, "file-5.txt");
     }
 
     #[tokio::test]

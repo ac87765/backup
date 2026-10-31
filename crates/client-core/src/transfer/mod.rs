@@ -26,8 +26,11 @@ use crate::model::{
 
 mod download;
 mod folder;
+mod limiter;
 mod scan;
 mod upload;
+
+pub(crate) use limiter::TokenBucket;
 
 /// 默认进度通道容量；界面来不及消费时只保留最近事件，不阻塞传输。
 const EVENT_BUFFER: usize = 256;
@@ -168,6 +171,8 @@ pub struct UploadTask {
     request: UploadRequest,
     control: Arc<TransferControl>,
     events: broadcast::Sender<TransferProgress>,
+    /// 仅后台备份任务携带限速器；手动上传为 `None`（design D6）。
+    limiter: Option<Arc<TokenBucket>>,
 }
 
 #[derive(Clone, Debug)]
@@ -178,7 +183,7 @@ pub(crate) enum UploadRequest {
 }
 
 impl UploadTask {
-    fn new(client: Client, request: UploadRequest) -> Self {
+    fn new(client: Client, request: UploadRequest, limiter: Option<Arc<TokenBucket>>) -> Self {
         let (events, _) = broadcast::channel(EVENT_BUFFER);
         Self {
             id: Uuid::new_v4(),
@@ -186,6 +191,7 @@ impl UploadTask {
             request,
             control: Arc::new(TransferControl::new()),
             events,
+            limiter,
         }
     }
 
@@ -227,7 +233,15 @@ impl UploadTask {
     /// 会话过期时自动从头开始。
     pub async fn run(&self) -> Result<UploadOutcome, ClientError> {
         let sink = broadcast_sink(self.events.clone());
-        upload::run(&self.client, &self.request, self.id, &self.control, &sink).await
+        upload::run(
+            &self.client,
+            &self.request,
+            self.id,
+            &self.control,
+            &sink,
+            self.limiter.clone(),
+        )
+        .await
     }
 }
 
@@ -481,13 +495,32 @@ impl Client {
         parent_id: Uuid,
         local_path: impl Into<PathBuf>,
     ) -> Result<UploadTask, ClientError> {
-        let path = local_path.into();
+        self.upload_file_inner(parent_id, local_path.into(), None)
+    }
+
+    /// 后台备份专用：带令牌桶限速的 `upload_file`；手动上传不受限速影响。
+    pub(crate) fn upload_file_with_limiter(
+        &self,
+        parent_id: Uuid,
+        local_path: impl Into<PathBuf>,
+        limiter: Option<Arc<TokenBucket>>,
+    ) -> Result<UploadTask, ClientError> {
+        self.upload_file_inner(parent_id, local_path.into(), limiter)
+    }
+
+    fn upload_file_inner(
+        &self,
+        parent_id: Uuid,
+        path: PathBuf,
+        limiter: Option<Arc<TokenBucket>>,
+    ) -> Result<UploadTask, ClientError> {
         let name = file_name(&path)?;
         ensure_valid_name(name)?;
         ensure_readable_file(&path)?;
         Ok(UploadTask::new(
             self.clone(),
             UploadRequest::NewFile { parent_id, path },
+            limiter,
         ))
     }
 
@@ -497,13 +530,32 @@ impl Client {
         node_id: Uuid,
         local_path: impl Into<PathBuf>,
     ) -> Result<UploadTask, ClientError> {
-        let path = local_path.into();
+        self.upload_new_version_inner(node_id, local_path.into(), None)
+    }
+
+    /// 后台备份专用：带令牌桶限速的新版本上传。
+    pub(crate) fn upload_new_version_with_limiter(
+        &self,
+        node_id: Uuid,
+        local_path: impl Into<PathBuf>,
+        limiter: Option<Arc<TokenBucket>>,
+    ) -> Result<UploadTask, ClientError> {
+        self.upload_new_version_inner(node_id, local_path.into(), limiter)
+    }
+
+    fn upload_new_version_inner(
+        &self,
+        node_id: Uuid,
+        path: PathBuf,
+        limiter: Option<Arc<TokenBucket>>,
+    ) -> Result<UploadTask, ClientError> {
         let name = file_name(&path)?;
         ensure_valid_name(name)?;
         ensure_readable_file(&path)?;
         Ok(UploadTask::new(
             self.clone(),
             UploadRequest::NewVersion { node_id, path },
+            limiter,
         ))
     }
 
@@ -530,6 +582,7 @@ impl Client {
                 session_id,
                 path: record.local_path,
             },
+            None,
         ))
     }
 
