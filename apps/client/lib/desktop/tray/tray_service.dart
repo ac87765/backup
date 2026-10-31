@@ -26,12 +26,11 @@ class TrayService {
   TrayIcon? _tray;
   Menu? _menu;
   ListenerId? _trayListener;
-  ListenerId? _menuListener;
   StreamSubscription<BackupEventDto>? _events;
-  final Map<MenuItemId, Future<void> Function()> _actions =
-      <MenuItemId, Future<void> Function()>{};
   // 菜单项的原生句柄归 Dart 对象所有；必须持有引用，否则会被 GC 释放。
-  final List<MenuItem> _items = <MenuItem>[];
+  // 点击事件由菜单项自己发出（nativeapi 的 Windows 实现中 Menu 只发出
+  // 打开 / 关闭事件），所以监听器挂在每个菜单项上，重建菜单时一并移除。
+  final List<(MenuItem, ListenerId?)> _items = <(MenuItem, ListenerId?)>[];
   BackupSummaryDto? _summary;
   AuthStage _stage = AuthStage.initializing;
   bool _started = false;
@@ -67,7 +66,6 @@ class TrayService {
       tray.isIconTemplate = true;
     }
     _trayListener = tray.addListener(_onTrayEvent);
-    _menuListener = menu.addListener(_onMenuEvent);
     tray.setContextMenu(menu);
     // 左键点击图标打开主窗口，菜单放在右键。
     tray.setContextMenuTrigger(ContextMenuTrigger.rightClicked);
@@ -142,16 +140,6 @@ class TrayService {
     }
   }
 
-  void _onMenuEvent(MenuEvent event) {
-    if (event is! MenuItemClickedEvent) {
-      return;
-    }
-    final action = _actions[event.itemId];
-    if (action != null) {
-      unawaited(action());
-    }
-  }
-
   void _render() {
     if (_rendering) {
       return;
@@ -184,8 +172,7 @@ class TrayService {
       return;
     }
     menu.clear();
-    _actions.clear();
-    _items.clear();
+    _releaseItems();
 
     _addItem(menu, model.statusLabel, enabled: false);
     menu.addSeparator();
@@ -213,11 +200,24 @@ class TrayService {
       return;
     }
     item.isEnabled = enabled;
-    if (action != null) {
-      _actions[item.id] = action;
-    }
-    _items.add(item);
+    final listener = action == null
+        ? null
+        : item.addListener((event) {
+            if (event is MenuItemClickedEvent) {
+              unawaited(action());
+            }
+          });
+    _items.add((item, listener));
     menu.addItem(item);
+  }
+
+  void _releaseItems() {
+    for (final (item, listener) in _items) {
+      if (listener != null) {
+        item.removeListener(listener);
+      }
+    }
+    _items.clear();
   }
 
   Future<void> _openApp() async {
@@ -261,7 +261,11 @@ class TrayService {
 
   Future<void> _quit() async {
     try {
-      await _ref.read(nativeBridgeProvider).backupStop();
+      // 最多等 3 秒：引擎停不下来也必须能退出。
+      await _ref
+          .read(nativeBridgeProvider)
+          .backupStop()
+          .timeout(const Duration(seconds: 3));
     } catch (_) {
       // 退出前尽量停止引擎；失败也要允许退出。
     }
@@ -280,11 +284,8 @@ class TrayService {
       tray.setVisible(false);
       tray.dispose();
     }
+    _releaseItems();
     if (menu != null) {
-      final listener = _menuListener;
-      if (listener != null) {
-        menu.removeListener(listener);
-      }
       menu.dispose();
     }
   }
