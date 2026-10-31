@@ -7,6 +7,10 @@
 - 微信的目录结构不是公开接口，会随版本变化。已知（实施时需在真实安装上核实并以测试夹具固定）：
   - Windows 微信 3.x：默认 `文档\WeChat Files\<账号目录>\`，其下 `FileStorage\File`（聊天文件）、`FileStorage\Image`、`FileStorage\Video`、`Msg\`（聊天记录数据库，已加密）；手机迁移备份在 `WeChat Files\Backup\`（如存在）。自定义位置记录在注册表 `HKCU\Software\Tencent\WeChat` 的 `FileSavePath`。
   - Windows 微信 4.x：默认 `文档\xwechat_files\<账号目录>\`，其下 `msg\file`、`msg\attach`（图片）、`msg\video`、`db_storage\`（数据库）；自定义位置在微信 4.x 的本地配置中。
+  - **已在用户本机核实（2026-10-31，微信 4.x，进程 `Weixin.exe` + 多个 `WeChatAppEx.exe`，注册表 `HKCU\Software\Tencent\Weixin` 有 `InstallPath` / `Version`）**，只记录目录名、文件数与大小，未打开任何文件：
+    - 存储位置：`%APPDATA%\Tencent\xwechat\config\` 下有若干 `<32 位十六进制>.ini`，其中一个的内容就是“存放 `xwechat_files` 的父目录”的纯文本路径（本机为 `文档`）；另一个是短的非路径值。发现规则：读取该目录下所有 `.ini`，取内容为存在的目录、且其下有 `xwechat_files` 的那个。
+    - `xwechat_files\` 顶层：`all_users\`（登录头像、配置，很小）、`Backup\<账号目录>\`（微信自带迁移备份，本机为空）、若干 `wxid_<随机>\` 账号目录（本机 2 个：约 88 MB 与 3.1 GB）。
+    - 账号目录下：`msg\attach\<32 位十六进制（会话哈希）>\<YYYY-MM>\…`，文件几乎全是 `.dat`（微信自有加密图片，约 1.2 GB / 1.1 万个）；`msg\file\<YYYY-MM>\`（原始文件：pdf、docx 等）；`msg\video\<YYYY-MM>\`（`.mp4` + `.jpg` 缩略图，约 1.2 GB）；`db_storage\<子库>\`（`contact`、`message`、`session`、`sns`、`favorite`、`emoticon`、`head_image`、`general`、`hardlink`、`MMKV` 等，文件为 `.db` 及其 `-wal` / `-shm`、`.kvdb` 及其 `-shm`、`.material`；本机约 163 MB）；`cache\<YYYY-MM>\`（约 300 MB 缓存）；`business\`（表情、收藏、xweb 等）、`config\`、`resource\`、`temp\`、`apm_record\`。
   - macOS：`~/Library/Containers/com.tencent.xinWeChat/Data/` 之下（3.x 在 `Library/Application Support/com.tencent.xinWeChat/<版本>/<账号哈希>/`，4.x 在 `Documents/xwechat_files/<账号目录>/`）；读取其他 App 的容器需要用户授权（“完全磁盘访问权限”或系统弹出的访问其他 App 数据提示）。
 
 ## Goals / Non-Goals
@@ -19,8 +23,8 @@
 
 ### D1 来源发现
 
-- 依次检查：①用户手动添加的目录；②版本相关的自定义位置（Windows 注册表 / 4.x 配置）；③默认位置（3.x、4.x，各平台）。
-- 识别账号目录的规则：目录中同时存在该版本的特征子目录（3.x：`FileStorage` 与 `Msg`；4.x：`msg` 与 `db_storage`）。排除 `All Users`、`Applet`、`WMPF` 等非账号目录。
+- 依次检查：①用户手动添加的目录；②版本相关的自定义位置（Windows 3.x：注册表 `FileSavePath`；Windows 4.x：`%APPDATA%\Tencent\xwechat\config\*.ini` 中内容为路径的那一个，见 Context）；③默认位置（3.x、4.x，各平台）。读取 `.ini` 只为取得路径，不读取其他配置。
+- 识别账号目录的规则：目录中同时存在该版本的特征子目录（3.x：`FileStorage` 与 `Msg`；4.x：`msg` 与 `db_storage`）。排除 `All Users` / `all_users`、`Backup`、`Applet`、`WMPF` 等非账号目录（4.x 的 `Backup\<账号目录>\` 作为该账号的“手机迁移备份”来源）。
 - 每个账号显示：账号目录名（如 `wxid_xxx`，界面上可设置备注名，备注只存本地状态库）、微信版本（3.x / 4.x）、各类别大小、最近修改时间。按最近修改时间排序，最近的标为“可能是当前登录的账号”。
 - 规则写成数据驱动的“布局描述”（每个版本的类别 → 相对路径列表），便于微信改版时只更新描述并补测试夹具。
 - macOS 无权限时：引导用户在系统设置中授权，或手动选择目录；在未授权前不反复弹出系统提示。
@@ -32,15 +36,15 @@
 | 聊天文件 | `FileStorage/File` | `msg/file` | 增量文件备份 |
 | 图片与视频 | `FileStorage/Image`、`FileStorage/Video` | `msg/attach`、`msg/video` | 增量文件备份（原样，包括微信自有格式） |
 | 聊天记录数据库 | `Msg/` | `db_storage/` | 快照（D3） |
-| 手机迁移备份 | `WeChat Files/Backup/` | 如存在则同理 | 增量文件备份 |
+| 手机迁移备份 | `WeChat Files/Backup/` | `xwechat_files/Backup/<账号目录>/` | 增量文件备份 |
 
 - 云端位置：`全部文件/微信备份/<设备名>/<账号目录名>/<类别>/…`，保持来源内的相对目录结构，便于恢复与在网页上查找聊天文件。
 - 默认勾选“聊天文件”与“聊天记录数据库”；“图片与视频”默认勾选但开始前显示大小提醒；“手机迁移备份”存在时默认勾选。
-- 复用 add-native-clients D6 的增量规则、排除规则（另加排除微信缓存与临时目录，如 `Cache`、`temp`）、永不因本地删除而删除云端。
+- 复用 add-native-clients D6 的增量规则、排除规则（另加排除微信缓存与临时目录：3.x 的 `Cache`、`temp`；4.x 的 `cache`、`temp`、`apm_record`、`resource`、`business/xweb`。这些都不在上表的来源路径内，只在用户手动添加整个账号目录时生效）、永不因本地删除而删除云端。
 
 ### D3 聊天记录数据库快照
 
-- 微信运行时数据库文件处于写入中，单独复制会得到不一致的副本。因此：只有检测到微信进程**未运行**时才备份数据库类别；运行中则该类别显示“等微信退出后备份”，并在检测到退出后自动开始（进程检测：Windows 按 `WeChat.exe` / `Weixin.exe`，macOS 按 bundle id）。
+- 微信运行时数据库文件处于写入中，单独复制会得到不一致的副本。因此：只有检测到微信进程**未运行**时才备份数据库类别；运行中则该类别显示“等微信退出后备份”，并在检测到退出后自动开始（进程检测：Windows 按 `WeChat.exe` / `Weixin.exe` 主进程；4.x 的 `WeChatAppEx.exe` 是内置浏览器等子进程，主进程退出后也一并检查，存在任一即视为运行中；macOS 按 bundle id）。4.x 的数据库目录包含 `.db` 与 `-wal` / `-shm`、`.kvdb` 与 `-shm`、`.material` 及 `MMKV/`：快照必须包含整个 `db_storage/` 目录的全部文件，不能只取 `.db`。
 - 开始前先在本地把整个数据库目录的文件清单（相对路径、大小、修改时间）记下；上传过程中如果检测到微信启动或任一文件变化，则放弃本次快照（已上传部分移入回收站），稍后重试。
 - 每份快照上传到 `…/聊天记录数据库/<UTC 时间戳>/`，全部文件上传完成后再写入一个 `快照完成` 标记文件；没有标记的快照视为不完整，不会用于恢复，下次清理。
 - 内容与上一份完整快照完全相同（逐文件 `content_sha256` 一致）时不新建快照。
