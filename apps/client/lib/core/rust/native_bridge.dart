@@ -1,3 +1,4 @@
+import '../../src/rust/frb_generated.dart' show RustLib;
 import '../../src/rust/api/auth.dart' as auth;
 import '../../src/rust/api/backup.dart' as backup;
 import '../../src/rust/api/files.dart' as files;
@@ -13,6 +14,9 @@ class NativeBridge {
   const NativeBridge();
 
   // ---- 初始化 ----
+  /// 初始化 flutter_rust_bridge 运行时。幂等，可在启动流程中重复调用。
+  Future<void> ensureInitialized() => RustLib.init();
+
   Future<void> initialize({
     required String appDataDir,
     required String serverUrl,

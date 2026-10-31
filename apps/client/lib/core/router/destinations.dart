@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// 侧栏目的地（design/desktop/files.html：全部文件、最近、回收站、备份文件夹、
-/// 安全与隐私、设置）。
+/// 安全与隐私）。设置从侧栏账号行的齿轮按钮打开，不作为导航项。
 class AppDestination {
   const AppDestination({
     required this.path,
@@ -19,19 +20,14 @@ class AppDestination {
 }
 
 const appDestinations = <AppDestination>[
-  AppDestination(path: '/files', label: '全部文件', icon: Icons.folder_outlined),
-  AppDestination(path: '/recent', label: '最近', icon: Icons.history),
-  AppDestination(path: '/trash', label: '回收站', icon: Icons.delete_outline),
+  AppDestination(path: '/files', label: '全部文件', icon: LucideIcons.folder),
+  AppDestination(path: '/recent', label: '最近', icon: LucideIcons.clock),
   AppDestination(
     path: '/backup-folders',
     label: '备份文件夹',
-    icon: Icons.cloud_sync_outlined,
+    icon: LucideIcons.cloudUpload,
     desktopOnly: true,
   ),
-  AppDestination(
-    path: '/security',
-    label: '安全与隐私',
-    icon: Icons.shield_outlined,
-  ),
-  AppDestination(path: '/settings', label: '设置', icon: Icons.settings_outlined),
+  AppDestination(path: '/trash', label: '回收站', icon: LucideIcons.trash),
+  AppDestination(path: '/security', label: '安全与隐私', icon: LucideIcons.shield),
 ];

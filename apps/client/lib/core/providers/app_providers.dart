@@ -9,21 +9,24 @@ final nativeBridgeProvider = Provider<NativeBridge>((ref) {
   return const NativeBridge();
 });
 
-/// 启动配置（服务器地址、应用数据目录、设备名）。
-final appConfigProvider = Provider<AppConfig>((ref) {
-  return AppConfig.platformDefaults();
+/// 启动配置（服务器地址、应用数据目录、设备名）。桌面入口启动时读取。
+final appConfigProvider = FutureProvider<AppConfig>((ref) {
+  return AppConfig.load();
 });
 
-/// 初始化 Rust 核心；需要调用桥接 API 的界面先 await 这个 provider。
+/// 初始化 Rust 核心；界面需要调用桥接前先 await 这个 provider。
+///
+/// `ensureInitialized` 载入 flutter_rust_bridge 动态库，`initialize` 传入
+/// 本地状态库目录、服务器地址与设备名（不登录、不发网络请求）。
 final bootstrapProvider = FutureProvider<void>((ref) async {
-  final config = ref.watch(appConfigProvider);
-  await ref
-      .watch(nativeBridgeProvider)
-      .initialize(
-        appDataDir: config.appDataDir,
-        serverUrl: config.serverUrl,
-        deviceName: config.deviceName,
-      );
+  final config = await ref.watch(appConfigProvider.future);
+  final bridge = ref.watch(nativeBridgeProvider);
+  await bridge.ensureInitialized();
+  await bridge.initialize(
+    appDataDir: config.appDataDir,
+    serverUrl: config.serverUrl,
+    deviceName: config.deviceName,
+  );
 });
 
 /// 单文件传输进度事件。
@@ -45,4 +48,10 @@ final backupEventsProvider = StreamProvider<BackupEventDto>((ref) {
 final backupSummaryProvider = FutureProvider<BackupSummaryDto>((ref) async {
   await ref.watch(bootstrapProvider.future);
   return ref.watch(nativeBridgeProvider).backupSummary();
+});
+
+/// 已用 / 预留 / 配额；登录后加载，写操作后 invalidate。
+final usageProvider = FutureProvider<UsageDto>((ref) async {
+  await ref.watch(bootstrapProvider.future);
+  return ref.watch(nativeBridgeProvider).getUsage();
 });

@@ -17,16 +17,17 @@ abstract final class AppTheme {
       brightness: tokens.brightness,
       scaffoldBackgroundColor: tokens.canvas,
       fontFamily: _fontFamily(),
+      fontFamilyFallback: _fontFamilyFallback(),
       colorScheme: ColorScheme(
         brightness: tokens.brightness,
         primary: tokens.brand600,
-        onPrimary: Colors.white,
+        onPrimary: tokens.onBrand,
         primaryContainer: tokens.brand100,
         onPrimaryContainer: tokens.brand700,
         secondary: tokens.brand700,
-        onSecondary: Colors.white,
+        onSecondary: tokens.onBrand,
         error: tokens.danger600,
-        onError: Colors.white,
+        onError: tokens.onBrand,
         surface: tokens.surface,
         onSurface: tokens.ink900,
         outline: tokens.lineStrong,
@@ -99,6 +100,15 @@ abstract final class AppTheme {
   static String? _fontFamily() {
     if (defaultTargetPlatform == TargetPlatform.windows) {
       return 'Segoe UI Variable Text';
+    }
+    return null;
+  }
+
+  /// Windows：Segoe UI Variable 没有中文字形，回落到微软雅黑（design
+  /// README 的字体约定）。macOS 使用系统字体，由平台负责苹方回落。
+  static List<String>? _fontFamilyFallback() {
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return const <String>['Microsoft YaHei UI', 'Microsoft YaHei'];
     }
     return null;
   }

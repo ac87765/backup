@@ -1,35 +1,76 @@
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../common/pages/files_page.dart';
 import '../../common/pages/login_page.dart';
+import '../../common/pages/pending_page.dart';
 import '../../common/pages/recent_page.dart';
 import '../../common/pages/security_page.dart';
 import '../../common/pages/settings_page.dart';
+import '../../common/pages/splash_page.dart';
 import '../../common/pages/trash_page.dart';
 import '../../common/pages/unlock_page.dart';
+import '../../common/state/auth_controller.dart';
 import '../../common/widgets/app_shell.dart';
 import 'destinations.dart';
 
 /// 构建应用路由。
 ///
-/// 通用页面在这里；桌面专有路由（备份文件夹）由 `lib/app.dart` 通过
-/// `extraShellRoutes` 注入，避免 `core/` 依赖 `desktop/`（design D8：iOS 只
-/// 引用 common + core）。认证守卫与真实页面在第 5 组接入。
+/// [authStage] 提供认证阶段用于守卫；为 null 时不启用守卫（组件测试可直接
+/// 打开某个页面）。[refreshListenable] 在认证状态变化时触发重新求值。
 GoRouter buildAppRouter({
   List<AppDestination>? destinations,
-  List<RouteBase> extraShellRoutes = const [],
+  List<RouteBase> extraShellRoutes = const <RouteBase>[],
+  AuthStage Function()? authStage,
+  Listenable? refreshListenable,
 }) {
-  // 默认只展示通用目的地；桌面入口显式传入完整列表（含“备份文件夹”）。
   final visibleDestinations =
       destinations ??
       appDestinations
           .where((destination) => !destination.desktopOnly)
           .toList(growable: false);
   return GoRouter(
-    initialLocation: '/files',
-    routes: [
+    initialLocation: '/splash',
+    refreshListenable: refreshListenable,
+    redirect: (context, state) {
+      final stage = authStage?.call();
+      if (stage == null) {
+        return null;
+      }
+      final path = state.uri.path;
+      switch (stage) {
+        case AuthStage.initializing:
+        case AuthStage.failure:
+          return path == '/splash' ? null : '/splash';
+        case AuthStage.login:
+          return path == '/login' ? null : '/login';
+        case AuthStage.unlock:
+          return path == '/unlock' ? null : '/unlock';
+        case AuthStage.pending:
+          return path == '/pending' ? null : '/pending';
+        case AuthStage.ready:
+          if (path == '/splash' ||
+              path == '/login' ||
+              path == '/unlock' ||
+              path == '/pending' ||
+              path == '/') {
+            return '/files';
+          }
+          return null;
+      }
+    },
+    routes: <RouteBase>[
+      GoRoute(path: '/splash', builder: (context, state) => const SplashPage()),
       GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
       GoRoute(path: '/unlock', builder: (context, state) => const UnlockPage()),
+      GoRoute(
+        path: '/pending',
+        builder: (context, state) => const PendingPage(),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (context, state) => const SettingsPage(),
+      ),
       ShellRoute(
         builder: (context, state, child) {
           return AppShell(
@@ -38,7 +79,7 @@ GoRouter buildAppRouter({
             child: child,
           );
         },
-        routes: [
+        routes: <RouteBase>[
           GoRoute(
             path: '/files',
             builder: (context, state) => const FilesPage(),
@@ -54,10 +95,6 @@ GoRouter buildAppRouter({
           GoRoute(
             path: '/security',
             builder: (context, state) => const SecurityPage(),
-          ),
-          GoRoute(
-            path: '/settings',
-            builder: (context, state) => const SettingsPage(),
           ),
           ...extraShellRoutes,
         ],

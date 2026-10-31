@@ -44,6 +44,20 @@ class DesktopTokens {
     required this.fileSlides,
     required this.fileArchive,
     required this.fileOther,
+    required this.fileFolderBg,
+    required this.fileDocBg,
+    required this.fileSheetBg,
+    required this.fileVideoBg,
+    required this.fileArchiveBg,
+    required this.scrim,
+    required this.designCanvas,
+    required this.warningTextStrong,
+    required this.trafficRed,
+    required this.trafficYellow,
+    required this.trafficGreen,
+    required this.onBrand,
+    required this.knobShadow,
+    required this.trafficShadow,
     required this.radiusCard,
     required this.radiusControl,
     required this.space1,
@@ -108,6 +122,37 @@ class DesktopTokens {
   final Color fileSlides;
   final Color fileArchive;
   final Color fileOther;
+
+  // ---- 文件类型图标底色（tokens.css `.ficon.*` 的字面色值）----
+  final Color fileFolderBg;
+  final Color fileDocBg;
+  final Color fileSheetBg;
+  final Color fileVideoBg;
+  final Color fileArchiveBg;
+
+  // ---- 遮罩、画布与辅助色 ----
+  /// 对话框遮罩：tokens.css `.scrim` 的 `rgb(30 25 25 / 0.32)`。
+  final Color scrim;
+
+  /// 设计稿窗口外画布：tokens.css `body` 的 `#dfe3e8`。
+  final Color designCanvas;
+
+  /// tokens.css `.note.warn` 的文字色 `#92400e`。
+  final Color warningTextStrong;
+
+  /// macOS 红绿灯（窗口外框图元，tokens.css `.traffic`）。
+  final Color trafficRed;
+  final Color trafficYellow;
+  final Color trafficGreen;
+
+  /// 品牌色底上的文字/图标（tokens.css 的 `#fff`）。
+  final Color onBrand;
+
+  /// 开关滑块阴影 `0 1px 2px rgb(0 0 0 / 0.2)`。
+  final Color knobShadow;
+
+  /// macOS 红绿灯的内描边 `rgb(0 0 0 / 0.15)`。
+  final Color trafficShadow;
 
   // ---- 圆角 ----
   final double radiusCard;
@@ -176,6 +221,20 @@ class DesktopTokens {
     fileSlides: Color(0xFFEA580C),
     fileArchive: Color(0xFFA16207),
     fileOther: Color(0xFF71717A),
+    fileFolderBg: Color(0xFFEEF4FF),
+    fileDocBg: Color(0xFFEFF6FF),
+    fileSheetBg: Color(0xFFF0FDF4),
+    fileVideoBg: Color(0xFFF5F3FF),
+    fileArchiveBg: Color(0xFFFEFCE8),
+    scrim: Color(0x521E1919),
+    designCanvas: Color(0xFFDFE3E8),
+    warningTextStrong: Color(0xFF92400E),
+    trafficRed: Color(0xFFFF5F57),
+    trafficYellow: Color(0xFFFEBC2E),
+    trafficGreen: Color(0xFF28C840),
+    onBrand: Color(0xFFFFFFFF),
+    knobShadow: Color(0x33000000),
+    trafficShadow: Color(0x26000000),
     radiusCard: 12,
     radiusControl: 8,
     space1: 4,
@@ -241,6 +300,20 @@ class DesktopTokens {
     fileSlides: Color(0xFFFB923C),
     fileArchive: Color(0xFFFACC15),
     fileOther: Color(0xFFA1A1AA),
+    fileFolderBg: Color(0xFF15243D),
+    fileDocBg: Color(0xFF14243D),
+    fileSheetBg: Color(0xFF10201A),
+    fileVideoBg: Color(0xFF231A33),
+    fileArchiveBg: Color(0xFF2A2410),
+    scrim: Color(0x8C000000),
+    designCanvas: Color(0xFF0E0E11),
+    warningTextStrong: Color(0xFFFBBF24),
+    trafficRed: Color(0xFFFF5F57),
+    trafficYellow: Color(0xFFFEBC2E),
+    trafficGreen: Color(0xFF28C840),
+    onBrand: Color(0xFFFFFFFF),
+    knobShadow: Color(0x33000000),
+    trafficShadow: Color(0x26000000),
     radiusCard: 12,
     radiusControl: 8,
     space1: 4,
@@ -272,4 +345,79 @@ class DesktopTokens {
     durationBase: Duration(milliseconds: 180),
     durationSlow: Duration(milliseconds: 260),
   );
+}
+
+/// 版式尺寸令牌。
+///
+/// 颜色、圆角、间距、字号在 [DesktopTokens]；窗口骨架与控件的固定尺寸没有
+/// 对应的 CSS 变量，但同样来自 `design/desktop/tokens.css` 与各 HTML 的
+/// 源码（注释中标出出处）。集中放在这里，避免组件里出现零散魔法数字。
+abstract final class DesktopMetrics {
+  // 窗口（tokens.css `.window` / `.titlebar`）。
+  static const double windowRadius = 8;
+  static const double windowRadiusMac = 10;
+  static const double titleBarHeight = 32;
+  static const double titleBarHeightMac = 28;
+  static const double captionButtonWidth = 46;
+  static const double trafficLightSize = 12;
+
+  // 应用骨架（tokens.css `.sidebar` / `.toolbar` / `.statusbar`）。
+  static const double sidebarWidth = 232;
+  static const double sidebarPadding = 12;
+  static const double navItemHeight = 34;
+  static const double toolbarHeight = 56;
+  static const double statusBarHeight = 32;
+  static const double quotaBarHeight = 6;
+  static const double brandLogoSize = 28;
+
+  // 控件（tokens.css `.btn` / `.input` / `.segmented` / `.toggle`）。
+  static const double buttonHeight = 32;
+  static const double buttonHeightLarge = 40;
+  static const double buttonIconSize = 32;
+  static const double inputHeight = 36;
+  static const double inputHeightSmall = 32;
+  static const double segmentedCellWidth = 28;
+  static const double segmentedCellHeight = 26;
+  static const double toggleWidth = 36;
+  static const double toggleHeight = 20;
+  static const double toggleKnob = 16;
+  static const double iconTileSize = 28;
+  static const double avatarSize = 28;
+  static const double avatarSizeLarge = 56;
+  static const double logoSizeLarge = 48;
+
+  // 文件列表（tokens.css `.table`）。
+  static const double tableHeaderHeight = 36;
+  static const double tableRowHeight = 44;
+  static const double tableNameColumnPadding = 20;
+  static const double tableModifiedWidth = 180;
+  static const double tableSizeWidth = 110;
+  static const double tableActionsWidth = 48;
+
+  // 对话框与弹出层（tokens.css `.dialog` / `.menu` / `.popover`）。
+  static const double dialogWidth = 520;
+  static const double dialogWidthSmall = 440;
+  static const double dialogMaxHeightInset = 48;
+  static const double menuWidth = 220;
+  static const double menuItemHeight = 32;
+
+  // 传输面板（files.html `.transfers`）。
+  static const double transferPanelWidth = 380;
+  static const double transferPanelBottom = 44;
+
+  // 认证窗口（login.html）。
+  static const double authWindowWidth = 440;
+  static const double authWindowHeight = 600;
+  static const double authPadding = 48;
+  static const double authPaddingBottom = 28;
+  static const double authFormGap = 14;
+
+  // 设置窗口（settings.html）。
+  static const double settingsWindowWidth = 760;
+  static const double settingsWindowHeight = 600;
+  static const double settingsTabsWidth = 188;
+
+  /// 文件列表每页显示数量。桥接 `list_folder` 目前一次返回全部（client-core
+  /// 内部已聚合服务端分页），界面按这个大小做本地分页加载。
+  static const int filePageSize = 50;
 }

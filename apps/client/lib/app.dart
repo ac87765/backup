@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'common/state/auth_controller.dart';
 import 'core/router/app_router.dart';
 import 'core/router/destinations.dart';
 import 'core/theme/app_theme.dart';
@@ -21,30 +23,55 @@ List<AppDestination> destinationsForPlatform({bool? desktop}) {
             .toList(growable: false);
 }
 
-/// 生产路由（桌面入口注入备份文件夹页面）。
-final GoRouter appRouter = buildAppRouter(
-  destinations: destinationsForPlatform(),
-  extraShellRoutes: isDesktopPlatform
-      ? <RouteBase>[backupFoldersRoute]
-      : const <RouteBase>[],
-);
+/// 生产路由：认证守卫 + 桌面入口注入备份文件夹页面。
+final routerProvider = Provider<GoRouter>((ref) {
+  final refresh = _AuthRefresh(ref);
+  ref.onDispose(refresh.dispose);
+  return buildAppRouter(
+    destinations: destinationsForPlatform(),
+    extraShellRoutes: isDesktopPlatform
+        ? <RouteBase>[backupFoldersRoute]
+        : const <RouteBase>[],
+    authStage: () => ref.read(authControllerProvider).stage,
+    refreshListenable: refresh,
+  );
+});
+
+class _AuthRefresh extends ChangeNotifier {
+  _AuthRefresh(Ref ref) {
+    _subscription = ref.listen(authControllerProvider, (previous, next) {
+      notifyListeners();
+    });
+  }
+
+  late final ProviderSubscription<AuthState> _subscription;
+
+  @override
+  void dispose() {
+    _subscription.close();
+    super.dispose();
+  }
+}
 
 /// 应用根组件。
-class EncryptedBackupApp extends StatelessWidget {
+class EncryptedBackupApp extends ConsumerWidget {
   const EncryptedBackupApp({this.router, super.key});
 
-  /// 测试可注入自定义路由；默认使用生产路由。
+  /// 测试可注入自定义路由；默认使用带认证守卫的生产路由。
   final GoRouter? router;
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: '加密备份',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
-      routerConfig: router ?? appRouter,
+  Widget build(BuildContext context, WidgetRef ref) {
+    return RepaintBoundary(
+      key: const Key('golden-root'),
+      child: MaterialApp.router(
+        title: '加密备份',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: ThemeMode.system,
+        routerConfig: router ?? ref.watch(routerProvider),
+      ),
     );
   }
 }
