@@ -56,9 +56,11 @@ jobs:
         working-directory: apps/client
         run: flutter analyze
 
-      - name: flutter test
+      # golden 需要 Windows 系统字体（Segoe UI Variable / 微软雅黑），在 windows
+      # job 用 --tags golden 运行；这里排除，避免 Linux 上因缺字体失败。
+      - name: flutter test（排除 golden）
         working-directory: apps/client
-        run: flutter test
+        run: flutter test --exclude-tags golden
 
       - name: 安装 flutter_rust_bridge_codegen 2.13.0
         run: |
@@ -104,6 +106,12 @@ jobs:
       - name: flutter pub get
         working-directory: apps/client
         run: flutter pub get
+
+      # golden 截图（design/desktop/screenshots 对照）；PNG 由审查者在 Windows
+      # 生成后提交，缺失时本步骤会失败，这是预期的验收门槛。
+      - name: flutter test（golden）
+        working-directory: apps/client
+        run: flutter test --tags golden
 
       - name: flutter build windows --release
         working-directory: apps/client
