@@ -36,6 +36,11 @@ const SCREENS = {
     ['settings.html', 'confirm', 'settings-keep-unlocked-confirm'],
     ['settings.html', 'about', 'settings-about'],
     ['tray.html', '', 'tray'],
+    ['wechat.html', 'default', 'wechat'],
+    ['wechat.html', 'off', 'wechat-off'],
+    ['wechat.html', 'quota', 'wechat-quota'],
+    ['wechat.html', 'notfound', 'wechat-notfound'],
+    ['wechat.html', 'restore', 'wechat-restore'],
   ],
 }
 
