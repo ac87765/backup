@@ -10,10 +10,10 @@
 
 ## 1. Rust 客户端核心：API 与认证
 
-- [ ] 1.1 新建 `crates/client-core`：reqwest + rustls（ring）、Cookie 会话、CSRF 头、User-Agent、错误码映射、429 退避；平台无关模块与 `desktop` feature 分开（design D1/D4）
-- [ ] 1.2 认证：prelogin、Argon2id 派生（复用 crypto-core 与参数校验）、登录、`/auth/me`（含 status / is_admin）、退出；内存密钥存储（Zeroize，design D2）
-- [ ] 1.3 钥匙串：会话令牌存取；“保持解锁”的主密钥存取（macOS：security-framework；Windows：DPAPI + 凭据管理器）；退出 / 改密 / 会话失效时清除（design D3）
-- [ ] 1.4 集成测试：复用服务端 testcontainers 工具，覆盖登录、待审核、会话失效清除
+- [x] 1.1 新建 `crates/client-core`：reqwest + rustls（ring）、Cookie 会话、CSRF 头、User-Agent、错误码映射、429 退避；平台无关模块与 `desktop` feature 分开（design D1/D4）
+- [x] 1.2 认证：prelogin、Argon2id 派生（复用 crypto-core 与参数校验）、登录、`/auth/me`（含 status / is_admin）、退出；内存密钥存储（Zeroize，design D2）
+- [x] 1.3 钥匙串：会话令牌存取；“保持解锁”的主密钥存取（macOS：security-framework；Windows：DPAPI + 凭据管理器）；退出 / 改密 / 会话失效时清除（design D3）
+- [x] 1.4 集成测试：复用服务端 testcontainers 工具，覆盖登录、待审核、会话失效清除
 
 ## 2. Rust 客户端核心：文件与传输
 
