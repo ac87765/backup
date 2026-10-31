@@ -99,7 +99,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('file-row-a')));
     await tester.pump(kDoubleTapTimeout);
     await tester.tap(find.byKey(const ValueKey<String>('file-more-a')));
-    await tester.pump(kDoubleTapTimeout);    await tester.pumpAndSettle();
+    await tester.pump(kDoubleTapTimeout);
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey<String>('menu-item-重命名')));
     await tester.pumpAndSettle();
 
@@ -128,7 +129,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('file-row-a')));
     await tester.pump(kDoubleTapTimeout);
     await tester.tap(find.byKey(const ValueKey<String>('file-more-a')));
-    await tester.pump(kDoubleTapTimeout);    await tester.pumpAndSettle();
+    await tester.pump(kDoubleTapTimeout);
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey<String>('menu-item-移到回收站')));
     await tester.pumpAndSettle();
 
@@ -162,7 +164,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('file-row-a')));
     await tester.pump(kDoubleTapTimeout);
     await tester.tap(find.byKey(const ValueKey<String>('file-more-a')));
-    await tester.pump(kDoubleTapTimeout);    await tester.pumpAndSettle();
+    await tester.pump(kDoubleTapTimeout);
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey<String>('menu-item-版本历史')));
     await tester.pumpAndSettle();
 
