@@ -120,6 +120,28 @@ class FakeNativeBridge extends NativeBridge {
     lastCheckedAt: null,
   );
 
+  List<BackupFolderDto> backupFolders = <BackupFolderDto>[];
+  List<BackupFolderStateDto> backupStates = <BackupFolderStateDto>[];
+  List<BackupActivityDto> backupActivities = <BackupActivityDto>[];
+  BackupPreflightDto preflight = const BackupPreflightDto(
+    fileCount: 1284,
+    totalBytes: 3200000000,
+    uploadBytes: 3200000000,
+    excludedCount: 0,
+    unreadableCount: 0,
+    remainingQuotaBytes: 37600000000,
+  );
+  BackupSettingsDto backupSettingsValue = const BackupSettingsDto(
+    includeHidden: false,
+    uploadLimitBytesPerSecond: null,
+    paused: false,
+  );
+  final Map<String, BackupPreflightDto> preflightByPath =
+      <String, BackupPreflightDto>{};
+  BackupFolderDraftDto? lastBackupDraft;
+  BackupFolderUpdateDto? lastBackupUpdate;
+  int _nextBackupFolder = 1;
+
   final List<String> calls = <String>[];
   final List<String> pickedFiles = <String>[];
 
@@ -435,6 +457,12 @@ class FakeNativeBridge extends NativeBridge {
   }
 
   @override
+  Future<String> startUploadFolder(String parentId, String localDir) async {
+    calls.add('startUploadFolder:$parentId:$localDir');
+    return nextTransferId();
+  }
+
+  @override
   Future<String> startDownloadFile({
     required String nodeId,
     required String versionId,
@@ -453,7 +481,7 @@ class FakeNativeBridge extends NativeBridge {
     required String destinationRoot,
     required ConflictPolicyDto policy,
   }) async {
-    calls.add('startDownloadFolder:$folderId:$destinationRoot');
+    calls.add('startDownloadFolder:$folderId:$destinationRoot:${policy.name}');
     return nextTransferId();
   }
 
@@ -511,7 +539,300 @@ class FakeNativeBridge extends NativeBridge {
   }
 
   @override
+  Future<void> backupStop() async {
+    calls.add('backupStop');
+  }
+
+  @override
+  Future<List<BackupFolderDto>> backupListFolders() async {
+    calls.add('backupListFolders');
+    return List<BackupFolderDto>.of(backupFolders);
+  }
+
+  @override
+  Future<BackupFolderDto> backupFolder(String folderId) async {
+    calls.add('backupFolder:$folderId');
+    return backupFolders.firstWhere((folder) => folder.id == folderId);
+  }
+
+  @override
+  Future<BackupFolderDto> backupAddFolder(BackupFolderDraftDto draft) async {
+    calls.add('backupAddFolder:${draft.localPath}');
+    lastBackupDraft = draft;
+    final name = _baseName(draft.localPath);
+    final folder = BackupFolderDto(
+      id: 'backup-${_nextBackupFolder++}',
+      localPath: draft.localPath,
+      localName: name,
+      cloudTargetId: draft.cloudTargetId,
+      cloudFolderId: 'cloud-$name',
+      cloudPath: draft.cloudTargetId == null
+          ? '全部文件 / 电脑备份 / DESKTOP-TLJ / $name'
+          : '全部文件 / 目标 / $name',
+      excludeGlobs: List<String>.of(draft.excludeGlobs),
+      excludeSubfolders: List<String>.of(draft.excludeSubfolders),
+      enabled: true,
+      lastBackupAt: null,
+    );
+    backupFolders = <BackupFolderDto>[...backupFolders, folder];
+    backupStates = <BackupFolderStateDto>[
+      ...backupStates,
+      BackupFolderStateDto(
+        folderId: folder.id,
+        status: const BackupFolderStatusDto(
+          kind: BackupFolderStatusKindDto.idleOk,
+          done: 0,
+          total: 0,
+          unreadableCount: 0,
+        ),
+        lastBackupAt: null,
+      ),
+    ];
+    _refreshSummary();
+    return folder;
+  }
+
+  @override
+  Future<BackupFolderDto> backupUpdateFolder(
+    String folderId,
+    BackupFolderUpdateDto update,
+  ) async {
+    calls.add('backupUpdateFolder:$folderId');
+    lastBackupUpdate = update;
+    final index = backupFolders.indexWhere((folder) => folder.id == folderId);
+    if (index < 0) {
+      throw const BridgeError(code: 'not_found', message: '找不到备份文件夹');
+    }
+    final current = backupFolders[index];
+    final updated = BackupFolderDto(
+      id: current.id,
+      localPath: update.localPath ?? current.localPath,
+      localName: _baseName(update.localPath ?? current.localPath),
+      cloudTargetId: update.resetCloudTarget
+          ? null
+          : (update.cloudTargetId ?? current.cloudTargetId),
+      cloudFolderId: current.cloudFolderId,
+      cloudPath: update.resetCloudTarget
+          ? '全部文件 / 电脑备份 / DESKTOP-TLJ / ${current.localName}'
+          : current.cloudPath,
+      excludeGlobs: update.excludeGlobs ?? current.excludeGlobs,
+      excludeSubfolders: update.excludeSubfolders ?? current.excludeSubfolders,
+      enabled: update.enabled ?? current.enabled,
+      lastBackupAt: current.lastBackupAt,
+    );
+    backupFolders = <BackupFolderDto>[...backupFolders]..[index] = updated;
+    return updated;
+  }
+
+  @override
+  Future<void> backupRemoveFolder(String folderId) async {
+    calls.add('backupRemoveFolder:$folderId');
+    backupFolders = backupFolders
+        .where((folder) => folder.id != folderId)
+        .toList(growable: false);
+    backupStates = backupStates
+        .where((state) => state.folderId != folderId)
+        .toList(growable: false);
+    _refreshSummary();
+  }
+
+  @override
+  Future<BackupPreflightDto> backupPreflight(BackupFolderDraftDto draft) async {
+    calls.add('backupPreflight:${draft.localPath}');
+    lastBackupDraft = draft;
+    return preflightByPath[draft.localPath] ?? preflight;
+  }
+
+  @override
+  Future<void> backupPauseAll() async {
+    calls.add('backupPauseAll');
+    backupSettingsValue = BackupSettingsDto(
+      includeHidden: backupSettingsValue.includeHidden,
+      uploadLimitBytesPerSecond: backupSettingsValue.uploadLimitBytesPerSecond,
+      paused: true,
+    );
+    summary = BackupSummaryDto(
+      kind: BackupSummaryStatusKindDto.paused,
+      done: summary.done,
+      total: summary.total,
+      unreadableCount: summary.unreadableCount,
+      folderCount: summary.folderCount,
+      lastCheckedAt: summary.lastCheckedAt,
+    );
+  }
+
+  @override
+  Future<void> backupResumeAll() async {
+    calls.add('backupResumeAll');
+    backupSettingsValue = BackupSettingsDto(
+      includeHidden: backupSettingsValue.includeHidden,
+      uploadLimitBytesPerSecond: backupSettingsValue.uploadLimitBytesPerSecond,
+      paused: false,
+    );
+    summary = BackupSummaryDto(
+      kind: BackupSummaryStatusKindDto.allBackedUp,
+      done: summary.done,
+      total: summary.total,
+      unreadableCount: summary.unreadableCount,
+      folderCount: summary.folderCount,
+      lastCheckedAt: summary.lastCheckedAt,
+    );
+  }
+
+  @override
+  Future<void> backupPauseFolder(String folderId) async {
+    calls.add('backupPauseFolder:$folderId');
+    _setFolderEnabled(folderId, false);
+    _setFolderStatus(folderId, BackupFolderStatusKindDto.paused);
+  }
+
+  @override
+  Future<void> backupResumeFolder(String folderId) async {
+    calls.add('backupResumeFolder:$folderId');
+    _setFolderEnabled(folderId, true);
+    _setFolderStatus(folderId, BackupFolderStatusKindDto.idleOk);
+  }
+
+  @override
+  Future<BackupSettingsDto> backupSettings() async {
+    calls.add('backupSettings');
+    return backupSettingsValue;
+  }
+
+  @override
+  Future<BackupSettingsDto> backupCachedSettings() async {
+    calls.add('backupCachedSettings');
+    return backupSettingsValue;
+  }
+
+  @override
+  Future<void> backupSetSettings(BackupSettingsDto settings) async {
+    calls.add(
+      'backupSetSettings:includeHidden=${settings.includeHidden}:'
+      'limit=${settings.uploadLimitBytesPerSecond}',
+    );
+    backupSettingsValue = settings;
+  }
+
+  @override
+  Future<List<BackupFolderStateDto>> backupFolderStates() async {
+    calls.add('backupFolderStates');
+    return List<BackupFolderStateDto>.of(backupStates);
+  }
+
+  @override
+  Future<List<BackupActivityDto>> backupRecentActivity(int limit) async {
+    calls.add('backupRecentActivity:$limit');
+    return backupActivities.take(limit).toList(growable: false);
+  }
+
+  @override
+  Future<BackupRunReportDto> backupScanFolderNow(String folderId) async {
+    calls.add('backupScanFolderNow:$folderId');
+    return BackupRunReportDto(
+      folderId: folderId,
+      status: const BackupFolderStatusDto(
+        kind: BackupFolderStatusKindDto.idleOk,
+        done: 0,
+        total: 0,
+        unreadableCount: 0,
+      ),
+      scannedFiles: 0,
+      hashedFiles: 0,
+      uploadedFiles: 0,
+      updatedFiles: 0,
+      unchangedFiles: 0,
+      unreadableFiles: 0,
+      retryLater: 0,
+      failedFiles: 0,
+      skippedExcluded: 0,
+    );
+  }
+
+  @override
+  Future<List<BackupRunReportDto>> backupScanAllNow() async {
+    calls.add('backupScanAllNow');
+    return <BackupRunReportDto>[
+      for (final folder in backupFolders) await backupScanFolderNow(folder.id),
+    ];
+  }
+
+  @override
   Stream<BackupEventDto> backupEventsStream() => _backupEvents.stream;
+
+  void emitBackupEvent(BackupEventDto event) => _backupEvents.add(event);
+
+  void emitBackupSummary(BackupSummaryDto value) {
+    summary = value;
+    emitBackupEvent(
+      BackupEventDto(kind: BackupEventKindDto.summary, summary: value),
+    );
+  }
+
+  void _refreshSummary() {
+    summary = BackupSummaryDto(
+      kind: summary.kind,
+      done: summary.done,
+      total: summary.total,
+      unreadableCount: summary.unreadableCount,
+      folderCount: backupFolders.length,
+      lastCheckedAt: summary.lastCheckedAt,
+    );
+  }
+
+  void _setFolderEnabled(String folderId, bool enabled) {
+    final index = backupFolders.indexWhere((folder) => folder.id == folderId);
+    if (index < 0) {
+      return;
+    }
+    final current = backupFolders[index];
+    backupFolders = <BackupFolderDto>[...backupFolders]
+      ..[index] = BackupFolderDto(
+        id: current.id,
+        localPath: current.localPath,
+        localName: current.localName,
+        cloudTargetId: current.cloudTargetId,
+        cloudFolderId: current.cloudFolderId,
+        cloudPath: current.cloudPath,
+        excludeGlobs: current.excludeGlobs,
+        excludeSubfolders: current.excludeSubfolders,
+        enabled: enabled,
+        lastBackupAt: current.lastBackupAt,
+      );
+  }
+
+  void _setFolderStatus(String folderId, BackupFolderStatusKindDto kind) {
+    final index = backupStates.indexWhere(
+      (state) => state.folderId == folderId,
+    );
+    if (index < 0) {
+      return;
+    }
+    final current = backupStates[index];
+    backupStates = <BackupFolderStateDto>[...backupStates]
+      ..[index] = BackupFolderStateDto(
+        folderId: folderId,
+        status: BackupFolderStatusDto(
+          kind: kind,
+          done: current.status.done,
+          total: current.status.total,
+          unreadableCount: current.status.unreadableCount,
+        ),
+        pauseReason: kind == BackupFolderStatusKindDto.paused
+            ? BackupPauseReasonDto.user
+            : null,
+        lastBackupAt: current.lastBackupAt,
+      );
+  }
+
+  String _baseName(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final trimmed = normalized.endsWith('/')
+        ? normalized.substring(0, normalized.length - 1)
+        : normalized;
+    final index = trimmed.lastIndexOf('/');
+    return index < 0 ? trimmed : trimmed.substring(index + 1);
+  }
 
   void emitProgress(TransferProgressDto event) => _progress.add(event);
 

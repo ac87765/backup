@@ -7,8 +7,10 @@ import 'dart:io';
 import 'package:encrypted_backup_client/app.dart';
 import 'package:encrypted_backup_client/common/pages/settings_page.dart';
 import 'package:encrypted_backup_client/common/state/file_browser_controller.dart';
+import 'package:encrypted_backup_client/common/state/file_drop_controller.dart';
 import 'package:encrypted_backup_client/common/state/transfer_controller.dart';
 import 'package:encrypted_backup_client/core/rust/models.dart';
+import 'package:encrypted_backup_client/desktop/settings/local_settings.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -38,6 +40,16 @@ void main() {
     );
     await _loadFont('Microsoft YaHei UI', File(r'C:\Windows\Fonts\msyh.ttc'));
     await _loadFont('Microsoft YaHei', File(r'C:\Windows\Fonts\msyh.ttc'));
+    // 本地路径用等宽字体（DesktopMetrics.monoFamily / monoFallback）。
+    for (final (family, path) in <(String, String)>[
+      ('Cascadia Mono', r'C:\Windows\Fonts\CascadiaMono.ttf'),
+      ('Consolas', r'C:\Windows\Fonts\consola.ttf'),
+    ]) {
+      final file = File(path);
+      if (file.existsSync()) {
+        await _loadFont(family, file);
+      }
+    }
     try {
       // 包内字体注册名为 packages/<包名>/<family>，与 IconData.fontPackage 对应。
       final loader = FontLoader('packages/lucide_icons_flutter/Lucide')
@@ -302,6 +314,7 @@ void main() {
       final harness = TestHarness(
         bridge: FakeNativeBridge(account: testAccount(), storedSession: true),
       );
+      harness.startup.enabled = true;
       await tester.pumpWidget(harness.page(const SettingsPage()));
       await tester.pumpAndSettle();
       await capture(tester, 'settings-general-win.png');
@@ -362,6 +375,163 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
     skip: !_fontsExist,
   );
+
+  testWidgets(
+    'backup-folders',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final harness = _backupHarness();
+      await pumpApp(tester, harness);
+      await _seedTransfers(tester);
+      await tester.tap(find.text('备份文件夹').first);
+      await tester.pumpAndSettle();
+      await capture(tester, 'backup-folders-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'backup-folders-paused',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final harness = _backupHarness(paused: true);
+      await pumpApp(tester, harness);
+      await tester.tap(find.text('备份文件夹').first);
+      await tester.pumpAndSettle();
+      await capture(tester, 'backup-folders-paused-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'backup-folders-empty',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final bridge = FakeNativeBridge(
+        account: testAccount(),
+        storedSession: true,
+      );
+      bridge.summary = const BackupSummaryDto(
+        kind: BackupSummaryStatusKindDto.allBackedUp,
+        done: 0,
+        total: 0,
+        unreadableCount: 0,
+        folderCount: 0,
+        lastCheckedAt: null,
+      );
+      final harness = TestHarness(bridge: bridge);
+      await pumpApp(tester, harness);
+      await tester.tap(find.text('备份文件夹').first);
+      await tester.pumpAndSettle();
+      await capture(tester, 'backup-folders-empty-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'add-folder',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final harness = _backupHarness();
+      harness.filePicker.directoryToPick = r'D:\工作资料';
+      await _openAddFolder(tester, harness);
+      await capture(tester, 'add-folder-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'add-folder-quota',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final harness = _backupHarness();
+      harness.bridge.preflight = const BackupPreflightDto(
+        fileCount: 18902,
+        totalBytes: 52800000000,
+        uploadBytes: 52800000000,
+        excludedCount: 0,
+        unreadableCount: 0,
+        remainingQuotaBytes: 37600000000,
+      );
+      harness.filePicker.directoryToPick = r'D:\工作资料';
+      await _openAddFolder(tester, harness);
+      await capture(tester, 'add-folder-quota-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'restore',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final harness = _filesHarness(includePhotos: true);
+      harness.filePicker.directoryToPick = r'D:\恢复';
+      await pumpApp(tester, harness);
+      await _openFolder(tester, '工作资料');
+      await tester.tap(find.byKey(const ValueKey<String>('file-row-photos')));
+      await tester.pump(kDoubleTapTimeout);
+      await tester.tap(find.byKey(const ValueKey<String>('file-more-photos')));
+      await tester.pump(kDoubleTapTimeout);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey<String>('menu-item-下载到电脑…')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('restore-pick-destination')));
+      await tester.pumpAndSettle();
+      await capture(tester, 'restore-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'onboarding-1-folders',
+    (tester) async {
+      setTestWindow(tester, const Size(760, 720));
+      final harness = _onboardingHarness();
+      await pumpApp(tester, harness);
+      await capture(tester, 'onboarding-1-folders-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'onboarding-2-background',
+    (tester) async {
+      setTestWindow(tester, const Size(760, 720));
+      final harness = _onboardingHarness();
+      await pumpApp(tester, harness);
+      await tester.tap(find.byKey(const Key('onboarding-next')));
+      await tester.pumpAndSettle();
+      await capture(tester, 'onboarding-2-background-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'files-drop',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final harness = _filesHarness();
+      await pumpApp(tester, harness);
+      await _openFolder(tester, '工作资料');
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(EncryptedBackupApp)),
+        listen: false,
+      );
+      container.read(fileDropOverlayProvider.notifier).setVisible(true);
+      await tester.pump();
+      await capture(tester, 'files-drop-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
 }
 
 Future<void> _loadFont(String family, File file) async {
@@ -387,7 +557,7 @@ Future<void> capture(WidgetTester tester, String name) async {
   }
 }
 
-TestHarness _filesHarness() {
+TestHarness _filesHarness({bool includePhotos = false}) {
   final bridge = FakeNativeBridge(
     account: testAccount(),
     storedSession: true,
@@ -408,6 +578,13 @@ TestHarness _filesHarness() {
       kind: NodeKindDto.folder,
       updatedAt: DateTime(2026, 10, 30, 18, 40).toIso8601String(),
     ),
+    if (includePhotos)
+      testNode(
+        id: 'photos',
+        name: '照片 / 2024',
+        kind: NodeKindDto.folder,
+        updatedAt: DateTime(2026, 10, 30, 18, 40).toIso8601String(),
+      ),
     testNode(
       id: 'pdf',
       name: '2026 年度合作协议.pdf',
@@ -452,6 +629,206 @@ TestHarness _filesHarness() {
     ),
   ];
   return TestHarness(bridge: bridge);
+}
+
+int _at(int hour, int minute) =>
+    DateTime(2026, 10, 31, hour, minute).millisecondsSinceEpoch ~/ 1000;
+
+BackupFolderDto _goldenBackupFolder({
+  required String id,
+  required String name,
+  required String localPath,
+  required int? lastBackupAt,
+}) {
+  return BackupFolderDto(
+    id: id,
+    localPath: localPath,
+    localName: name,
+    cloudTargetId: null,
+    cloudFolderId: 'cloud-$id',
+    cloudPath: '全部文件 / 电脑备份 / DESKTOP-TLJ / $name',
+    excludeGlobs: const <String>[],
+    excludeSubfolders: const <String>[],
+    enabled: true,
+    lastBackupAt: lastBackupAt,
+  );
+}
+
+BackupFolderStateDto _goldenBackupState(
+  String id, {
+  BackupFolderStatusKindDto kind = BackupFolderStatusKindDto.idleOk,
+  int done = 0,
+  int total = 0,
+  int unreadable = 0,
+  int? lastBackupAt,
+}) {
+  return BackupFolderStateDto(
+    folderId: id,
+    status: BackupFolderStatusDto(
+      kind: kind,
+      done: done,
+      total: total,
+      unreadableCount: unreadable,
+    ),
+    pauseReason: kind == BackupFolderStatusKindDto.paused
+        ? BackupPauseReasonDto.user
+        : null,
+    lastBackupAt: lastBackupAt,
+  );
+}
+
+TestHarness _backupHarness({bool paused = false}) {
+  final bridge = FakeNativeBridge(account: testAccount(), storedSession: true);
+  bridge.backupFolders = <BackupFolderDto>[
+    _goldenBackupFolder(
+      id: 'work',
+      name: '工作资料',
+      localPath: r'D:\工作资料',
+      lastBackupAt: _at(10, 0),
+    ),
+    _goldenBackupFolder(
+      id: 'photos',
+      name: '照片',
+      localPath: r'C:\Users\tlj\Pictures',
+      lastBackupAt: _at(9, 59),
+    ),
+    _goldenBackupFolder(
+      id: 'docs',
+      name: '文档',
+      localPath: r'C:\Users\tlj\Documents',
+      lastBackupAt: _at(8, 30),
+    ),
+  ];
+  bridge.backupStates = <BackupFolderStateDto>[
+    _goldenBackupState('work', lastBackupAt: _at(10, 0)),
+    _goldenBackupState(
+      'photos',
+      kind: BackupFolderStatusKindDto.uploading,
+      done: 128,
+      total: 340,
+      lastBackupAt: _at(9, 59),
+    ),
+    _goldenBackupState(
+      'docs',
+      kind: paused
+          ? BackupFolderStatusKindDto.paused
+          : BackupFolderStatusKindDto.error,
+      unreadable: paused ? 0 : 2,
+      lastBackupAt: _at(8, 30),
+    ),
+  ];
+  bridge.backupActivities = <BackupActivityDto>[
+    BackupActivityDto(
+      id: 1,
+      folderId: 'photos',
+      relativePath: 'IMG_2041.HEIC',
+      kind: BackupActivityKindDto.added,
+      occurredAt: _at(10, 5),
+    ),
+    BackupActivityDto(
+      id: 2,
+      folderId: 'work',
+      relativePath: 'Q3 预算.xlsx',
+      kind: BackupActivityKindDto.newVersion,
+      occurredAt: _at(10, 0),
+    ),
+    BackupActivityDto(
+      id: 3,
+      folderId: 'docs',
+      relativePath: r'~$周报.docx',
+      kind: BackupActivityKindDto.retryLater,
+      occurredAt: _at(10, 4),
+    ),
+    BackupActivityDto(
+      id: 4,
+      folderId: 'work',
+      relativePath: '2026 年度合作协议.pdf',
+      kind: BackupActivityKindDto.unchanged,
+      occurredAt: _at(10, 5),
+    ),
+  ];
+  bridge.summary = BackupSummaryDto(
+    kind: paused
+        ? BackupSummaryStatusKindDto.paused
+        : BackupSummaryStatusKindDto.uploading,
+    done: 328,
+    total: 340,
+    unreadableCount: 2,
+    folderCount: 3,
+    lastCheckedAt: _at(10, 5),
+  );
+  return TestHarness(bridge: bridge);
+}
+
+/// 让状态栏显示“传输 · 3 项进行中”（与设计稿一致）。
+Future<void> _seedTransfers(WidgetTester tester) async {
+  final container = ProviderScope.containerOf(
+    tester.element(find.byType(EncryptedBackupApp)),
+    listen: false,
+  );
+  final transfers = container.read(transferControllerProvider.notifier);
+  await transfers.startUploadFiles('root', <String>[
+    r'C:\Users\tlj\产品演示-终版.mp4',
+  ]);
+  await transfers.startUploadFiles('root', <String>[
+    r'C:\Users\tlj\IMG_2041.HEIC',
+  ]);
+  await transfers.startUploadFolder('root', r'C:\Users\tlj\照片');
+  await tester.pump();
+}
+
+Future<void> _openAddFolder(WidgetTester tester, TestHarness harness) async {
+  await pumpApp(tester, harness);
+  await _seedTransfers(tester);
+  await tester.tap(find.text('备份文件夹').first);
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('backup-add-folder')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('backup-pick-folder')));
+  await tester.pumpAndSettle();
+  for (final rule in <String>['node_modules', '*.psd']) {
+    await tester.tap(find.byKey(const Key('exclude-rule-add')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('exclude-rule-input')), rule);
+    await tester.tap(find.byKey(const Key('exclude-rule-confirm')));
+    await tester.pumpAndSettle();
+  }
+  await tester.tap(find.byKey(const ValueKey<String>('subfolder-toggle-临时导出')));
+  await tester.pumpAndSettle();
+}
+
+TestHarness _onboardingHarness() {
+  final harness = TestHarness(
+    bridge: FakeNativeBridge(account: testAccount(), storedSession: true),
+    localSettings: const LocalSettings(),
+  );
+  harness.bridge.preflightByPath.addAll(<String, BackupPreflightDto>{
+    r'C:\Users\tlj\Desktop': const BackupPreflightDto(
+      fileCount: 326,
+      totalBytes: 1400000000,
+      uploadBytes: 1400000000,
+      excludedCount: 0,
+      unreadableCount: 0,
+      remainingQuotaBytes: 37600000000,
+    ),
+    r'C:\Users\tlj\Documents': const BackupPreflightDto(
+      fileCount: 2018,
+      totalBytes: 4900000000,
+      uploadBytes: 4900000000,
+      excludedCount: 0,
+      unreadableCount: 0,
+      remainingQuotaBytes: 37600000000,
+    ),
+    r'C:\Users\tlj\Pictures': const BackupPreflightDto(
+      fileCount: 8410,
+      totalBytes: 31200000000,
+      uploadBytes: 31200000000,
+      excludedCount: 0,
+      unreadableCount: 0,
+      remainingQuotaBytes: 37600000000,
+    ),
+  });
+  return harness;
 }
 
 Future<void> _openFolder(WidgetTester tester, String name) async {

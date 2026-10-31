@@ -56,6 +56,39 @@ void main() {
     expect(harness.bridge.keepUnlocked, isTrue);
   });
 
+  testWidgets('通用设置接上开机启动、上传限速与隐藏文件', (tester) async {
+    setTestWindow(tester, const Size(1280, 800));
+    final harness = TestHarness(
+      bridge: FakeNativeBridge(account: testAccount(), storedSession: true),
+    );
+    await pumpApp(tester, harness);
+    await tester.tap(find.byKey(const Key('open-settings')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('使用电池时暂停备份'), findsNothing);
+    expect(find.textContaining('将在后续版本接入'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('startup-toggle')));
+    await tester.pumpAndSettle();
+    expect(harness.startup.calls, <bool>[true]);
+
+    await tester.tap(find.byKey(const Key('speed-limit-select')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('menu-item-5 MB/s')));
+    await tester.pumpAndSettle();
+    expect(
+      harness.bridge.calls,
+      contains('backupSetSettings:includeHidden=false:limit=5000000'),
+    );
+
+    await tester.tap(find.byKey(const Key('backup-hidden-toggle')));
+    await tester.pumpAndSettle();
+    expect(
+      harness.bridge.calls,
+      contains('backupSetSettings:includeHidden=true:limit=5000000'),
+    );
+  });
+
   testWidgets('设置页退出登录回到登录页', (tester) async {
     setTestWindow(tester, const Size(1280, 800));
     final harness = TestHarness(

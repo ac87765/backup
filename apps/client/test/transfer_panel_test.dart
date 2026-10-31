@@ -37,7 +37,10 @@ void main() {
     harness.filePicker.filesToPick = [r'C:\Users\tlj\报告.pdf'];
     await pumpApp(tester, harness);
 
-    await tester.tap(find.text('上传'));
+    // 「上传」是下拉菜单（上传文件 / 上传文件夹）。
+    await tester.tap(find.byKey(const Key('upload-menu-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('menu-item-上传文件')));
     await tester.pumpAndSettle();
     const id = 'transfer-1';
     harness.bridge.emitProgress(
@@ -91,7 +94,10 @@ void main() {
     harness.filePicker.filesToPick = [r'C:\Users\tlj\扫描件.pdf'];
     await pumpApp(tester, harness);
 
-    await tester.tap(find.text('上传'));
+    // 「上传」是下拉菜单（上传文件 / 上传文件夹）。
+    await tester.tap(find.byKey(const Key('upload-menu-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('menu-item-上传文件')));
     await tester.pumpAndSettle();
     const id = 'transfer-1';
     harness.bridge.emitProgress(
