@@ -26,7 +26,8 @@
 |---|---|---|
 | 1–3 | `crates/client-core`：认证、钥匙串、文件、传输、状态库、桌面备份引擎 | 已合并 main |
 | 4 | `apps/client` Flutter 工程 + `apps/client/rust` 桥接 + CI（`.github/workflows/client.yml` 含 macOS 构建 job） | 已完成 |
-| 5–6 | 通用界面、桌面专有界面（托盘 / 菜单栏、备份文件夹页、开机启动） | 未开始 |
+| 5 | 通用界面：登录 / 解锁、文件浏览、传输、设置（golden 截图见 `apps/client/test/goldens/`） | 已完成 |
+| 6 | 桌面专有：托盘 / 菜单栏、关闭到托盘、单实例、备份文件夹页、拖拽、上传 / 下载文件夹、首次引导、开机启动 | 已完成 |
 | 7 | Windows 安装包与 Windows 真机验收；CI 生成 macOS `.dmg`；**macOS 验收（本文件的任务）** | 未开始 |
 
 macOS 验收应在第 1–7 组的 Windows 部分全部合并、Windows 版验收通过之后再做。开始前先 `git pull`，并以 `tasks.md` 为准核对状态。
@@ -56,6 +57,9 @@ macOS 验收应在第 1–7 组的 Windows 部分全部合并、Windows 版验�
 - **菜单栏图标与关闭行为**：关闭窗口只隐藏到菜单栏，从菜单栏菜单退出才结束进程（design D7）。
 - **开机启动**：Login Item（默认关闭，设置中开启）。
 - **窗口外框**：红绿灯按钮位置与 `design/desktop/*.html?os=mac` 一致。
+- **未启用 App Sandbox**（design D10）：`apps/client/macos/Runner/*.entitlements` 中 `app-sandbox` 为 false。验证：添加备份文件夹后重启 Mac，备份仍能读取该文件夹；拖拽任意位置的文件可上传。
+  更新应用后首次启动若弹出“是否允许访问钥匙串”，选“始终允许”，属预期（ad-hoc 签名每次构建不同）。
+- **托盘图标**：菜单栏使用模板 PNG（`apps/client/assets/tray/`），验证深色 / 浅色菜单栏下都清晰；单实例由系统保证。
 
 ## 4. 环境准备（Mac，仅在需要修代码时）
 

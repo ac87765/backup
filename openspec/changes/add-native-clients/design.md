@@ -78,6 +78,7 @@ crates/crypto-core              现有加密实现（同一测试向量）
 - 关闭主窗口只隐藏到托盘（Windows）/ 菜单栏（macOS），从托盘菜单退出才结束进程；托盘弹窗按 `design/desktop/tray.html`：备份状态、正在上传、最近活动、暂停 / 恢复、打开应用、打开网页版、设置。
 - 开机自动启动（默认关闭，设置中开启）：Windows 注册表 Run 项 / macOS Login Item（`launch_at_startup`），只启动程序，不涉及密钥（未“保持解锁”时托盘提示需要解锁）。
 - 单实例：重复启动时激活已有窗口。
+- 第一版托盘实现（2026-10-31 审查者决定）：托盘图标（四种状态叠加，见 tray.html 注释）+ 系统原生菜单（第一行为状态文字：已全部备份 / 正在备份 n/m / 已暂停 / 需要解锁；然后 暂停或恢复备份、打开应用、打开网页版、设置、退出）；左键点击图标打开主窗口（需要解锁时打开解锁页）。`tray.html` 的富弹窗需要第二个 Flutter 窗口与第二个桥接引擎，风险较高，列为后续改进，不在本 change 范围内。
 
 ### D8 Flutter 界面结构
 
@@ -95,6 +96,7 @@ crates/crypto-core              现有加密实现（同一测试向量）
 
 - 版本号取自 git 标签；CI：`flutter analyze`、`flutter test`、`cargo test -p client-core`；Windows 构建（windows 运行器，Inno Setup 生成安装包）；macOS 构建（macos 运行器，ad-hoc 签名的 .app 打包为 .dmg）。产物作为 Actions artifact 下载。macOS 安装包只由 CI 生成：用户在 Mac 上下载安装并验收，只有需要修代码时才在 Mac 上搭开发环境（交接说明见 `docs/macos-handoff.md`）。
 - 未签名应用首次打开：Windows SmartScreen 选“仍要运行”；macOS 右键“打开”。在 README 写清楚。
+- macOS 不启用 App Sandbox（2026-10-31 审查者决定）：备份文件夹需要跨重启的持续读取权限，沙箱下要为每个文件夹维护 security-scoped bookmark；本应用不经 App Store 分发（与 Dropbox 等备份客户端相同），关闭沙箱即可。副作用：ad-hoc 签名每次构建都不同，更新后首次读取钥匙串条目时系统可能询问是否允许，属预期。
 
 ## Risks / Trade-offs
 
