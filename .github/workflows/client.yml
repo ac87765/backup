@@ -4,6 +4,8 @@ name: Client (Flutter / bridge / desktop)
 on:
   push:
     branches: [main, "impl/**"]
+    # v* 标签是发布版本：需要带 git describe 的版本号构建安装包。
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -79,16 +81,17 @@ jobs:
       - name: cargo test -p rust_lib_client
         run: cargo test -p rust_lib_client
 
-  # Windows / macOS 运行器分别按 2× / 10× 计费分钟（私有仓库）。功能分支只跑
-  # Linux job；Windows / macOS 构建只在 main 与手动触发时运行，功能分支的
-  # Windows 构建与 golden 由审查者在本机验证。
+  # 仓库公开后 Actions 分钟不计费：Windows / macOS 构建在每次推送（含 impl/**）
+  # 都运行，合并前就能发现平台专有的编译问题。
   windows:
-    name: Windows (client-core tests / release build)
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    name: Windows (client-core tests / release build / installer)
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # git describe --tags 需要标签；默认浅克隆拿不到。
+          fetch-depth: 0
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
@@ -117,24 +120,59 @@ jobs:
         working-directory: apps/client
         run: flutter test --tags golden
 
+      - name: 计算版本与提交
+        id: version
+        shell: pwsh
+        run: |
+          $version = git describe --tags --always --dirty
+          if ($LASTEXITCODE -ne 0) { throw 'git describe 失败' }
+          $commit = git rev-parse --short HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'git rev-parse 失败' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "commit=$commit" >> $env:GITHUB_OUTPUT
+
+      # 版本号与提交编译进应用（“关于”页），必须与安装包 / 产物名一致。
       - name: flutter build windows --release
         working-directory: apps/client
-        run: flutter build windows --release
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          GIT_COMMIT: ${{ steps.version.outputs.commit }}
+        run: >-
+          flutter build windows --release
+          "--dart-define=APP_VERSION=$env:APP_VERSION"
+          "--dart-define=GIT_COMMIT=$env:GIT_COMMIT"
 
-      - name: 上传 Windows 产物
+      # windows-latest 自带 Inno Setup 6；脚本会依次查 PATH、
+      # %LOCALAPPDATA%\Programs\Inno Setup 6 与 %ProgramFiles(x86)%\Inno Setup 6。
+      - name: 生成 Inno Setup 安装包
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          GIT_COMMIT: ${{ steps.version.outputs.commit }}
+        run: >-
+          pwsh -NoProfile -ExecutionPolicy Bypass -File
+          ./apps/client/tool/package_windows.ps1 -SkipBuild
+          -Version "$env:APP_VERSION" -Commit "$env:GIT_COMMIT"
+
+      # 只上传安装包：Release 目录的全部内容已包含在安装包内，不需要再保留
+      # 一份原始目录产物。安装包文件名带版本号，与“关于”页一致。
+      - name: 上传 Windows 安装包
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: encrypted-backup-windows
-          path: apps/client/build/windows/x64/runner/Release
+          path: apps/client/build/installer/*.exe
           if-no-files-found: error
 
   macos:
-    name: macOS (client-core tests / release build)
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    name: macOS (client-core tests / release build / dmg)
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # git describe --tags 需要标签；默认浅克隆拿不到。
+          fetch-depth: 0
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
@@ -155,18 +193,20 @@ jobs:
         working-directory: apps/client
         run: flutter pub get
 
-      - name: flutter build macos --release
-        working-directory: apps/client
-        run: flutter build macos --release
+      # 脚本负责 release 构建、ad-hoc 签名、校验与 dmg 生成（design D10）。
+      - name: 构建并打包 macOS .dmg
+        run: bash apps/client/tool/package_macos.sh
 
-      # 打包 .app（保留资源分支），产物作为 artifact 下载。
-      - name: 打包 .app 为 zip
-        working-directory: apps/client/build/macos/Build/Products/Release
-        run: ditto -c -k --sequesterRsrc --keepParent "加密备份.app" "加密备份.app.zip"
+      # Flutter macOS release 默认只构建运行器架构（macos-latest 为 arm64）。
+      # 把实际架构写进日志，便于用户在 Intel / Apple Silicon Mac 上核对。
+      - name: 打印应用架构（真机验收核对）
+        run: |
+          APP="apps/client/build/macos/Build/Products/Release/加密备份.app"
+          lipo -archs "$APP/Contents/MacOS/加密备份"
 
-      - name: 上传 macOS 产物
+      - name: 上传 macOS .dmg
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: encrypted-backup-macos
-          path: apps/client/build/macos/Build/Products/Release/加密备份.app.zip
+          path: apps/client/build/installer/*.dmg
           if-no-files-found: error
