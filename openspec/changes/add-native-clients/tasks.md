@@ -32,8 +32,8 @@
 
 ## 4. Flutter 工程与桥接
 
-- [ ] 4.1 新建 `apps/client`（启用 Windows / macOS 平台），flutter_rust_bridge v2 桥接 crate，固定版本；Riverpod、go_router、设计令牌（与 Web D2 一致）；桌面专有页面与通用页面分目录（design D1/D8）
-- [ ] 4.2 桥接边界测试：全部返回类型不含密钥字段（design D2）
+- [x] 4.1 新建 `apps/client`（启用 Windows / macOS 平台），flutter_rust_bridge v2 桥接 crate，固定版本；Riverpod、go_router、设计令牌（与 Web D2 一致）；桌面专有页面与通用页面分目录（design D1/D8）
+- [x] 4.2 桥接边界测试：全部返回类型不含密钥字段（design D2）
 - [ ] 4.3 CI：`flutter analyze`、`flutter test`、`cargo test -p client-core`、Windows / macOS 构建产物（design D10）
 
 ## 5. 通用界面
