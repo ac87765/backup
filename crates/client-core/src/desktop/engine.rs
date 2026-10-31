@@ -8,7 +8,7 @@
 //! 密钥只在本 crate 内部使用：本模块通过 [`Client`] 的现有传输/文件 API 工作，
 //! 对外事件只有状态、计数、相对路径与错误码。
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -23,19 +23,27 @@ use crate::error::{ApiErrorCode, ClientError};
 use crate::files::DecryptedNode;
 use crate::io_path::{FileFingerprint, path_for_io, validate_name};
 use crate::model::{NodeKind, TransferErrorCode};
-use crate::state::{BackupActivityRecord, BackupFolderRecord, BackupIndexRecord, StateStore};
+use crate::state::{
+    BackupActivityRecord, BackupFolderRecord, BackupFolderSourceKind, BackupIndexRecord,
+    StateStore, WechatSourceMeta,
+};
 use crate::transfer::{TokenBucket, transfer_error};
 
 use super::error::BackupError;
 use super::filter::{
     Exclusions, LocalFile, LocalTree, WalkOptions, hash_file_stable, name_key, scan_tree,
 };
+use super::paths::{comparable_path, path_within};
 use super::types::{
     BackupActivity, BackupActivityKind, BackupEngineConfig, BackupFolder, BackupFolderDraft,
     BackupFolderState, BackupFolderStatus, BackupFolderUpdate, BackupPauseReason, BackupPreflight,
-    BackupRunReport, BackupSettings, BackupSummary, BackupSummaryStatus,
+    BackupRunReport, BackupSettings, BackupSummary, BackupSummaryStatus, WechatAccountBackupStatus,
+    WechatBackupPreflight, WechatBackupSource, WechatCategoryBackupStatus,
 };
 use super::watcher::{FolderWatcher, WatchSignal, watch_folder};
+use super::wechat::backup::{desired_sources, validate_account_name};
+use super::wechat::exclude::{exclusions_for, measure_trees};
+use super::wechat::{WechatAccount, WechatCategory, WechatLocator, WechatVersion, layout_for};
 
 /// 事件通道容量；界面来不及消费时只保留最近事件，不阻塞备份。
 const EVENT_BUFFER: usize = 512;
@@ -68,6 +76,12 @@ struct Inner {
     run_lock: tokio::sync::Mutex<()>,
     paused_all: AtomicBool,
     runtime: Mutex<Runtime>,
+    /// 微信数据根发现所用的系统位置来源。
+    wechat_locator: WechatLocator,
+    /// 缓存的微信数据根（普通备份文件夹自动排除用）。
+    wechat_roots: Mutex<Vec<PathBuf>>,
+    /// 是否已完成过一次数据根发现（避免每个文件夹都调用发现）。
+    wechat_roots_ready: AtomicBool,
 }
 
 #[derive(Default)]
@@ -105,6 +119,7 @@ impl BackupEngine {
         }
         let mut normalized = config;
         normalized.device_name = crate::io_path::normalize_cloud_name(&device_name);
+        let wechat_locator = normalized.wechat_locator.clone().unwrap_or_default();
         let clock = client.clock.clone();
         let state = client.state_store.clone();
         let (events, _) = broadcast::channel(EVENT_BUFFER);
@@ -123,6 +138,9 @@ impl BackupEngine {
                 run_lock: tokio::sync::Mutex::new(()),
                 paused_all: AtomicBool::new(false),
                 runtime: Mutex::new(Runtime::default()),
+                wechat_locator,
+                wechat_roots: Mutex::new(Vec::new()),
+                wechat_roots_ready: AtomicBool::new(false),
             }),
         })
     }
@@ -205,14 +223,17 @@ impl BackupEngine {
         Ok(())
     }
 
-    /// 列出当前用户的备份文件夹。
+    /// 列出当前用户的普通备份文件夹。
+    ///
+    /// 微信来源不在这里返回（design D2）：“备份文件夹”页面只显示用户添加的
+    /// 文件夹；微信来源使用 [`BackupEngine::list_wechat_sources`]。
     pub async fn list_folders(&self) -> Result<Vec<BackupFolder>, BackupError> {
         let user_id = self.user_id()?;
-        let records = self.inner.state.list_backup_folders(user_id).await?;
+        let records = self.inner.state.list_user_backup_folders(user_id).await?;
         Ok(records.into_iter().map(BackupFolder::from).collect())
     }
 
-    /// 读取一个备份文件夹。
+    /// 读取一个普通备份文件夹；微信来源不通过这个 API 暴露。
     pub async fn folder(&self, folder_id: Uuid) -> Result<BackupFolder, BackupError> {
         let user_id = self.user_id()?;
         let record = self
@@ -221,6 +242,9 @@ impl BackupEngine {
             .get_backup_folder(user_id, folder_id)
             .await?
             .ok_or(BackupError::FolderNotFound)?;
+        if record.source_kind != BackupFolderSourceKind::User {
+            return Err(BackupError::FolderNotFound);
+        }
         Ok(record.into())
     }
 
@@ -240,7 +264,7 @@ impl BackupEngine {
         }
         let local_name = local_name(&local_path)?;
         let now = unix_seconds(self.inner.clock.now());
-        let existing = self.inner.state.list_backup_folders(user_id).await?;
+        let existing = self.inner.state.list_user_backup_folders(user_id).await?;
         ensure_no_path_conflict(&existing, &local_path, None)?;
         let record = BackupFolderRecord {
             id: Uuid::new_v4(),
@@ -256,6 +280,8 @@ impl BackupEngine {
             last_backup_at: None,
             created_at: now,
             updated_at: now,
+            source_kind: BackupFolderSourceKind::User,
+            wechat: None,
         };
         self.inner
             .state
@@ -280,6 +306,9 @@ impl BackupEngine {
             .get_backup_folder(user_id, folder_id)
             .await?
             .ok_or(BackupError::FolderNotFound)?;
+        if record.source_kind != BackupFolderSourceKind::User {
+            return Err(BackupError::FolderNotFound);
+        }
         let mut path_changed = false;
         if let Some(path) = &update.local_path {
             let absolute = absolute_path(path)?;
@@ -294,7 +323,7 @@ impl BackupEngine {
             }
             let new_name = local_name(&absolute)?;
             if record.local_path != absolute {
-                let existing = self.inner.state.list_backup_folders(user_id).await?;
+                let existing = self.inner.state.list_user_backup_folders(user_id).await?;
                 ensure_no_path_conflict(&existing, &absolute, Some(folder_id))?;
                 record.local_path = absolute;
                 record.local_name = new_name;
@@ -350,9 +379,21 @@ impl BackupEngine {
         Ok(record.into())
     }
 
-    /// 移除备份文件夹：只删除本机配置与索引，云端内容保留。
+    /// 移除普通备份文件夹：只删除本机配置与索引，云端内容保留。
+    ///
+    /// 微信来源由 [`BackupEngine::set_wechat_categories`] 取消勾选时移除；
+    /// 这个 API 只接受普通备份文件夹。
     pub async fn remove_folder(&self, folder_id: Uuid) -> Result<(), BackupError> {
         let user_id = self.user_id()?;
+        let record = self
+            .inner
+            .state
+            .get_backup_folder(user_id, folder_id)
+            .await?
+            .ok_or(BackupError::FolderNotFound)?;
+        if record.source_kind != BackupFolderSourceKind::User {
+            return Err(BackupError::FolderNotFound);
+        }
         self.inner
             .state
             .delete_backup_folder(user_id, folder_id)
@@ -370,35 +411,57 @@ impl BackupEngine {
     }
 
     /// 添加前预检：按草稿中的排除规则统计文件数与首次上传字节数，并读取剩余配额。
+    ///
+    /// 普通文件夹内部的微信数据根（design D2）会被自动排除，并返回
+    /// [`BackupPreflight::excluded_wechat_bytes`] 供界面提示。
     pub async fn preflight(
         &self,
         draft: &BackupFolderDraft,
     ) -> Result<BackupPreflight, BackupError> {
         let local_path = absolute_path(&draft.local_path)?;
         let name = local_name(&local_path)?;
-        let exclusions = Exclusions::compile(&draft.exclude_globs, &draft.exclude_subfolders)?;
-        let root = local_path.clone();
+        // 预检是用户主动操作，每次刷新一次数据根缓存（不随文件事件触发）。
+        self.refresh_wechat_data_roots().await;
+        let roots = self.wechat_data_roots();
+        let wechat = exclusions_for(&local_path, &roots);
+        if wechat.scanned_root_inside_wechat {
+            let root = local_path.clone();
+            let (excluded_files, excluded_bytes) =
+                tokio::task::spawn_blocking(move || measure_trees(&[root]))
+                    .await
+                    .map_err(|_| BackupError::InvalidConfig("扫描任务失败"))?;
+            let remaining_quota_bytes = self.remaining_quota().await;
+            return Ok(BackupPreflight {
+                file_count: 0,
+                total_bytes: 0,
+                upload_bytes: 0,
+                excluded_count: excluded_files,
+                unreadable_count: 0,
+                remaining_quota_bytes,
+                excluded_wechat_file_count: excluded_files,
+                excluded_wechat_bytes: excluded_bytes,
+            });
+        }
+        let mut subfolders = draft.exclude_subfolders.clone();
+        subfolders.extend(wechat.relative_subfolders);
+        let exclusions = Exclusions::compile(&draft.exclude_globs, &subfolders)?;
+        let measured_roots = wechat.measured_roots;
         let include_hidden = self.cached_settings().include_hidden;
         let tree = tokio::task::spawn_blocking(move || {
             let options = WalkOptions {
                 include_hidden,
                 exclusions: &exclusions,
             };
-            scan_tree(&root, &name, &options)
+            let tree = scan_tree(&local_path, &name, &options)?;
+            let (excluded_wechat_file_count, excluded_wechat_bytes) =
+                measure_trees(&measured_roots);
+            Ok::<_, BackupError>((tree, excluded_wechat_file_count, excluded_wechat_bytes))
         })
         .await
         .map_err(|_| BackupError::InvalidConfig("扫描任务失败"))??;
+        let (tree, excluded_wechat_file_count, excluded_wechat_bytes) = tree;
         let (file_count, total_bytes) = tree.counts();
-        let remaining_quota_bytes = match self.inner.client.get_usage().await {
-            Ok(usage) => Some(
-                usage
-                    .quota_bytes
-                    .saturating_sub(usage.used_bytes)
-                    .saturating_sub(usage.reserved_bytes)
-                    .max(0) as u64,
-            ),
-            Err(_) => None,
-        };
+        let remaining_quota_bytes = self.remaining_quota().await;
         let mut sizes = Vec::new();
         tree.collect_sizes(&mut sizes);
         let upload_bytes = projected_total_bytes(&sizes);
@@ -409,7 +472,456 @@ impl BackupEngine {
             excluded_count: tree.excluded,
             unreadable_count: tree.unreadable,
             remaining_quota_bytes,
+            excluded_wechat_file_count,
+            excluded_wechat_bytes,
         })
+    }
+
+    async fn remaining_quota(&self) -> Option<u64> {
+        match self.inner.client.get_usage().await {
+            Ok(usage) => Some(
+                usage
+                    .quota_bytes
+                    .saturating_sub(usage.used_bytes)
+                    .saturating_sub(usage.reserved_bytes)
+                    .max(0) as u64,
+            ),
+            Err(_) => None,
+        }
+    }
+
+    /// 刷新缓存的微信数据根目录（引擎启动、每次全量核对与预检时调用）。
+    ///
+    /// 发现失败不会影响普通备份：保留上一次缓存（启动时为空的缓存），并记录
+    /// 一条不含路径的警告。
+    pub async fn refresh_wechat_data_roots(&self) {
+        let locator = self.inner.wechat_locator.clone();
+        let manual = self.inner.config.wechat_manual_directories.clone();
+        let roots = match locator.discover_data_roots(&manual).await {
+            Ok(roots) => roots,
+            Err(_) => {
+                tracing::warn!("微信数据根发现失败，保留上一次缓存");
+                self.inner.wechat_roots_ready.store(true, Ordering::SeqCst);
+                return;
+            }
+        };
+        let mut deduped = Vec::with_capacity(roots.len());
+        let mut seen = HashSet::new();
+        for root in roots {
+            if seen.insert(comparable_path(&root)) {
+                deduped.push(root);
+            }
+        }
+        if let Ok(mut guard) = self.inner.wechat_roots.lock() {
+            *guard = deduped;
+        }
+        self.inner.wechat_roots_ready.store(true, Ordering::SeqCst);
+    }
+
+    fn wechat_data_roots(&self) -> Vec<PathBuf> {
+        self.inner
+            .wechat_roots
+            .lock()
+            .map(|roots| roots.clone())
+            .unwrap_or_default()
+    }
+
+    /// 首次使用缓存前做一次发现；之后由全量核对 / 预检刷新。
+    async fn ensure_wechat_roots(&self) {
+        if !self.inner.wechat_roots_ready.load(Ordering::SeqCst) {
+            self.refresh_wechat_data_roots().await;
+        }
+    }
+
+    /// 设置一个微信账号勾选的类别（design D2）。
+    ///
+    /// 按勾选增 / 删微信来源备份项；每个类别的每个来源路径一项，同一本地路径
+    /// 只注册一次。“聊天记录数据库”不注册为普通备份项（第 3 组快照），但仍
+    /// 记录勾选状态供快照使用。取消勾选只停止备份：云端内容永不删除。
+    pub async fn set_wechat_categories(
+        &self,
+        account: &WechatAccount,
+        categories: &[WechatCategory],
+    ) -> Result<(), BackupError> {
+        let user_id = self.user_id()?;
+        if !validate_account_name(&account.account_name) {
+            return Err(BackupError::InvalidConfig("微信账号目录名无效"));
+        }
+        let data_root = absolute_path(&account.data_root)?;
+        let data_root_text = data_root
+            .to_str()
+            .ok_or(BackupError::InvalidConfig("微信数据目录无效"))?
+            .to_owned();
+        let selections: Vec<(String, bool)> = WechatCategory::ALL
+            .iter()
+            .map(|category| (category.as_str().to_owned(), categories.contains(category)))
+            .collect();
+        let now = unix_seconds(self.inner.clock.now());
+        self.inner
+            .state
+            .replace_wechat_selections(
+                user_id,
+                data_root_text,
+                account.account_name.clone(),
+                account.version.as_str().to_owned(),
+                selections,
+                now,
+            )
+            .await?;
+        self.reconcile_wechat_sources(user_id).await
+    }
+
+    /// 按全部勾选增删微信来源备份项；同一路径只注册一次。
+    async fn reconcile_wechat_sources(&self, user_id: Uuid) -> Result<(), BackupError> {
+        let selections = self.inner.state.list_wechat_selections(user_id).await?;
+        let desired = tokio::task::spawn_blocking(move || desired_sources(&selections))
+            .await
+            .map_err(|_| BackupError::InvalidConfig("微信来源计算失败"))?;
+        let existing = self.inner.state.list_wechat_backup_folders(user_id).await?;
+        let mut by_path: HashMap<String, BackupFolderRecord> = HashMap::new();
+        for record in existing {
+            by_path.insert(comparable_path(&record.local_path), record);
+        }
+
+        let now = unix_seconds(self.inner.clock.now());
+        let mut added = Vec::new();
+        for source in desired {
+            let key = comparable_path(&source.local_path);
+            if by_path.remove(&key).is_some() {
+                continue;
+            }
+            if !source.exists {
+                continue;
+            }
+            let data_root = source
+                .data_root
+                .to_str()
+                .ok_or(BackupError::InvalidConfig("微信数据目录无效"))?
+                .to_owned();
+            let record = BackupFolderRecord {
+                id: Uuid::new_v4(),
+                user_id,
+                local_path: source.local_path,
+                local_name: source.local_name,
+                cloud_target_id: None,
+                cloud_folder_id: None,
+                cloud_path: None,
+                exclude_globs: Vec::new(),
+                exclude_subfolders: source.exclude_subfolders,
+                enabled: true,
+                last_backup_at: None,
+                created_at: now,
+                updated_at: now,
+                source_kind: BackupFolderSourceKind::Wechat,
+                wechat: Some(WechatSourceMeta {
+                    data_root,
+                    account_name: source.account_name,
+                    version: source.version.as_str().to_owned(),
+                    category: source.category.as_str().to_owned(),
+                    relative_path: source.relative_path,
+                }),
+            };
+            self.inner
+                .state
+                .insert_backup_folder(record.clone())
+                .await?;
+            added.push(record);
+        }
+
+        let mut removed = Vec::new();
+        for (_, record) in by_path {
+            self.inner
+                .state
+                .delete_backup_folder(user_id, record.id)
+                .await?;
+            removed.push(record.id);
+        }
+
+        for record in added {
+            self.upsert_runtime_folder(&record);
+        }
+        if !removed.is_empty() {
+            if let Ok(mut runtime) = self.inner.runtime.lock() {
+                for folder_id in &removed {
+                    runtime.statuses.remove(folder_id);
+                    runtime.paused_folders.remove(folder_id);
+                }
+                runtime.summary = summarize(&runtime);
+            }
+            if let Ok(mut watchers) = self.inner.watchers.lock() {
+                for folder_id in &removed {
+                    watchers.remove(folder_id);
+                }
+            }
+            self.emit_summary();
+        }
+        self.sync_watchers().await;
+        self.wake();
+        Ok(())
+    }
+
+    /// 列出已注册的微信来源备份项及其状态（“微信备份”页面使用）。
+    pub async fn list_wechat_sources(&self) -> Result<Vec<WechatBackupSource>, BackupError> {
+        let user_id = self.user_id()?;
+        let records = self.inner.state.list_wechat_backup_folders(user_id).await?;
+        let statuses = self.runtime_statuses();
+        let mut sources = Vec::new();
+        for record in records {
+            let Some(meta) = &record.wechat else {
+                continue;
+            };
+            let Some(version) = WechatVersion::parse(&meta.version) else {
+                continue;
+            };
+            let Some(category) = WechatCategory::parse(&meta.category) else {
+                continue;
+            };
+            let state = statuses.get(&record.id);
+            let status = state
+                .map(|state| state.status)
+                .unwrap_or(if record.enabled {
+                    BackupFolderStatus::IdleOk
+                } else {
+                    BackupFolderStatus::Paused
+                });
+            let pause_reason = state
+                .and_then(|state| state.pause_reason)
+                .or(if record.enabled {
+                    None
+                } else {
+                    Some(BackupPauseReason::User)
+                });
+            sources.push(WechatBackupSource {
+                folder_id: record.id,
+                data_root: PathBuf::from(&meta.data_root),
+                account_name: meta.account_name.clone(),
+                version,
+                category,
+                relative_path: meta.relative_path.clone(),
+                cloud_path: record.cloud_path,
+                enabled: record.enabled,
+                status,
+                pause_reason,
+                last_backup_at: state
+                    .and_then(|state| state.last_backup_at)
+                    .or(record.last_backup_at),
+            });
+        }
+        sources.sort_by(|left, right| {
+            left.account_name
+                .cmp(&right.account_name)
+                .then_with(|| category_order(left.category).cmp(&category_order(right.category)))
+                .then_with(|| left.relative_path.cmp(&right.relative_path))
+        });
+        Ok(sources)
+    }
+
+    /// 每个微信账号每个类别的状态汇总（第 4 组界面使用）。
+    ///
+    /// 未勾选的类别也会出现（`selected = false`）；数据库快照类别已勾选但尚未
+    /// 注册为来源，`status` 为 `None`（第 3 组提供快照状态）。
+    pub async fn list_wechat_accounts(
+        &self,
+    ) -> Result<Vec<WechatAccountBackupStatus>, BackupError> {
+        let user_id = self.user_id()?;
+        let selections = self.inner.state.list_wechat_selections(user_id).await?;
+        let sources = self.list_wechat_sources().await?;
+
+        struct AccountEntry {
+            version: WechatVersion,
+            category_selected: HashMap<WechatCategory, bool>,
+        }
+        let mut accounts: BTreeMap<(String, String), AccountEntry> = BTreeMap::new();
+        for selection in selections {
+            let Some(version) = WechatVersion::parse(&selection.version) else {
+                continue;
+            };
+            let Some(category) = WechatCategory::parse(&selection.category) else {
+                continue;
+            };
+            let key = (selection.data_root.clone(), selection.account_name.clone());
+            let entry = accounts.entry(key).or_insert_with(|| AccountEntry {
+                version,
+                category_selected: HashMap::new(),
+            });
+            entry.category_selected.insert(category, selection.selected);
+        }
+
+        let mut result = Vec::with_capacity(accounts.len());
+        for ((data_root, account_name), entry) in accounts {
+            let data_root_comparable = comparable_path(Path::new(&data_root));
+            let mut categories = Vec::with_capacity(WechatCategory::ALL.len());
+            let mut last_backup_at: Option<i64> = None;
+            for category in WechatCategory::ALL {
+                let selected = entry
+                    .category_selected
+                    .get(&category)
+                    .copied()
+                    .unwrap_or(false);
+                let matching: Vec<&WechatBackupSource> = sources
+                    .iter()
+                    .filter(|source| {
+                        source.category == category
+                            && source.account_name == account_name
+                            && comparable_path(&source.data_root) == data_root_comparable
+                    })
+                    .collect();
+                let status = combine_statuses(&matching);
+                let pause_reason = if matches!(status, Some(BackupFolderStatus::NeedsUnlock)) {
+                    Some(BackupPauseReason::NeedsUnlock)
+                } else if matches!(status, Some(BackupFolderStatus::Paused)) {
+                    matching
+                        .iter()
+                        .find_map(|source| source.pause_reason)
+                        .or(Some(BackupPauseReason::User))
+                } else {
+                    None
+                };
+                let category_last = matching
+                    .iter()
+                    .filter_map(|source| source.last_backup_at)
+                    .max();
+                last_backup_at = match (last_backup_at, category_last) {
+                    (Some(current), Some(candidate)) => Some(current.max(candidate)),
+                    (Some(current), None) => Some(current),
+                    (None, candidate) => candidate,
+                };
+                categories.push(WechatCategoryBackupStatus {
+                    category,
+                    selected,
+                    status,
+                    pause_reason,
+                    last_backup_at: category_last,
+                });
+            }
+            result.push(WechatAccountBackupStatus {
+                data_root: PathBuf::from(data_root),
+                account_name,
+                version: entry.version,
+                categories,
+                last_backup_at,
+            });
+        }
+        Ok(result)
+    }
+
+    /// 微信备份首次上传预检：勾选类别的文件数、明文/密文字节数、剩余配额、
+    /// 是否超额，以及取消“图片与视频”后需要上传的字节数（design D6）。
+    ///
+    /// 数据库类别也计入（第 3 组快照会上传它）。
+    pub async fn preflight_wechat(
+        &self,
+        account: &WechatAccount,
+        categories: &[WechatCategory],
+    ) -> Result<WechatBackupPreflight, BackupError> {
+        if !validate_account_name(&account.account_name) {
+            return Err(BackupError::InvalidConfig("微信账号目录名无效"));
+        }
+        self.user_id()?;
+        let data_root = absolute_path(&account.data_root)?;
+        let account_dir = data_root.join(&account.account_name);
+        let layout = layout_for(account.version);
+        let selected: HashSet<WechatCategory> = categories.iter().copied().collect();
+        let mut jobs: Vec<(WechatCategory, PathBuf)> = Vec::new();
+        for category in WechatCategory::ALL {
+            if !selected.contains(&category) {
+                continue;
+            }
+            let Some(category_layout) = layout.category(category) else {
+                continue;
+            };
+            for relative in category_layout.account_paths {
+                jobs.push((category, account_dir.join(relative)));
+            }
+            for relative in category_layout.data_root_paths {
+                jobs.push((
+                    category,
+                    data_root.join(relative.replace("{account}", &account.account_name)),
+                ));
+            }
+        }
+        let cache_subfolders: Vec<String> = layout
+            .cache_directories
+            .iter()
+            .map(|directory| (*directory).to_owned())
+            .collect();
+        let include_hidden = self.cached_settings().include_hidden;
+        let stats = tokio::task::spawn_blocking(move || {
+            let exclusions = Exclusions::compile(&[], &cache_subfolders)?;
+            let mut file_count = 0_u64;
+            let mut total_bytes = 0_u64;
+            let mut upload_bytes = 0_u64;
+            let mut upload_without_images = 0_u64;
+            let mut database_bytes = 0_u64;
+            let mut excluded_count = 0_u64;
+            let mut unreadable_count = 0_u64;
+            for (category, path) in jobs {
+                if !path_for_io(&path).is_ok_and(|path| path.is_dir()) {
+                    continue;
+                }
+                let options = WalkOptions {
+                    include_hidden,
+                    exclusions: &exclusions,
+                };
+                let tree = scan_tree(&path, "wechat", &options)?;
+                let (files, bytes) = tree.counts();
+                file_count = file_count.saturating_add(files);
+                total_bytes = total_bytes.saturating_add(bytes);
+                excluded_count = excluded_count.saturating_add(tree.excluded);
+                unreadable_count = unreadable_count.saturating_add(tree.unreadable);
+                if category == WechatCategory::Databases {
+                    database_bytes = database_bytes.saturating_add(bytes);
+                }
+                let mut sizes = Vec::new();
+                tree.collect_sizes(&mut sizes);
+                let projected = projected_total_bytes(&sizes);
+                upload_bytes = upload_bytes.saturating_add(projected);
+                if category != WechatCategory::ImagesAndVideos {
+                    upload_without_images = upload_without_images.saturating_add(projected);
+                }
+            }
+            Ok::<_, BackupError>((
+                file_count,
+                total_bytes,
+                upload_bytes,
+                upload_without_images,
+                database_bytes,
+                excluded_count,
+                unreadable_count,
+            ))
+        })
+        .await
+        .map_err(|_| BackupError::InvalidConfig("扫描任务失败"))??;
+        let (
+            file_count,
+            total_bytes,
+            upload_bytes,
+            upload_bytes_without_images_and_videos,
+            database_bytes,
+            excluded_count,
+            unreadable_count,
+        ) = stats;
+        let remaining_quota_bytes = self.remaining_quota().await;
+        let over_quota = remaining_quota_bytes.is_some_and(|remaining| upload_bytes > remaining);
+        Ok(WechatBackupPreflight {
+            file_count,
+            total_bytes,
+            upload_bytes,
+            upload_bytes_without_images_and_videos,
+            database_bytes,
+            excluded_count,
+            unreadable_count,
+            remaining_quota_bytes,
+            over_quota,
+        })
+    }
+
+    fn runtime_statuses(&self) -> HashMap<Uuid, BackupFolderState> {
+        self.inner
+            .runtime
+            .lock()
+            .map(|runtime| runtime.statuses.clone())
+            .unwrap_or_default()
     }
 
     /// 暂停全部备份（保留已上传内容；恢复后继续）。
@@ -774,6 +1286,8 @@ impl BackupEngine {
             .map_err(|_| BackupError::InvalidConfig("引擎状态锁损坏"))? = Some(watch_sender);
 
         self.refresh_runtime().await?;
+        // 启动时发现一次微信数据根；普通备份文件夹据此自动排除。
+        self.refresh_wechat_data_roots().await;
         // 旧 watcher 可能绑定到上一次的 watch 通道；统一丢弃后用新 sender 重建。
         if let Ok(mut watchers) = self.inner.watchers.lock() {
             watchers.clear();
@@ -1011,13 +1525,31 @@ impl BackupEngine {
             return Ok((target, None));
         }
         let mut parent = account.root_node_id;
-        let mut names = vec![
-            "电脑备份".to_owned(),
-            self.inner.config.device_name.clone(),
-            folder.local_name.clone(),
-        ];
+        let names = match &folder.wechat {
+            Some(meta) => {
+                let category = WechatCategory::parse(&meta.category)
+                    .ok_or(BackupError::InvalidConfig("微信类别无效"))?;
+                let last = meta
+                    .relative_path
+                    .rsplit('/')
+                    .find(|part| !part.is_empty())
+                    .ok_or(BackupError::InvalidConfig("微信来源路径无效"))?;
+                vec![
+                    "微信备份".to_owned(),
+                    self.inner.config.device_name.clone(),
+                    meta.account_name.clone(),
+                    category.label().to_owned(),
+                    crate::io_path::normalize_cloud_name(last),
+                ]
+            }
+            None => vec![
+                "电脑备份".to_owned(),
+                self.inner.config.device_name.clone(),
+                folder.local_name.clone(),
+            ],
+        };
         let mut path = String::from("全部文件");
-        for name in names.drain(..) {
+        for name in names {
             parent = self.ensure_cloud_folder(parent, &name).await?;
             path.push('/');
             path.push_str(&name);
@@ -1098,8 +1630,23 @@ impl BackupEngine {
         }
 
         let user_id = folder.user_id;
+        // 普通备份文件夹自动排除微信数据根（design D2，2026-11-01 审查者决定）。
+        // 微信来源本身就在数据根内部，不做这个排除。
+        let mut exclude_subfolders = folder.exclude_subfolders.clone();
+        if folder.source_kind == BackupFolderSourceKind::User {
+            self.ensure_wechat_roots().await;
+            let roots = self.wechat_data_roots();
+            let wechat = exclusions_for(&folder.local_path, &roots);
+            if wechat.scanned_root_inside_wechat {
+                // 整个文件夹就是微信数据：全部由“微信备份”处理。
+                self.set_folder_status(folder_id, BackupFolderStatus::IdleOk, None);
+                report.status = BackupFolderStatus::IdleOk;
+                return Ok(report);
+            }
+            exclude_subfolders.extend(wechat.relative_subfolders);
+        }
         self.set_folder_status(folder_id, BackupFolderStatus::Scanning, None);
-        let exclusions = Exclusions::compile(&folder.exclude_globs, &folder.exclude_subfolders)?;
+        let exclusions = Exclusions::compile(&folder.exclude_globs, &exclude_subfolders)?;
         let scan = {
             let root = folder.local_path.clone();
             let name = folder.local_name.clone();
@@ -1772,6 +2319,8 @@ async fn run_scheduler(
 
         let now = inner.clock.now();
         if now >= next_full {
+            // 每次全量核对刷新一次微信数据根（不是每个文件都发现）。
+            engine.refresh_wechat_data_roots().await;
             if let Err(error) = engine.scan_all_now().await {
                 tracing::warn!(error = %error, "定时全量核对失败");
             }
@@ -1896,26 +2445,65 @@ fn absolute_path(path: &Path) -> Result<PathBuf, BackupError> {
     std::path::absolute(path).map_err(|_| BackupError::InvalidConfig("备份路径无效"))
 }
 
-/// 路径比较键：统一 `/`、NFC；Windows/macOS 文件系统通常大小写不敏感，
-/// 因此这两个平台还做小写化。Linux 保留大小写（区分大小写的文件系统）。
-fn comparable_path(path: &Path) -> String {
-    use unicode_normalization::UnicodeNormalization;
-    let text = path.to_string_lossy().replace('\\', "/");
-    let text = text.as_str().nfc().collect::<String>();
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
-    let text = text.to_lowercase();
-    let trimmed = text.trim_end_matches('/').to_owned();
-    if trimmed.is_empty() { text } else { trimmed }
+fn category_order(category: WechatCategory) -> usize {
+    WechatCategory::ALL
+        .iter()
+        .position(|candidate| *candidate == category)
+        .unwrap_or(WechatCategory::ALL.len())
 }
 
-fn path_within(child: &str, parent: &str) -> bool {
-    child == parent
-        || child
-            .strip_prefix(parent)
-            .is_some_and(|rest| rest.starts_with('/'))
+/// 一个类别有多个来源时（图片与视频的两个路径）汇总成界面状态。
+fn combine_statuses(sources: &[&WechatBackupSource]) -> Option<BackupFolderStatus> {
+    if sources.is_empty() {
+        return None;
+    }
+    if sources
+        .iter()
+        .any(|source| source.status == BackupFolderStatus::NeedsUnlock)
+    {
+        return Some(BackupFolderStatus::NeedsUnlock);
+    }
+    let mut uploading: Option<(u64, u64)> = None;
+    for source in sources {
+        if let BackupFolderStatus::Uploading { done, total } = source.status {
+            let (current_done, current_total) = uploading.unwrap_or((0, 0));
+            uploading = Some((
+                current_done.saturating_add(done),
+                current_total.saturating_add(total),
+            ));
+        }
+    }
+    if let Some((done, total)) = uploading {
+        return Some(BackupFolderStatus::Uploading { done, total });
+    }
+    if sources
+        .iter()
+        .any(|source| source.status == BackupFolderStatus::Paused)
+    {
+        return Some(BackupFolderStatus::Paused);
+    }
+    if sources
+        .iter()
+        .any(|source| matches!(source.status, BackupFolderStatus::Error { .. }))
+    {
+        let unreadable_count = sources
+            .iter()
+            .filter_map(|source| match source.status {
+                BackupFolderStatus::Error { unreadable_count } => Some(unreadable_count),
+                _ => None,
+            })
+            .fold(0_u64, u64::saturating_add);
+        return Some(BackupFolderStatus::Error { unreadable_count });
+    }
+    if sources
+        .iter()
+        .any(|source| source.status == BackupFolderStatus::Scanning)
+    {
+        return Some(BackupFolderStatus::Scanning);
+    }
+    Some(BackupFolderStatus::IdleOk)
 }
 
-/// 两个路径是否重复或互相包含；返回面向用户的中文错误文案（不含路径）。
 fn path_conflict(existing: &Path, candidate: &Path) -> Option<&'static str> {
     let existing = comparable_path(existing);
     let candidate = comparable_path(candidate);

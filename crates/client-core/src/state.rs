@@ -19,7 +19,7 @@ use crate::io_path::{StatePathError, path_for_io};
 use crate::model::{PendingUpload, PendingUploadStatus};
 
 /// 当前 schema 版本。
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 /// 状态库文件名（位于调用方传入的应用数据目录）。
 pub const DATABASE_FILE_NAME: &str = "client-state.sqlite3";
 
@@ -112,6 +112,46 @@ pub(crate) struct ConfirmedChunk {
     pub sha256: String,
 }
 
+/// 备份项来源类型（add-wechat-backup 第 2 组，design D2）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BackupFolderSourceKind {
+    /// 用户在“备份文件夹”页面添加的普通文件夹。
+    User,
+    /// “微信备份”页面勾选的类别来源。
+    Wechat,
+}
+
+impl BackupFolderSourceKind {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Wechat => "wechat",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "user" => Some(Self::User),
+            "wechat" => Some(Self::Wechat),
+            _ => None,
+        }
+    }
+}
+
+/// 微信来源的元数据；路径是本地状态，不上传。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WechatSourceMeta {
+    /// 微信数据根目录（`…\xwechat_files` / `…\WeChat Files`）。
+    pub data_root: String,
+    pub account_name: String,
+    /// `wechat3` / `wechat4`（布局描述版本）。
+    pub version: String,
+    /// 类别键，见 `wechat::WechatCategory::as_str`。
+    pub category: String,
+    /// 来源相对数据根目录的路径（`/` 分隔）。
+    pub relative_path: String,
+}
+
 /// 备份文件夹配置（design D5/D6）。只存本机元数据，不含任何密钥。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BackupFolderRecord {
@@ -131,6 +171,21 @@ pub(crate) struct BackupFolderRecord {
     pub enabled: bool,
     pub last_backup_at: Option<i64>,
     pub created_at: i64,
+    pub updated_at: i64,
+    pub source_kind: BackupFolderSourceKind,
+    /// 仅 `source_kind == Wechat` 时有值。
+    pub wechat: Option<WechatSourceMeta>,
+}
+
+/// 一个微信账号勾选的类别（本地配置；数据库快照类别也记录在这里）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WechatSelectionRecord {
+    pub user_id: Uuid,
+    pub data_root: String,
+    pub account_name: String,
+    pub version: String,
+    pub category: String,
+    pub selected: bool,
     pub updated_at: i64,
 }
 
@@ -386,6 +441,96 @@ impl StateStore {
                 "#,
             )?;
             tx.commit()?;
+        }
+        if current < 4 {
+            // 微信备份（add-wechat-backup 第 2 组）：备份项来源类型 + 微信来源
+            // 元数据 + 账号类别勾选。旧记录默认 `user`。
+            //
+            // 旧的 `UNIQUE (user_id, local_path)` 必须换成“按来源类型”的唯一索引：
+            // design D2（2026-11-01 审查者决定）要求微信来源与普通备份文件夹之间
+            // 不做嵌套冲突拒绝，同一路径可以同时是普通文件夹与微信来源。SQLite
+            // 无法删除表级 UNIQUE，只能重建表；重建期间关闭外键，避免 DROP 时级联
+            // 删除 backup_index / backup_activity（索引与会话状态必须保留）。
+            connection.execute_batch("PRAGMA foreign_keys = OFF;")?;
+            let migration: Result<(), StateError> = (|| {
+                let tx = connection.transaction()?;
+                tx.execute_batch(
+                    r#"
+                    CREATE TABLE backup_folders_v4 (
+                        id                  TEXT PRIMARY KEY NOT NULL,
+                        user_id             TEXT NOT NULL,
+                        local_path          TEXT NOT NULL,
+                        local_name          TEXT NOT NULL,
+                        cloud_target_id     TEXT,
+                        cloud_folder_id     TEXT,
+                        cloud_path          TEXT,
+                        exclude_globs       TEXT NOT NULL DEFAULT '[]',
+                        exclude_subfolders  TEXT NOT NULL DEFAULT '[]',
+                        enabled             INTEGER NOT NULL DEFAULT 1,
+                        last_backup_at      INTEGER,
+                        created_at          INTEGER NOT NULL,
+                        updated_at          INTEGER NOT NULL,
+                        source_kind         TEXT NOT NULL DEFAULT 'user'
+                                            CHECK (source_kind IN ('user', 'wechat')),
+                        wechat_data_root    TEXT,
+                        wechat_account_name TEXT,
+                        wechat_version      TEXT,
+                        wechat_category     TEXT,
+                        wechat_relative_path TEXT
+                    );
+
+                    INSERT INTO backup_folders_v4 (
+                        id, user_id, local_path, local_name, cloud_target_id,
+                        cloud_folder_id, cloud_path, exclude_globs, exclude_subfolders,
+                        enabled, last_backup_at, created_at, updated_at
+                    )
+                    SELECT
+                        id, user_id, local_path, local_name, cloud_target_id,
+                        cloud_folder_id, cloud_path, exclude_globs, exclude_subfolders,
+                        enabled, last_backup_at, created_at, updated_at
+                    FROM backup_folders;
+
+                    DROP TABLE backup_folders;
+                    ALTER TABLE backup_folders_v4 RENAME TO backup_folders;
+
+                    CREATE INDEX backup_folders_user_idx
+                        ON backup_folders (user_id, enabled);
+                    CREATE INDEX backup_folders_source_idx
+                        ON backup_folders (user_id, source_kind);
+                    CREATE UNIQUE INDEX backup_folders_user_path_idx
+                        ON backup_folders (user_id, local_path)
+                        WHERE source_kind = 'user';
+                    CREATE UNIQUE INDEX backup_folders_wechat_path_idx
+                        ON backup_folders (user_id, local_path)
+                        WHERE source_kind = 'wechat';
+
+                    CREATE TABLE wechat_backup_selections (
+                        user_id         TEXT NOT NULL,
+                        data_root       TEXT NOT NULL,
+                        account_name    TEXT NOT NULL,
+                        version         TEXT NOT NULL,
+                        category        TEXT NOT NULL,
+                        selected        INTEGER NOT NULL,
+                        updated_at      INTEGER NOT NULL,
+                        PRIMARY KEY (user_id, data_root, account_name, category)
+                    );
+
+                    PRAGMA user_version = 4;
+                    "#,
+                )?;
+                tx.commit()?;
+                Ok(())
+            })();
+            connection.execute_batch("PRAGMA foreign_keys = ON;")?;
+            migration?;
+            let violation = connection
+                .query_row("PRAGMA foreign_key_check", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .optional()?;
+            if violation.is_some() {
+                return Err(StateError::Corrupt("迁移后外键检查失败"));
+            }
         }
         Ok(())
     }
@@ -715,14 +860,18 @@ impl StateStore {
         record: BackupFolderRecord,
     ) -> Result<(), StateError> {
         self.run_db(move |connection| {
+            let wechat = record.wechat.as_ref();
             connection.execute(
                 r#"
                 INSERT INTO backup_folders (
                     id, user_id, local_path, local_name, cloud_target_id,
                     cloud_folder_id, cloud_path, exclude_globs, exclude_subfolders,
-                    enabled, last_backup_at, created_at, updated_at
+                    enabled, last_backup_at, created_at, updated_at,
+                    source_kind, wechat_data_root, wechat_account_name,
+                    wechat_version, wechat_category, wechat_relative_path
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+                        ?14, ?15, ?16, ?17, ?18, ?19)
                 "#,
                 params![
                     record.id.to_string(),
@@ -738,6 +887,12 @@ impl StateStore {
                     record.last_backup_at,
                     record.created_at,
                     record.updated_at,
+                    record.source_kind.as_str(),
+                    wechat.map(|meta| meta.data_root.as_str()),
+                    wechat.map(|meta| meta.account_name.as_str()),
+                    wechat.map(|meta| meta.version.as_str()),
+                    wechat.map(|meta| meta.category.as_str()),
+                    wechat.map(|meta| meta.relative_path.as_str()),
                 ],
             )?;
             Ok(())
@@ -745,23 +900,58 @@ impl StateStore {
         .await
     }
 
-    /// 列出某用户的全部备份文件夹（新到旧）。
+    /// 列出某用户的全部备份文件夹（新到旧），包含微信来源；引擎调度使用。
     pub(crate) async fn list_backup_folders(
         &self,
         user_id: Uuid,
+    ) -> Result<Vec<BackupFolderRecord>, StateError> {
+        self.list_backup_folders_where(user_id, None).await
+    }
+
+    /// 只列出普通备份文件夹（“备份文件夹”页面展示；design D2）。
+    pub(crate) async fn list_user_backup_folders(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<BackupFolderRecord>, StateError> {
+        self.list_backup_folders_where(user_id, Some(BackupFolderSourceKind::User))
+            .await
+    }
+
+    /// 只列出微信来源备份项（“微信备份”页面展示与测试使用）。
+    pub(crate) async fn list_wechat_backup_folders(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<BackupFolderRecord>, StateError> {
+        self.list_backup_folders_where(user_id, Some(BackupFolderSourceKind::Wechat))
+            .await
+    }
+
+    async fn list_backup_folders_where(
+        &self,
+        user_id: Uuid,
+        source_kind: Option<BackupFolderSourceKind>,
     ) -> Result<Vec<BackupFolderRecord>, StateError> {
         self.run_db(move |connection| {
             let mut statement = connection.prepare(
                 r#"
                 SELECT id, user_id, local_path, local_name, cloud_target_id,
                        cloud_folder_id, cloud_path, exclude_globs, exclude_subfolders,
-                       enabled, last_backup_at, created_at, updated_at
+                       enabled, last_backup_at, created_at, updated_at,
+                       source_kind, wechat_data_root, wechat_account_name,
+                       wechat_version, wechat_category, wechat_relative_path
                 FROM backup_folders
                 WHERE user_id = ?1
+                  AND (?2 IS NULL OR source_kind = ?2)
                 ORDER BY created_at DESC
                 "#,
             )?;
-            let rows = statement.query_map(params![user_id.to_string()], row_to_backup_folder)?;
+            let rows = statement.query_map(
+                params![
+                    user_id.to_string(),
+                    source_kind.map(BackupFolderSourceKind::as_str)
+                ],
+                row_to_backup_folder,
+            )?;
             let mut folders = Vec::new();
             for row in rows {
                 folders.push(row??);
@@ -783,7 +973,9 @@ impl StateStore {
                     r#"
                     SELECT id, user_id, local_path, local_name, cloud_target_id,
                            cloud_folder_id, cloud_path, exclude_globs, exclude_subfolders,
-                           enabled, last_backup_at, created_at, updated_at
+                           enabled, last_backup_at, created_at, updated_at,
+                           source_kind, wechat_data_root, wechat_account_name,
+                           wechat_version, wechat_category, wechat_relative_path
                     FROM backup_folders
                     WHERE user_id = ?1 AND id = ?2
                     "#,
@@ -1230,6 +1422,88 @@ impl StateStore {
         })
         .await
     }
+
+    /// 覆盖一个账号的类别勾选（数据库快照类别也记录于此）。
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn replace_wechat_selections(
+        &self,
+        user_id: Uuid,
+        data_root: String,
+        account_name: String,
+        version: String,
+        categories: Vec<(String, bool)>,
+        updated_at: i64,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            let tx = connection.transaction()?;
+            tx.execute(
+                "DELETE FROM wechat_backup_selections
+                 WHERE user_id = ?1 AND data_root = ?2 AND account_name = ?3",
+                params![
+                    user_id.to_string(),
+                    data_root.as_str(),
+                    account_name.as_str()
+                ],
+            )?;
+            for (category, selected) in categories {
+                tx.execute(
+                    r#"
+                    INSERT INTO wechat_backup_selections (
+                        user_id, data_root, account_name, version, category,
+                        selected, updated_at
+                    )
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                    "#,
+                    params![
+                        user_id.to_string(),
+                        data_root.as_str(),
+                        account_name.as_str(),
+                        version.as_str(),
+                        category,
+                        i64::from(selected),
+                        updated_at,
+                    ],
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// 列出某用户的全部微信类别勾选（按数据根、账号、类别排序）。
+    pub(crate) async fn list_wechat_selections(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<WechatSelectionRecord>, StateError> {
+        self.run_db(move |connection| {
+            let mut statement = connection.prepare(
+                r#"
+                SELECT data_root, account_name, version, category, selected, updated_at
+                FROM wechat_backup_selections
+                WHERE user_id = ?1
+                ORDER BY data_root, account_name, category
+                "#,
+            )?;
+            let rows = statement.query_map(params![user_id.to_string()], |row| {
+                Ok(WechatSelectionRecord {
+                    user_id,
+                    data_root: row.get::<_, String>(0)?,
+                    account_name: row.get::<_, String>(1)?,
+                    version: row.get::<_, String>(2)?,
+                    category: row.get::<_, String>(3)?,
+                    selected: row.get::<_, i64>(4)? != 0,
+                    updated_at: row.get::<_, i64>(5)?,
+                })
+            })?;
+            let mut selections = Vec::new();
+            for row in rows {
+                selections.push(row?);
+            }
+            Ok(selections)
+        })
+        .await
+    }
 }
 
 fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<UploadRecord, StateError>> {
@@ -1361,6 +1635,36 @@ fn row_to_backup_folder(
     let last_backup_at = row.get::<_, Option<i64>>(10)?;
     let created_at = row.get::<_, i64>(11)?;
     let updated_at = row.get::<_, i64>(12)?;
+    let source_kind = match BackupFolderSourceKind::parse(&row.get::<_, String>(13)?) {
+        Some(value) => value,
+        None => return Ok(Err(StateError::Corrupt("未知的备份项来源类型"))),
+    };
+    let wechat = match source_kind {
+        BackupFolderSourceKind::User => None,
+        BackupFolderSourceKind::Wechat => {
+            let data_root = row.get::<_, Option<String>>(14)?;
+            let account_name = row.get::<_, Option<String>>(15)?;
+            let version = row.get::<_, Option<String>>(16)?;
+            let category = row.get::<_, Option<String>>(17)?;
+            let relative_path = row.get::<_, Option<String>>(18)?;
+            match (data_root, account_name, version, category, relative_path) {
+                (
+                    Some(data_root),
+                    Some(account_name),
+                    Some(version),
+                    Some(category),
+                    Some(relative_path),
+                ) => Some(WechatSourceMeta {
+                    data_root,
+                    account_name,
+                    version,
+                    category,
+                    relative_path,
+                }),
+                _ => return Ok(Err(StateError::Corrupt("微信来源缺少元数据"))),
+            }
+        }
+    };
 
     Ok(Ok(BackupFolderRecord {
         id,
@@ -1376,6 +1680,8 @@ fn row_to_backup_folder(
         last_backup_at,
         created_at,
         updated_at,
+        source_kind,
+        wechat,
     }))
 }
 
@@ -1422,6 +1728,8 @@ mod tests {
         assert!(sql.contains("backup_activity"));
         assert!(sql.contains("backup_settings"));
         assert!(sql.contains("wechat_accounts"));
+        assert!(sql.contains("wechat_backup_selections"));
+        assert!(sql.contains("source_kind"));
         // 只存本机元数据：表结构中不得出现密钥/令牌/密文字段。
         for forbidden in ["wrapped", "token", "ciphertext", "plaintext", "secret"] {
             assert!(
@@ -1653,15 +1961,19 @@ mod tests {
             );
         }
 
-        // 模拟升级前的 v2 旧库：删除新表并把 user_version 拨回 2。
+        // 模拟升级前的 v2 旧库：删除 v3/v4 新增的表并把 user_version 拨回 2。
         {
             let connection = Connection::open(&path).unwrap();
             connection
-                .execute_batch("DROP TABLE wechat_accounts; PRAGMA user_version = 2;")
+                .execute_batch(
+                    "DROP TABLE wechat_backup_selections;
+                     DROP TABLE wechat_accounts;
+                     PRAGMA user_version = 2;",
+                )
                 .unwrap();
         }
 
-        // 旧库重新打开时执行 v3 迁移，表恢复且仍可正常读写。
+        // 旧库重新打开时依次执行 v3 / v4 迁移，表恢复且仍可正常读写。
         let store = StateStore::open_path(&path).unwrap();
         assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
         assert!(
@@ -1679,6 +1991,138 @@ mod tests {
             store.wechat_account_note(data_root, account).await.unwrap(),
             Some("迁移后".to_owned())
         );
+    }
+
+    #[tokio::test]
+    async fn backup_folder_source_migrates_v3_to_v4_preserving_old_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(DATABASE_FILE_NAME);
+        let user_id = Uuid::new_v4();
+        let folder_id = Uuid::new_v4();
+
+        {
+            let store = StateStore::open_path(&path).unwrap();
+            assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+            store
+                .insert_backup_folder(sample_folder_record(user_id, folder_id))
+                .await
+                .unwrap();
+            store
+                .upsert_backup_index(BackupIndexRecord {
+                    user_id,
+                    folder_id,
+                    relative_path: "a.txt".to_owned(),
+                    size: 3,
+                    mtime_ns: 1,
+                    cloud_node_id: Uuid::new_v4(),
+                    content_sha256: "a".repeat(64),
+                    updated_at: 1,
+                })
+                .await
+                .unwrap();
+        }
+
+        // 模拟 v3 旧库：把 backup_folders 还原成 v2/v3 的 13 列结构，并删除
+        // v4 新增的勾选表。真实升级路径与这里重开的迁移完全一致。
+        {
+            let connection = Connection::open(&path).unwrap();
+            connection
+                .execute_batch(
+                    r#"
+                    PRAGMA foreign_keys = OFF;
+                    CREATE TABLE backup_folders_v3 (
+                        id                  TEXT PRIMARY KEY NOT NULL,
+                        user_id             TEXT NOT NULL,
+                        local_path          TEXT NOT NULL,
+                        local_name          TEXT NOT NULL,
+                        cloud_target_id     TEXT,
+                        cloud_folder_id     TEXT,
+                        cloud_path          TEXT,
+                        exclude_globs       TEXT NOT NULL DEFAULT '[]',
+                        exclude_subfolders  TEXT NOT NULL DEFAULT '[]',
+                        enabled             INTEGER NOT NULL DEFAULT 1,
+                        last_backup_at      INTEGER,
+                        created_at          INTEGER NOT NULL,
+                        updated_at          INTEGER NOT NULL,
+                        UNIQUE (user_id, local_path)
+                    );
+                    INSERT INTO backup_folders_v3 SELECT
+                        id, user_id, local_path, local_name, cloud_target_id,
+                        cloud_folder_id, cloud_path, exclude_globs, exclude_subfolders,
+                        enabled, last_backup_at, created_at, updated_at
+                    FROM backup_folders;
+                    DROP TABLE backup_folders;
+                    ALTER TABLE backup_folders_v3 RENAME TO backup_folders;
+                    CREATE INDEX backup_folders_user_idx
+                        ON backup_folders (user_id, enabled);
+                    DROP TABLE wechat_backup_selections;
+                    PRAGMA user_version = 3;
+                    PRAGMA foreign_keys = ON;
+                    "#,
+                )
+                .unwrap();
+        }
+
+        let store = StateStore::open_path(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        let folders = store.list_user_backup_folders(user_id).await.unwrap();
+        assert_eq!(folders.len(), 1);
+        assert_eq!(folders[0].id, folder_id);
+        assert_eq!(folders[0].source_kind, BackupFolderSourceKind::User);
+        assert!(folders[0].wechat.is_none());
+        assert!(
+            store
+                .list_wechat_backup_folders(user_id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        // 重建 backup_folders 时不得级联删除本地增量索引。
+        assert_eq!(
+            store
+                .list_backup_index(user_id, folder_id)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // 迁移后的库仍可写入微信勾选。
+        store
+            .replace_wechat_selections(
+                user_id,
+                "D:/WeChatData/xwechat_files".to_owned(),
+                "wxid_test0001".to_owned(),
+                "wechat4".to_owned(),
+                vec![("chat_files".to_owned(), true)],
+                0,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            store.list_wechat_selections(user_id).await.unwrap().len(),
+            1
+        );
+    }
+
+    fn sample_folder_record(user_id: Uuid, folder_id: Uuid) -> BackupFolderRecord {
+        BackupFolderRecord {
+            id: folder_id,
+            user_id,
+            local_path: PathBuf::from("C:/Users/test/Documents"),
+            local_name: "Documents".to_owned(),
+            cloud_target_id: None,
+            cloud_folder_id: None,
+            cloud_path: None,
+            exclude_globs: Vec::new(),
+            exclude_subfolders: Vec::new(),
+            enabled: true,
+            last_backup_at: None,
+            created_at: 1,
+            updated_at: 1,
+            source_kind: BackupFolderSourceKind::User,
+            wechat: None,
+        }
     }
 
     #[tokio::test]

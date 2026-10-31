@@ -17,6 +17,9 @@ mod notes;
 mod scan;
 mod system;
 
+pub(crate) mod backup;
+pub(crate) mod exclude;
+
 #[cfg(test)]
 mod tests;
 
@@ -27,6 +30,7 @@ pub use layout::{
 pub use notes::{WECHAT_NOTE_MAX_CHARS, WechatAccountNotes};
 pub use system::WechatSystemLocations;
 
+use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -123,8 +127,17 @@ pub enum WechatError {
 ///
 /// 生产环境用 [`WechatLocator::new`]（Windows 上读取注册表 / Known Folder）；
 /// 测试与上层可以用 [`WechatLocator::with_system_locations`] 注入假实现。
+#[derive(Clone)]
 pub struct WechatLocator {
     system: Arc<dyn WechatSystemLocations>,
+}
+
+impl fmt::Debug for WechatLocator {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WechatLocator")
+            .finish_non_exhaustive()
+    }
 }
 
 impl WechatLocator {
@@ -154,6 +167,21 @@ impl WechatLocator {
         let system = Arc::clone(&self.system);
         let manual = manual_directories.to_vec();
         tokio::task::spawn_blocking(move || scan::discover_blocking(system.as_ref(), &manual))
+            .await
+            .map_err(|_| WechatError::ScanFailed)?
+    }
+
+    /// 只发现微信数据根目录（`xwechat_files` / `WeChat Files` 的实际路径）。
+    ///
+    /// 普通备份文件夹自动排除微信数据（design D2）只需要根目录，不需要统计
+    /// 每个账号的类别大小，因此这里不遍历账号内的文件。
+    pub async fn discover_data_roots(
+        &self,
+        manual_directories: &[PathBuf],
+    ) -> Result<Vec<PathBuf>, WechatError> {
+        let system = Arc::clone(&self.system);
+        let manual = manual_directories.to_vec();
+        tokio::task::spawn_blocking(move || scan::discover_roots_blocking(system.as_ref(), &manual))
             .await
             .map_err(|_| WechatError::ScanFailed)?
     }

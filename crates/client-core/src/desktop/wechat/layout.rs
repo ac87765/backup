@@ -24,6 +24,25 @@ impl WechatVersion {
             Self::Wechat4 => "4.x",
         }
     }
+
+    /// 状态库中的稳定键。
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Wechat3 => "wechat3",
+            Self::Wechat4 => "wechat4",
+        }
+    }
+
+    /// 解析状态库中的稳定键。
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "wechat3" => Some(Self::Wechat3),
+            "wechat4" => Some(Self::Wechat4),
+            _ => None,
+        }
+    }
 }
 
 /// 备份类别（design D2）。
@@ -36,6 +55,14 @@ pub enum WechatCategory {
 }
 
 impl WechatCategory {
+    /// 全部类别（固定顺序，供界面与状态聚合使用）。
+    pub const ALL: [Self; 4] = [
+        Self::ChatFiles,
+        Self::ImagesAndVideos,
+        Self::Databases,
+        Self::PhoneMigration,
+    ];
+
     /// 界面展示用的类别名称。
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -45,6 +72,35 @@ impl WechatCategory {
             Self::Databases => "聊天记录数据库",
             Self::PhoneMigration => "手机迁移备份",
         }
+    }
+
+    /// 状态库与云端目录使用的稳定键 / 中文目录名。
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ChatFiles => "chat_files",
+            Self::ImagesAndVideos => "images_and_videos",
+            Self::Databases => "databases",
+            Self::PhoneMigration => "phone_migration",
+        }
+    }
+
+    /// 解析状态库中的稳定键。
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "chat_files" => Some(Self::ChatFiles),
+            "images_and_videos" => Some(Self::ImagesAndVideos),
+            "databases" => Some(Self::Databases),
+            "phone_migration" => Some(Self::PhoneMigration),
+            _ => None,
+        }
+    }
+
+    /// 是否由普通备份引擎增量上传（数据库类别走第 3 组快照，不注册来源）。
+    #[must_use]
+    pub const fn is_file_source(self) -> bool {
+        !matches!(self, Self::Databases)
     }
 }
 

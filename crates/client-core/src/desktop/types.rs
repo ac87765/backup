@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use uuid::Uuid;
 
+use super::wechat::{WechatCategory, WechatLocator, WechatVersion};
 use crate::state::BackupFolderRecord;
 
 /// 文件监听防抖窗口（design D6：5 秒）。
@@ -256,6 +257,74 @@ pub struct BackupPreflight {
     pub unreadable_count: u64,
     /// 剩余云端空间；未登录或查询失败时为 `None`。
     pub remaining_quota_bytes: Option<u64>,
+    /// 被自动排除的微信数据文件数（由“微信备份”单独处理，design D2）。
+    pub excluded_wechat_file_count: u64,
+    /// 被自动排除的微信数据明文字节数。
+    pub excluded_wechat_bytes: u64,
+}
+
+/// 微信备份的首次上传预检（design D6：开启前的大小与配额提示）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WechatBackupPreflight {
+    /// 勾选类别的文件数（含聊天记录数据库）。
+    pub file_count: u64,
+    /// 勾选类别的明文总字节数（含聊天记录数据库）。
+    pub total_bytes: u64,
+    /// 首次需要上传的密文字节数（逐文件计算块开销，与普通预检一致）。
+    pub upload_bytes: u64,
+    /// 取消“图片与视频”后首次需要上传的密文字节数（界面 quota 第三格）。
+    pub upload_bytes_without_images_and_videos: u64,
+    /// 聊天记录数据库类别的明文字节数（第 3 组快照会上传它）。
+    pub database_bytes: u64,
+    pub excluded_count: u64,
+    pub unreadable_count: u64,
+    /// 剩余云端空间；未登录或查询失败时为 `None`。
+    pub remaining_quota_bytes: Option<u64>,
+    /// 勾选内容是否超过剩余配额。
+    pub over_quota: bool,
+}
+
+/// 一个已注册的微信来源备份项及其状态（供“微信备份”页面使用）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatBackupSource {
+    pub folder_id: Uuid,
+    /// 数据根目录（界面展示用；与普通备份文件夹的本地路径同一隐私边界）。
+    pub data_root: PathBuf,
+    pub account_name: String,
+    pub version: WechatVersion,
+    pub category: WechatCategory,
+    /// 相对数据根目录的来源路径（`/` 分隔）。
+    pub relative_path: String,
+    /// 已解析的云端展示路径；首次备份前为 `None`。
+    pub cloud_path: Option<String>,
+    pub enabled: bool,
+    pub status: BackupFolderStatus,
+    pub pause_reason: Option<BackupPauseReason>,
+    pub last_backup_at: Option<i64>,
+}
+
+/// 一个账号内某个类别的汇总状态。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatCategoryBackupStatus {
+    pub category: WechatCategory,
+    /// 用户是否勾选了这个类别。
+    pub selected: bool,
+    /// 已注册来源的汇总状态；未勾选或尚未注册（数据库快照由第 3 组提供）
+    /// 时为 `None`。
+    pub status: Option<BackupFolderStatus>,
+    pub pause_reason: Option<BackupPauseReason>,
+    pub last_backup_at: Option<i64>,
+}
+
+/// 一个微信账号的备份状态（每个类别各一项）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatAccountBackupStatus {
+    pub data_root: PathBuf,
+    pub account_name: String,
+    pub version: WechatVersion,
+    pub categories: Vec<WechatCategoryBackupStatus>,
+    /// 各类别最近备份时间中的最大值。
+    pub last_backup_at: Option<i64>,
 }
 
 /// 一次备份运行的结果统计。
@@ -299,6 +368,11 @@ pub struct BackupEngineConfig {
     pub retry_interval: Duration,
     /// 是否启用文件监听。测试可关闭，只用显式“立即备份”驱动。
     pub watch_files: bool,
+    /// 微信系统位置来源（注册表 / 4.x 配置 / “文档”）；`None` = 当前平台实现。
+    /// 测试注入假实现，避免读取真实微信目录。
+    pub wechat_locator: Option<WechatLocator>,
+    /// 用户手动添加的微信目录（design D1），参与普通备份文件夹的数据根排除。
+    pub wechat_manual_directories: Vec<PathBuf>,
 }
 
 impl BackupEngineConfig {
@@ -310,6 +384,8 @@ impl BackupEngineConfig {
             full_scan_interval: DEFAULT_FULL_SCAN_INTERVAL,
             retry_interval: DEFAULT_RETRY_INTERVAL,
             watch_files: true,
+            wechat_locator: None,
+            wechat_manual_directories: Vec::new(),
         }
     }
 

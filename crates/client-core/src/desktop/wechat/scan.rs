@@ -34,6 +34,73 @@ pub(crate) fn discover_blocking(
     Ok(accounts)
 }
 
+/// 只收集数据根目录（不统计账号内文件），供普通备份文件夹排除微信数据。
+pub(crate) fn discover_roots_blocking(
+    system: &dyn WechatSystemLocations,
+    manual: &[PathBuf],
+) -> Result<Vec<PathBuf>, WechatError> {
+    let mut roots = Vec::new();
+    let mut seen = HashSet::new();
+    for path in manual {
+        collect_manual_roots(path, &mut roots, &mut seen);
+    }
+
+    let documents = system.documents_dir().ok().flatten();
+    if let Ok(Some(value)) = system.wechat_3_file_save_path()
+        && let Some(root) = registry_root(&value, documents.as_deref())
+    {
+        push_root(root, &mut roots, &mut seen);
+    }
+    if let Ok(Some(appdata)) = system.appdata_dir()
+        && let Some(root) = config_root(&appdata)
+    {
+        push_root(root, &mut roots, &mut seen);
+    }
+    if let Some(documents) = documents {
+        for layout in WINDOWS_LAYOUTS {
+            let root = documents.join(layout.data_root_name);
+            if is_directory(&root) {
+                push_root(root, &mut roots, &mut seen);
+            }
+        }
+    }
+    Ok(roots)
+}
+
+fn collect_manual_roots(path: &Path, roots: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>) {
+    if !is_directory(path) {
+        return;
+    }
+    if detect_account_layout(path).is_some() {
+        if let Some(data_root) = path.parent() {
+            push_root(data_root.to_path_buf(), roots, seen);
+        }
+        return;
+    }
+    let mut candidates = Vec::new();
+    for layout in WINDOWS_LAYOUTS {
+        if path_name_eq(path, layout.data_root_name) {
+            candidates.push(path.to_path_buf());
+        }
+        let child = path.join(layout.data_root_name);
+        if is_directory(&child) {
+            candidates.push(child);
+        }
+        if contains_account_directory(path, layout) {
+            candidates.push(path.to_path_buf());
+        }
+    }
+    for candidate in candidates {
+        push_root(candidate, roots, seen);
+    }
+}
+
+fn push_root(root: PathBuf, roots: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>) {
+    if is_directory(&root) && seen.insert(path_key(&root)) {
+        roots.push(root);
+    }
+}
+
 #[derive(Default)]
 struct DiscoveryState {
     seen_roots: HashSet<PathBuf>,
