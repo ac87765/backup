@@ -1,0 +1,82 @@
+[package]
+name = "client-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "原生客户端核心：认证、密钥边界与凭据存储（与 Flutter 界面分离）"
+
+# 依赖理由（AGENTS.md 要求逐个说明）：
+# - crypto-core：唯一加密实现；复用 KDF/HKDF/AEAD 与 KDF 参数校验，保证与 Web 完全一致。
+# - reqwest：HTTP 客户端。default-features = false，只启用 rustls-tls（webpki roots）
+#   且该特性显式选择 ring 提供者；不启用 cookies 特性，会话 Cookie 由本 crate 自己管理。
+# - serde / serde_json：API 请求/响应与 KDF 参数 JSON 契约。
+# - thiserror：强类型领域错误。
+# - tokio：异步等待（429 退避）与 spawn_blocking（Argon2id 不阻塞异步运行时）。
+# - tracing：结构化日志；只记录方法/路径/状态码，绝不记录请求体、令牌或密钥。
+# - zeroize：会话令牌等敏感缓冲区离开作用域时清零。
+# - getrandom：退避抖动使用操作系统 CSPRNG（AGENTS.md 禁止 Math.random 类随机源）。
+# - uuid：解析服务端返回的用户/根节点 ID，保证公开 API 是强类型展示数据。
+# - axum / http-body-util（dev）：429 退避测试的本地假服务器。
+# - sqlx / testcontainers / tempfile（dev）：参照 server 集成测试，启动 PostgreSQL + MinIO。
+# - server（dev）：进程内启动真实服务端路由，验证客户端与真实实现互通。
+# - tower（dev）：假服务器与测试工具复用 axum 生态。
+[dependencies]
+crypto-core = { version = "0.1.0", path = "../crypto-core" }
+getrandom = "0.2"
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "time"] }
+tracing = "0.1"
+uuid = { version = "1", features = ["serde"] }
+zeroize = { version = "1", features = ["derive"] }
+
+# 密钥链（design D3）：
+# - macOS：security-framework 的 generic password + SecAccessControl
+#   （保护级别映射到 kSecAttrAccessibleWhenUnlockedThisDeviceOnly）。
+# - Windows：直接用 windows-sys 调 DPAPI（CryptProtectData，当前用户范围）加密，
+#   再用 Credential Manager（CredWriteW/CredReadW）保存。没有引入 keyring：
+#   直连 Win32 API 的依赖更少、行为更明确，且 windows-sys 已是项目依赖。
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", default-features = false, features = [
+    "Win32_Foundation",
+    "Win32_Security_Credentials",
+    "Win32_Security_Cryptography",
+] }
+
+[dev-dependencies]
+axum = "0.8"
+http-body-util = "0.1"
+server = { version = "0.1.0", path = "../server" }
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "json",
+    "time",
+    "uuid",
+] }
+tempfile = "3"
+testcontainers = "0.28"
+tokio = { version = "1", features = [
+    "macros",
+    "rt-multi-thread",
+    "net",
+    "time",
+    "sync",
+] }
+tower = { version = "0.5", features = ["util"] }
+
+[features]
+# 桌面专有能力的入口（文件监听、备份调度、开机启动等，从第 2/3 组开始放入）。
+# 本组只建立 feature 边界，使 iOS 构建可以完全不编译桌面代码。
+desktop = []
+
+[lints]
+workspace = true
