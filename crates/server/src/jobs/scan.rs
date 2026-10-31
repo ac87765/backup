@@ -207,10 +207,13 @@ mod tests {
     fn jitter_is_within_twenty_percent() {
         let interval = Duration::from_secs(10);
         for _ in 0..50 {
+            // 用调用前后的时间夹住结果：抖动可能为 0，若在调用之后再取 now，
+            // 中间流逝的时间会让“剩余时间”略小于 interval（CI 上偶发失败）。
+            let before = Instant::now();
             let due = instant_after(interval);
-            let remaining = due.saturating_duration_since(Instant::now());
-            assert!(remaining >= interval);
-            assert!(remaining <= interval + Duration::from_secs(2));
+            let after = Instant::now();
+            assert!(due >= before + interval);
+            assert!(due <= after + interval + Duration::from_secs(2));
         }
     }
 }
