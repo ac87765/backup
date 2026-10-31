@@ -79,8 +79,12 @@ jobs:
       - name: cargo test -p rust_lib_client
         run: cargo test -p rust_lib_client
 
+  # Windows / macOS 运行器分别按 2× / 10× 计费分钟（私有仓库）。功能分支只跑
+  # Linux job；Windows / macOS 构建只在 main 与手动触发时运行，功能分支的
+  # Windows 构建与 golden 由审查者在本机验证。
   windows:
     name: Windows (client-core tests / release build)
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -126,6 +130,7 @@ jobs:
 
   macos:
     name: macOS (client-core tests / release build)
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
