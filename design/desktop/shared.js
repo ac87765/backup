@@ -109,7 +109,7 @@ const PARTIALS = {
         ${item('files', 'folder', '全部文件')}
         ${item('recent', 'clock', '最近')}
         ${item('backup', 'cloud-upload', '备份文件夹', el.dataset.backupBadge ? `<span class="badge">${el.dataset.backupBadge}</span>` : '')}
-        ${el.dataset.wechat !== undefined ? item('wechat', 'message-circle', '微信备份') : ''}
+        ${item('wechat', 'message-circle', '微信备份')}
         ${item('trash', 'trash', '回收站')}
         <div class="nav-sep"></div>
         ${item('security', 'shield', '安全与隐私')}
