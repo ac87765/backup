@@ -291,6 +291,21 @@ class _GeneralPanelState extends ConsumerState<_GeneralPanel> {
     );
   }
 
+  Future<void> _setRetention(int retention) async {
+    final settings = ref.read(backupSettingsProvider).value;
+    if (settings == null) {
+      return;
+    }
+    await _save(
+      BackupSettingsDto(
+        includeHidden: settings.includeHidden,
+        uploadLimitBytesPerSecond: settings.uploadLimitBytesPerSecond,
+        paused: settings.paused,
+        wechatSnapshotRetention: retention.clamp(1, 10).toInt(),
+      ),
+    );
+  }
+
   Future<void> _save(BackupSettingsDto settings) async {
     setState(() => _busy = true);
     try {
@@ -363,6 +378,18 @@ class _GeneralPanelState extends ConsumerState<_GeneralPanel> {
             onChanged: settings == null || _busy ? null : _setIncludeHidden,
           ),
         ),
+        _SettingRow(
+          tokens: tokens,
+          title: '聊天记录快照保留份数',
+          description: '每个微信账号保留最近几份完整的聊天记录数据库快照；更早的移入回收站。',
+          control: _RetentionSelect(
+            key: const Key('wechat-retention-select'),
+            tokens: tokens,
+            value: settings?.wechatSnapshotRetention ?? 3,
+            enabled: settings != null && !_busy,
+            onSelected: _setRetention,
+          ),
+        ),
       ],
     );
   }
@@ -426,6 +453,72 @@ class _SpeedSelect extends StatelessWidget {
               children: [
                 Text(
                   label,
+                  style: TextStyle(
+                    color: tokens.ink900,
+                    fontSize: tokens.textSm,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(LucideIcons.chevronDown, size: 14, color: tokens.ink500),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RetentionSelect extends StatelessWidget {
+  const _RetentionSelect({
+    required this.tokens,
+    required this.value,
+    required this.enabled,
+    required this.onSelected,
+    super.key,
+  });
+
+  final DesktopTokens tokens;
+  final int value;
+  final bool enabled;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = value.clamp(1, 10).toInt();
+    return Builder(
+      builder: (buttonContext) => Opacity(
+        opacity: enabled ? 1 : 0.55,
+        child: InkWell(
+          onTap: enabled
+              ? () => showTokensMenu(
+                  context: context,
+                  anchor: anchorOf(buttonContext),
+                  items: [
+                    for (var count = 1; count <= 10; count += 1)
+                      TokensMenuItem(
+                        label: '$count 份',
+                        icon: count == current
+                            ? LucideIcons.check
+                            : LucideIcons.minus,
+                        onSelected: () => onSelected(count),
+                      ),
+                  ],
+                )
+              : null,
+          borderRadius: BorderRadius.circular(tokens.radiusControl),
+          child: Container(
+            height: DesktopMetrics.buttonHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              border: Border.all(color: tokens.lineStrong),
+              borderRadius: BorderRadius.circular(tokens.radiusControl),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$current 份',
                   style: TextStyle(
                     color: tokens.ink900,
                     fontSize: tokens.textSm,

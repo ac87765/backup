@@ -1,8 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-/// 侧栏目的地（design/desktop/files.html：全部文件、最近、回收站、备份文件夹、
-/// 安全与隐私）。设置从侧栏账号行的齿轮按钮打开，不作为导航项。
+/// 侧栏目的地（design/desktop/shared.js：全部文件、最近、备份文件夹、微信备份、
+/// 回收站、安全与隐私）。设置从侧栏账号行的齿轮按钮打开，不作为导航项。
 class AppDestination {
   const AppDestination({
     required this.path,
@@ -26,6 +26,12 @@ const appDestinations = <AppDestination>[
     path: '/backup-folders',
     label: '备份文件夹',
     icon: LucideIcons.cloudUpload,
+    desktopOnly: true,
+  ),
+  AppDestination(
+    path: '/wechat',
+    label: '微信备份',
+    icon: LucideIcons.messageCircle,
     desktopOnly: true,
   ),
   AppDestination(path: '/trash', label: '回收站', icon: LucideIcons.trash),

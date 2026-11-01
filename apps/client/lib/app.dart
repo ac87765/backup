@@ -38,7 +38,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   return buildAppRouter(
     destinations: destinationsForPlatform(desktop: isDesktopPlatform),
     extraShellRoutes: isDesktopPlatform
-        ? <RouteBase>[backupFoldersRoute]
+        ? <RouteBase>[backupFoldersRoute, wechatRoute]
         : const <RouteBase>[],
     extraRoutes: isDesktopPlatform
         ? <RouteBase>[onboardingRoute]

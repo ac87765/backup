@@ -43,3 +43,11 @@ class IoLocalFolderInspector implements LocalFolderInspector {
 final localFolderInspectorProvider = Provider<LocalFolderInspector>((ref) {
   return const IoLocalFolderInspector();
 });
+
+/// 判断本机目录是否存在（微信恢复对话框用来识别“新电脑上还没有这个
+/// 账号目录”）。抽成 provider 便于组件测试不触碰真实文件系统。
+typedef DirectoryExists = bool Function(String path);
+
+final directoryExistsProvider = Provider<DirectoryExists>((ref) {
+  return (path) => Directory(path).existsSync();
+});

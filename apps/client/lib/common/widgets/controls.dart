@@ -421,6 +421,42 @@ class _AppTextFieldState extends State<AppTextField> {
 // 开关、分段控件、徽标、提示
 // ---------------------------------------------------------------------------
 
+class TokensCheck extends StatelessWidget {
+  const TokensCheck({
+    required this.value,
+    this.enabled = true,
+    this.size = 18,
+    super.key,
+  });
+
+  final bool value;
+  final bool enabled;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = DesktopTokens.of(context);
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: value ? tokens.brand600 : tokens.surface,
+          border: Border.all(
+            color: value ? tokens.brand600 : tokens.lineStrong,
+            width: 1.5,
+          ),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: value
+            ? Icon(LucideIcons.check, size: size * 0.66, color: tokens.onBrand)
+            : null,
+      ),
+    );
+  }
+}
+
 class TokensToggle extends StatelessWidget {
   const TokensToggle({required this.value, required this.onChanged, super.key});
 

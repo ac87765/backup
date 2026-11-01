@@ -174,7 +174,7 @@ class _TransferRow extends ConsumerWidget {
           if (item.errorMessage != null && item.pendingSessionId == null) ...[
             const SizedBox(height: 4),
             Text(
-              '${item.isUpload ? '上传' : '下载'}失败：${item.errorMessage}',
+              '${item.directionLabel}失败：${item.errorMessage}',
               style: TextStyle(
                 color: tokens.danger700,
                 fontSize: tokens.textXs,
@@ -261,9 +261,7 @@ class _TransferRow extends ConsumerWidget {
     if (item.status == TransferStatusDto.retrying) {
       return '服务器繁忙，稍后自动继续';
     }
-    final direction = item.isFolder
-        ? (item.isUpload ? '备份' : '下载')
-        : (item.isUpload ? '上传' : '下载');
+    final direction = item.directionLabel;
     final detail = item.progressDetail;
     if (detail.isEmpty) {
       return '$direction · ${item.statusLabel}';

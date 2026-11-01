@@ -1,9 +1,9 @@
 import '../../core/rust/models.dart';
 
 /// 状态胶囊色调（对应 tokens.css `.pill-*`）。
-enum FolderStatusTone { ok, busy, paused, warn, needsUnlock }
+enum FolderStatusTone { ok, busy, paused, warn, needsUnlock, wechat }
 
-/// 备份文件夹卡片的状态文案与进度，纯函数便于测试五种状态映射。
+/// 备份文件夹卡片的状态文案与进度，纯函数便于测试各种状态映射。
 class FolderStatusView {
   const FolderStatusView({
     required this.label,
@@ -27,6 +27,7 @@ FolderStatusView folderStatusView(
   BackupFolderStateDto? state, {
   required bool globalPaused,
   bool needsUnlock = false,
+  bool managedByWechat = false,
 }) {
   final status = state?.status;
   final done = status?.done ?? 0;
@@ -54,6 +55,12 @@ FolderStatusView folderStatusView(
     );
   }
   if (status == null) {
+    if (managedByWechat) {
+      return const FolderStatusView(
+        label: '由微信备份处理',
+        tone: FolderStatusTone.wechat,
+      );
+    }
     return folder.enabled
         ? const FolderStatusView(label: '已备份', tone: FolderStatusTone.ok)
         : const FolderStatusView(label: '已暂停', tone: FolderStatusTone.paused);
@@ -90,6 +97,12 @@ FolderStatusView folderStatusView(
         return FolderStatusView(
           label: '${status.unreadableCount} 个文件无法读取',
           tone: FolderStatusTone.warn,
+        );
+      }
+      if (managedByWechat) {
+        return const FolderStatusView(
+          label: '由微信备份处理',
+          tone: FolderStatusTone.wechat,
         );
       }
       return const FolderStatusView(label: '已备份', tone: FolderStatusTone.ok);

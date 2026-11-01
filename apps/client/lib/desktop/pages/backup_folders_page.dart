@@ -216,7 +216,9 @@ class _FolderCard extends ConsumerWidget {
       globalPaused: state.globalPaused,
       needsUnlock:
           state.summary?.kind == BackupSummaryStatusKindDto.needsUnlock,
+      managedByWechat: state.managedByWechat(folder),
     );
+    final excludedWechatBytes = state.excludedWechatBytesFor(folder.id);
     final cloudPath =
         folder.cloudPath ??
         <String>[
@@ -314,6 +316,36 @@ class _FolderCard extends ConsumerWidget {
               ),
             ],
           ),
+          if (excludedWechatBytes != null && excludedWechatBytes > 0) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.only(left: 54),
+              child: Row(
+                children: [
+                  Icon(
+                    LucideIcons.messageCircle,
+                    size: 13,
+                    color: tokens.ink500,
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      '已跳过微信数据（约 ${formatBytes(excludedWechatBytes)}），由“微信备份”单独处理',
+                      key: ValueKey<String>(
+                        'backup-folder-wechat-excluded-${folder.id}',
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: tokens.ink500,
+                        fontSize: tokens.textXs,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (status.progress != null) ...[
             const SizedBox(height: 10),
             Padding(
@@ -487,6 +519,7 @@ class _StatusPill extends StatelessWidget {
       FolderStatusTone.paused => (PillTone.paused, LucideIcons.pause),
       FolderStatusTone.warn => (PillTone.warn, LucideIcons.alertTriangle),
       FolderStatusTone.needsUnlock => (PillTone.warn, LucideIcons.lock),
+      FolderStatusTone.wechat => (PillTone.paused, LucideIcons.messageCircle),
     };
     return TokensPill(label: status.label, tone: tone, icon: icon);
   }

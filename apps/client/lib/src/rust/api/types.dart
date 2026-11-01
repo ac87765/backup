@@ -315,15 +315,19 @@ final int uploadBytes;
 final int excludedCount;
 final int unreadableCount;
 final int? remainingQuotaBytes;
+/// 被自动排除的微信数据文件数（由“微信备份”单独处理，design D2）。
+final int excludedWechatFileCount;
+/// 被自动排除的微信数据明文字节数；界面提示“已跳过微信数据（约 X）”。
+final int excludedWechatBytes;
 
-                const BackupPreflightDto({required this.fileCount ,required this.totalBytes ,required this.uploadBytes ,required this.excludedCount ,required this.unreadableCount ,this.remainingQuotaBytes ,});
+                const BackupPreflightDto({required this.fileCount ,required this.totalBytes ,required this.uploadBytes ,required this.excludedCount ,required this.unreadableCount ,this.remainingQuotaBytes ,required this.excludedWechatFileCount ,required this.excludedWechatBytes ,});
 
 
 
 
 
         @override
-        int get hashCode => fileCount.hashCode^totalBytes.hashCode^uploadBytes.hashCode^excludedCount.hashCode^unreadableCount.hashCode^remainingQuotaBytes.hashCode;
+        int get hashCode => fileCount.hashCode^totalBytes.hashCode^uploadBytes.hashCode^excludedCount.hashCode^unreadableCount.hashCode^remainingQuotaBytes.hashCode^excludedWechatFileCount.hashCode^excludedWechatBytes.hashCode;
 
 
 
@@ -332,7 +336,7 @@ final int? remainingQuotaBytes;
             identical(this, other) ||
             other is BackupPreflightDto &&
                 runtimeType == other.runtimeType
-                && fileCount == other.fileCount&& totalBytes == other.totalBytes&& uploadBytes == other.uploadBytes&& excludedCount == other.excludedCount&& unreadableCount == other.unreadableCount&& remainingQuotaBytes == other.remainingQuotaBytes;
+                && fileCount == other.fileCount&& totalBytes == other.totalBytes&& uploadBytes == other.uploadBytes&& excludedCount == other.excludedCount&& unreadableCount == other.unreadableCount&& remainingQuotaBytes == other.remainingQuotaBytes&& excludedWechatFileCount == other.excludedWechatFileCount&& excludedWechatBytes == other.excludedWechatBytes;
 
             }
 

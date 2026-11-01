@@ -8,7 +8,13 @@ import '../../core/providers/app_providers.dart';
 import '../../core/rust/models.dart';
 import 'auth_controller.dart';
 
-enum TransferJobKind { upload, download, uploadFolder, downloadFolder }
+enum TransferJobKind {
+  upload,
+  download,
+  uploadFolder,
+  downloadFolder,
+  wechatRestore,
+}
 
 @immutable
 class TransferItem {
@@ -54,6 +60,16 @@ class TransferItem {
   bool get isFolder =>
       kind == TransferJobKind.uploadFolder ||
       kind == TransferJobKind.downloadFolder;
+
+  String get directionLabel {
+    return switch (kind) {
+      TransferJobKind.upload => '上传',
+      TransferJobKind.download => '下载',
+      TransferJobKind.uploadFolder => '备份',
+      TransferJobKind.downloadFolder => '下载',
+      TransferJobKind.wechatRestore => '恢复',
+    };
+  }
 
   bool get isActive =>
       status == TransferStatusDto.pending ||
@@ -321,6 +337,20 @@ class TransferController extends Notifier<TransferState> {
 
   // 乐观更新只在等待桥接返回期间没有收到更新的进度事件时生效：
   // 进度流里更新的状态（例如限流重试、已完成）不能被迟到的乐观值覆盖。
+  /// 开始一次微信恢复；进度通过共享的 `transferProgressStream` 推送。
+  ///
+  /// 恢复任务在桥接层创建前已检查微信进程与快照完整性，因此这里只负责把
+  /// 任务加入传输列表，失败时把错误原样抛给对话框。
+  Future<String> startWechatRestore(WechatRestoreRequestDto request) async {
+    final id = await ref.read(nativeBridgeProvider).wechatStartRestore(request);
+    final name = '恢复到微信 · ${request.accountName}';
+    _knownNames[id] = name;
+    _upsert(
+      TransferItem(id: id, name: name, kind: TransferJobKind.wechatRestore),
+    );
+    return id;
+  }
+
   Future<void> pause(String id) async {
     final before = _find(id)?.status;
     await ref.read(nativeBridgeProvider).pauseTransfer(id);

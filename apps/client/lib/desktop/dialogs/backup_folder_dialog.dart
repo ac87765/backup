@@ -439,6 +439,25 @@ class _BackupFolderDialogState extends ConsumerState<BackupFolderDialog> {
               preflight: preflight,
               quotaExceeded: quota,
             ),
+          if (preflight != null && preflight.excludedWechatBytes > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              key: const Key('backup-wechat-excluded-note'),
+              children: [
+                Icon(LucideIcons.messageCircle, size: 13, color: tokens.ink500),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '已跳过微信数据（约 ${formatBytes(preflight.excludedWechatBytes)}），由“微信备份”单独处理',
+                    style: TextStyle(
+                      color: tokens.ink500,
+                      fontSize: tokens.textXs,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (preflight != null) ...[
             const SizedBox(height: 12),
             if (quota)

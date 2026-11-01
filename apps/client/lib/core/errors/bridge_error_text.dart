@@ -41,6 +41,14 @@ String bridgeErrorText(Object error) {
       return '文件在上传过程中被修改，稍后会重试';
     case 'integrity_error':
       return '文件校验失败，已停止本次传输';
+    case 'wechat_running':
+      return '请先完全退出微信（包括托盘图标），再开始恢复';
+    case 'snapshot_incomplete':
+      return '所选数据库快照不完整，不能用于恢复';
+    case 'snapshot_corrupted':
+      return '快照内容与清单不一致，恢复失败，原数据库已保留';
+    case 'snapshot_not_found':
+      return '找不到所选的数据库快照';
   }
   return error.message.isEmpty ? '操作失败，请重试' : error.message;
 }

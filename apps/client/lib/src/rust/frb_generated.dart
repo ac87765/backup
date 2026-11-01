@@ -2283,13 +2283,15 @@ return BackupPauseReasonDto.values[raw as int]; }
 
 @protected BackupPreflightDto dco_decode_backup_preflight_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 final arr = raw as List<dynamic>;
-                if (arr.length != 6) throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+                if (arr.length != 8) throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
                 return BackupPreflightDto(fileCount: dco_decode_CastedPrimitive_i_64(arr[0]),
 totalBytes: dco_decode_CastedPrimitive_i_64(arr[1]),
 uploadBytes: dco_decode_CastedPrimitive_i_64(arr[2]),
 excludedCount: dco_decode_CastedPrimitive_i_64(arr[3]),
 unreadableCount: dco_decode_CastedPrimitive_i_64(arr[4]),
-remainingQuotaBytes: dco_decode_opt_CastedPrimitive_i_64(arr[5]),); }
+remainingQuotaBytes: dco_decode_opt_CastedPrimitive_i_64(arr[5]),
+excludedWechatFileCount: dco_decode_CastedPrimitive_i_64(arr[6]),
+excludedWechatBytes: dco_decode_CastedPrimitive_i_64(arr[7]),); }
 
 @protected BackupRunReportDto dco_decode_backup_run_report_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 final arr = raw as List<dynamic>;
@@ -2991,7 +2993,9 @@ var var_uploadBytes = sse_decode_CastedPrimitive_i_64(deserializer);
 var var_excludedCount = sse_decode_CastedPrimitive_i_64(deserializer);
 var var_unreadableCount = sse_decode_CastedPrimitive_i_64(deserializer);
 var var_remainingQuotaBytes = sse_decode_opt_CastedPrimitive_i_64(deserializer);
-return BackupPreflightDto(fileCount: var_fileCount, totalBytes: var_totalBytes, uploadBytes: var_uploadBytes, excludedCount: var_excludedCount, unreadableCount: var_unreadableCount, remainingQuotaBytes: var_remainingQuotaBytes); }
+var var_excludedWechatFileCount = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_excludedWechatBytes = sse_decode_CastedPrimitive_i_64(deserializer);
+return BackupPreflightDto(fileCount: var_fileCount, totalBytes: var_totalBytes, uploadBytes: var_uploadBytes, excludedCount: var_excludedCount, unreadableCount: var_unreadableCount, remainingQuotaBytes: var_remainingQuotaBytes, excludedWechatFileCount: var_excludedWechatFileCount, excludedWechatBytes: var_excludedWechatBytes); }
 
 @protected BackupRunReportDto sse_decode_backup_run_report_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 var var_folderId = sse_decode_String(deserializer);
@@ -3876,6 +3880,8 @@ sse_encode_CastedPrimitive_i_64(self.uploadBytes, serializer);
 sse_encode_CastedPrimitive_i_64(self.excludedCount, serializer);
 sse_encode_CastedPrimitive_i_64(self.unreadableCount, serializer);
 sse_encode_opt_CastedPrimitive_i_64(self.remainingQuotaBytes, serializer);
+sse_encode_CastedPrimitive_i_64(self.excludedWechatFileCount, serializer);
+sse_encode_CastedPrimitive_i_64(self.excludedWechatBytes, serializer);
  }
 
 @protected void sse_encode_backup_run_report_dto(BackupRunReportDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
