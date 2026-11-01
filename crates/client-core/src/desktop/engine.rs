@@ -38,15 +38,20 @@ use super::types::{
     BackupActivity, BackupActivityKind, BackupEngineConfig, BackupFolder, BackupFolderDraft,
     BackupFolderState, BackupFolderStatus, BackupFolderUpdate, BackupPauseReason, BackupPreflight,
     BackupRunReport, BackupSettings, BackupSummary, BackupSummaryStatus, WechatAccountBackupStatus,
-    WechatBackupPreflight, WechatBackupSource, WechatCategoryBackupStatus, WechatSnapshotOutcome,
-    WechatSnapshotReport,
+    WechatBackupPreflight, WechatBackupSource, WechatCategoryBackupStatus, WechatDatabaseSnapshot,
+    WechatDiscoveredAccount, WechatEventSource, WechatRestoreCategoryInfo, WechatRestoreRequest,
+    WechatSnapshotOutcome, WechatSnapshotReport,
 };
 use super::watcher::{FolderWatcher, WatchSignal, watch_folder};
 use super::wechat::backup::{desired_sources, validate_account_name};
 use super::wechat::exclude::{exclusions_for, measure_trees};
+use super::wechat::restore::{
+    WechatRestoreTask, list_database_snapshots, list_restore_categories, prepare_restore,
+};
 use super::wechat::snapshot::{self, SnapshotAccount, SnapshotContext};
 use super::wechat::{
-    WechatAccount, WechatCategory, WechatLocator, WechatProcessProbe, WechatVersion, layout_for,
+    WechatAccount, WechatAccountNotes, WechatCategory, WechatLocator, WechatProcessProbe,
+    WechatVersion, layout_for,
 };
 
 /// 事件通道容量；界面来不及消费时只保留最近事件，不阻塞备份。
@@ -58,6 +63,8 @@ const SETTING_INCLUDE_HIDDEN: &str = "include_hidden";
 const SETTING_UPLOAD_LIMIT: &str = "upload_limit_bytes_per_second";
 const SETTING_PAUSED: &str = "paused";
 const SETTING_WECHAT_SNAPSHOT_RETENTION: &str = "wechat_snapshot_retention";
+/// 手动添加的微信数据目录（JSON 字符串数组，只存在本地状态库）。
+const SETTING_WECHAT_MANUAL_DIRECTORIES: &str = "wechat_manual_directories";
 
 /// 备份引擎。`Clone` 共享同一运行状态。
 #[derive(Clone)]
@@ -89,6 +96,10 @@ struct Inner {
     wechat_roots_ready: AtomicBool,
     /// 微信进程探测（设计 D3；可注入假实现）。
     wechat_process_probe: Arc<dyn WechatProcessProbe>,
+    /// 用户手动添加的微信数据目录（design D1；初始化时取自配置，之后从状态库加载）。
+    wechat_manual: Mutex<Vec<PathBuf>>,
+    /// 是否已从本地状态库加载过手动目录（登录后延迟加载一次）。
+    wechat_manual_loaded: AtomicBool,
 }
 
 #[derive(Default)]
@@ -103,6 +114,8 @@ struct Runtime {
     snapshots: HashMap<SnapshotKey, SnapshotRuntime>,
     /// 每个微信账号下一次允许重试快照的时间（网络 / 服务端等可重试错误）。
     snapshot_retries: HashMap<SnapshotKey, SystemTime>,
+    /// 微信来源备份项的账号 + 类别（事件流与最近活动用）。
+    wechat_sources: HashMap<Uuid, WechatEventSource>,
 }
 
 /// 数据库快照的账号键（本地数据根 + 账号目录名）。
@@ -174,6 +187,13 @@ impl BackupEngine {
             .unwrap_or_else(super::wechat::default_process_probe);
         let clock = client.clock.clone();
         let state = client.state_store.clone();
+        let mut wechat_manual = Vec::new();
+        let mut seen_manual = HashSet::new();
+        for directory in &normalized.wechat_manual_directories {
+            if seen_manual.insert(comparable_path(directory)) {
+                wechat_manual.push(directory.clone());
+            }
+        }
         let (events, _) = broadcast::channel(EVENT_BUFFER);
         let (commands, _) = mpsc::unbounded_channel();
         Ok(Self {
@@ -194,6 +214,8 @@ impl BackupEngine {
                 wechat_roots: Mutex::new(Vec::new()),
                 wechat_roots_ready: AtomicBool::new(false),
                 wechat_process_probe,
+                wechat_manual: Mutex::new(wechat_manual),
+                wechat_manual_loaded: AtomicBool::new(false),
             }),
         })
     }
@@ -556,7 +578,7 @@ impl BackupEngine {
     /// 一条不含路径的警告。
     pub async fn refresh_wechat_data_roots(&self) {
         let locator = self.inner.wechat_locator.clone();
-        let manual = self.inner.config.wechat_manual_directories.clone();
+        let manual = self.wechat_manual_directories();
         let roots = match locator.discover_data_roots(&manual).await {
             Ok(roots) => roots,
             Err(_) => {
@@ -591,6 +613,187 @@ impl BackupEngine {
         if !self.inner.wechat_roots_ready.load(Ordering::SeqCst) {
             self.refresh_wechat_data_roots().await;
         }
+    }
+
+    /// 当前用户手动添加的微信数据目录（按添加顺序，已去重）。
+    #[must_use]
+    pub fn wechat_manual_directories(&self) -> Vec<PathBuf> {
+        self.inner
+            .wechat_manual
+            .lock()
+            .map(|directories| directories.clone())
+            .unwrap_or_default()
+    }
+
+    /// 从本地状态库加载手动添加的微信数据目录（幂等）。
+    ///
+    /// 未登录 / 未解锁时不做任何事，下次调用会重试；登录后第一次发现账号或启动
+    /// 引擎时加载。加载失败不影响界面继续使用配置注入的目录。
+    pub async fn ensure_wechat_manual_directories_loaded(&self) {
+        if self.inner.wechat_manual_loaded.load(Ordering::SeqCst) {
+            return;
+        }
+        let Ok(user_id) = self.user_id() else {
+            return;
+        };
+        let stored = match self
+            .inner
+            .state
+            .backup_setting(user_id, SETTING_WECHAT_MANUAL_DIRECTORIES.to_owned())
+            .await
+        {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        if let Some(json) = stored
+            && let Ok(entries) = serde_json::from_str::<Vec<String>>(&json)
+            && let Ok(mut directories) = self.inner.wechat_manual.lock()
+        {
+            let mut seen: HashSet<String> = directories
+                .iter()
+                .map(|path| comparable_path(path))
+                .collect();
+            for entry in entries {
+                let path = PathBuf::from(entry);
+                if seen.insert(comparable_path(&path)) {
+                    directories.push(path);
+                }
+            }
+        }
+        self.inner
+            .wechat_manual_loaded
+            .store(true, Ordering::SeqCst);
+    }
+
+    async fn persist_wechat_manual_directories(&self) -> Result<(), BackupError> {
+        let Ok(user_id) = self.user_id() else {
+            return Ok(());
+        };
+        let entries: Vec<String> = self
+            .wechat_manual_directories()
+            .iter()
+            .filter_map(|path| path.to_str().map(str::to_owned))
+            .collect();
+        let Ok(json) = serde_json::to_string(&entries) else {
+            return Err(BackupError::InvalidConfig("微信手动目录无法序列化"));
+        };
+        self.inner
+            .state
+            .set_backup_setting(user_id, SETTING_WECHAT_MANUAL_DIRECTORIES.to_owned(), json)
+            .await?;
+        self.inner
+            .wechat_manual_loaded
+            .store(true, Ordering::SeqCst);
+        Ok(())
+    }
+
+    /// 手动添加微信数据目录（design D1）。目录必须存在；重复添加是幂等的。
+    ///
+    /// 添加后立即重新发现账号与数据根，并把列表保存到本地状态库。
+    pub async fn add_wechat_manual_directory(
+        &self,
+        directory: impl Into<PathBuf>,
+    ) -> Result<(), BackupError> {
+        self.ensure_wechat_manual_directories_loaded().await;
+        let directory = directory.into();
+        if !path_for_io(&directory).is_ok_and(|path| path.is_dir()) {
+            return Err(BackupError::InvalidConfig("所选微信数据目录不存在"));
+        }
+        let key = comparable_path(&directory);
+        let mut inserted = false;
+        if let Ok(mut directories) = self.inner.wechat_manual.lock()
+            && !directories
+                .iter()
+                .any(|existing| comparable_path(existing) == key)
+        {
+            directories.push(directory);
+            inserted = true;
+        }
+        if inserted {
+            if let Err(error) = self.persist_wechat_manual_directories().await {
+                if let Ok(mut directories) = self.inner.wechat_manual.lock() {
+                    directories.retain(|existing| comparable_path(existing) != key);
+                }
+                return Err(error);
+            }
+            self.refresh_wechat_data_roots().await;
+        }
+        Ok(())
+    }
+
+    /// 移除手动添加的微信数据目录；不存在时也返回成功。
+    pub async fn remove_wechat_manual_directory(
+        &self,
+        directory: &Path,
+    ) -> Result<(), BackupError> {
+        self.ensure_wechat_manual_directories_loaded().await;
+        let key = comparable_path(directory);
+        let mut removed = false;
+        if let Ok(mut directories) = self.inner.wechat_manual.lock() {
+            let before = directories.len();
+            directories.retain(|existing| comparable_path(existing) != key);
+            removed = directories.len() != before;
+        }
+        if removed {
+            if let Err(error) = self.persist_wechat_manual_directories().await {
+                if let Ok(mut directories) = self.inner.wechat_manual.lock() {
+                    directories.push(directory.to_path_buf());
+                }
+                return Err(error);
+            }
+            self.refresh_wechat_data_roots().await;
+        }
+        Ok(())
+    }
+
+    /// 发现本机微信账号，并附带只保存在本地的备注名。
+    ///
+    /// 手动添加的目录优先于系统位置（design D1）；发现失败不会影响普通备份。
+    pub async fn discover_wechat_accounts(
+        &self,
+    ) -> Result<Vec<WechatDiscoveredAccount>, BackupError> {
+        self.ensure_wechat_manual_directories_loaded().await;
+        let manual = self.wechat_manual_directories();
+        let accounts = self.inner.wechat_locator.discover(&manual).await?;
+        let notes = WechatAccountNotes::new((*self.inner.state).clone());
+        let mut discovered = Vec::with_capacity(accounts.len());
+        for account in accounts {
+            let note = notes.get(&account.data_root, &account.account_name).await?;
+            discovered.push(WechatDiscoveredAccount { account, note });
+        }
+        Ok(discovered)
+    }
+
+    /// 读取账号备注名。
+    pub async fn wechat_account_note(
+        &self,
+        account: &WechatAccount,
+    ) -> Result<Option<String>, BackupError> {
+        let notes = WechatAccountNotes::new((*self.inner.state).clone());
+        Ok(notes.get(&account.data_root, &account.account_name).await?)
+    }
+
+    /// 设置账号备注名（只存在本地状态库）。
+    pub async fn set_wechat_account_note(
+        &self,
+        account: &WechatAccount,
+        note: &str,
+    ) -> Result<(), BackupError> {
+        let notes = WechatAccountNotes::new((*self.inner.state).clone());
+        Ok(notes
+            .set(&account.data_root, &account.account_name, note)
+            .await?)
+    }
+
+    /// 清除账号备注名。
+    pub async fn clear_wechat_account_note(
+        &self,
+        account: &WechatAccount,
+    ) -> Result<(), BackupError> {
+        let notes = WechatAccountNotes::new((*self.inner.state).clone());
+        Ok(notes
+            .clear(&account.data_root, &account.account_name)
+            .await?)
     }
 
     /// 设置一个微信账号勾选的类别（design D2）。
@@ -713,6 +916,7 @@ impl BackupEngine {
                 for folder_id in &removed {
                     runtime.statuses.remove(folder_id);
                     runtime.paused_folders.remove(folder_id);
+                    runtime.wechat_sources.remove(folder_id);
                 }
                 runtime.summary = summarize(&runtime);
             }
@@ -928,6 +1132,48 @@ impl BackupEngine {
         };
         self.run_database_snapshot(&snapshot_account, &settings)
             .await
+    }
+
+    /// 列出某账号在全部设备上的完整数据库快照（design D4）。
+    ///
+    /// 只返回带 `快照完成` 标记的快照；时间戳、总大小与文件数来自云端节点。
+    pub async fn wechat_database_snapshots(
+        &self,
+        account_name: &str,
+    ) -> Result<Vec<WechatDatabaseSnapshot>, BackupError> {
+        self.user_id()?;
+        list_database_snapshots(&self.inner.client, account_name).await
+    }
+
+    /// 列出云端存在哪些文件类别可恢复（跨设备去重，含大小）。
+    pub async fn wechat_restore_categories(
+        &self,
+        account: &WechatAccount,
+    ) -> Result<Vec<WechatRestoreCategoryInfo>, BackupError> {
+        if !validate_account_name(&account.account_name) {
+            return Err(BackupError::InvalidConfig("微信账号目录名无效"));
+        }
+        self.user_id()?;
+        list_restore_categories(&self.inner.client, &account.account_name, account.version).await
+    }
+
+    /// 创建微信恢复任务（design D4）。
+    ///
+    /// 创建前先检查微信进程与快照完整性：微信运行中返回
+    /// [`BackupError::WechatRunning`]，此时不会写入任何文件。返回的任务复用
+    /// 传输进度事件，可暂停 / 取消。
+    pub async fn restore_wechat(
+        &self,
+        request: WechatRestoreRequest,
+    ) -> Result<WechatRestoreTask, BackupError> {
+        self.user_id()?;
+        prepare_restore(
+            &self.inner.client,
+            self.inner.clock.clone(),
+            self.inner.wechat_process_probe.clone(),
+            request,
+        )
+        .await
     }
 
     fn runtime_snapshots(&self) -> HashMap<SnapshotKey, SnapshotRuntime> {
@@ -1503,15 +1749,26 @@ impl BackupEngine {
             .state
             .list_backup_activity(user_id, limit)
             .await?;
+        let sources = self
+            .inner
+            .runtime
+            .lock()
+            .map(|runtime| runtime.wechat_sources.clone())
+            .unwrap_or_default();
         Ok(records
             .into_iter()
-            .map(|record| BackupActivity {
-                id: record.id,
-                folder_id: record.folder_id,
-                relative_path: record.relative_path,
-                kind: BackupActivityKind::parse(&record.kind).unwrap_or(BackupActivityKind::Failed),
-                occurred_at: record.occurred_at,
-                message: record.message,
+            .map(|record| {
+                let wechat = sources.get(&record.folder_id).cloned();
+                BackupActivity {
+                    id: record.id,
+                    folder_id: record.folder_id,
+                    relative_path: record.relative_path,
+                    kind: BackupActivityKind::parse(&record.kind)
+                        .unwrap_or(BackupActivityKind::Failed),
+                    occurred_at: record.occurred_at,
+                    message: record.message,
+                    wechat,
+                }
             })
             .collect())
     }
@@ -1652,6 +1909,7 @@ impl BackupEngine {
 
     fn upsert_runtime_folder(&self, record: &BackupFolderRecord) {
         let paused = self.inner.paused_all.load(Ordering::SeqCst) || !record.enabled;
+        let source = wechat_event_source(record);
         let state = BackupFolderState {
             folder_id: record.id,
             status: if paused {
@@ -1661,12 +1919,21 @@ impl BackupEngine {
             },
             pause_reason: paused.then_some(BackupPauseReason::User),
             last_backup_at: record.last_backup_at,
+            wechat: source.clone(),
         };
         if let Ok(mut runtime) = self.inner.runtime.lock() {
             if !record.enabled {
                 runtime.paused_folders.insert(record.id);
             } else {
                 runtime.paused_folders.remove(&record.id);
+            }
+            match source {
+                Some(source) => {
+                    runtime.wechat_sources.insert(record.id, source);
+                }
+                None => {
+                    runtime.wechat_sources.remove(&record.id);
+                }
             }
             runtime.statuses.insert(record.id, state.clone());
             runtime.summary = summarize(&runtime);
@@ -1689,11 +1956,13 @@ impl BackupEngine {
                 .statuses
                 .get(&folder_id)
                 .and_then(|state| state.last_backup_at);
+            let wechat = runtime.wechat_sources.get(&folder_id).cloned();
             let state = BackupFolderState {
                 folder_id,
                 status,
                 pause_reason,
                 last_backup_at,
+                wechat,
             };
             runtime.statuses.insert(folder_id, state.clone());
             runtime.summary = summarize(&runtime);
@@ -1771,6 +2040,12 @@ impl BackupEngine {
             message: message.clone(),
         };
         let id = self.inner.state.insert_backup_activity(record).await?;
+        let wechat = self
+            .inner
+            .runtime
+            .lock()
+            .ok()
+            .and_then(|runtime| runtime.wechat_sources.get(&folder_id).cloned());
         let activity = BackupActivity {
             id,
             folder_id,
@@ -1778,6 +2053,7 @@ impl BackupEngine {
             kind,
             occurred_at,
             message,
+            wechat,
         };
         let _ = self
             .inner
@@ -1816,7 +2092,9 @@ impl BackupEngine {
             .map_err(|_| BackupError::InvalidConfig("引擎状态锁损坏"))? = Some(watch_sender);
 
         self.refresh_runtime().await?;
-        // 启动时发现一次微信数据根；普通备份文件夹据此自动排除。
+        // 登录后加载用户手动添加的微信目录，再发现数据根；
+        // 普通备份文件夹据此自动排除。
+        self.ensure_wechat_manual_directories_loaded().await;
         self.refresh_wechat_data_roots().await;
         // 旧 watcher 可能绑定到上一次的 watch 通道；统一丢弃后用新 sender 重建。
         if let Ok(mut watchers) = self.inner.watchers.lock() {
@@ -1900,6 +2178,10 @@ impl BackupEngine {
         let snapshots = self
             .load_snapshot_runtimes(user_id, settings.paused)
             .await?;
+        let wechat_sources: HashMap<Uuid, WechatEventSource> = folders
+            .iter()
+            .filter_map(|folder| wechat_event_source(folder).map(|source| (folder.id, source)))
+            .collect();
         self.inner
             .paused_all
             .store(settings.paused, Ordering::SeqCst);
@@ -1930,11 +2212,13 @@ impl BackupEngine {
                             },
                             pause_reason: paused.then_some(BackupPauseReason::User),
                             last_backup_at: folder.last_backup_at,
+                            wechat: wechat_sources.get(&folder.id).cloned(),
                         },
                     )
                 })
                 .collect();
             runtime.snapshots = snapshots;
+            runtime.wechat_sources = wechat_sources;
             runtime.summary = summarize(&runtime);
         }
         self.emit_all_folder_states();
@@ -3025,6 +3309,16 @@ fn category_order(category: WechatCategory) -> usize {
         .iter()
         .position(|candidate| *candidate == category)
         .unwrap_or(WechatCategory::ALL.len())
+}
+
+/// 从备份文件夹记录中取出微信来源标识；普通备份文件夹返回 `None`。
+fn wechat_event_source(record: &BackupFolderRecord) -> Option<WechatEventSource> {
+    let meta = record.wechat.as_ref()?;
+    let category = WechatCategory::parse(&meta.category)?;
+    Some(WechatEventSource {
+        account_name: meta.account_name.clone(),
+        category,
+    })
 }
 
 /// 一个类别有多个来源时（图片与视频的两个路径）汇总成界面状态。

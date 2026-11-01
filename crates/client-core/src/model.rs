@@ -199,6 +199,14 @@ pub enum TransferErrorCode {
     LocalIo,
     FileChanged,
     Integrity,
+    /// 恢复需要微信完全退出。
+    WechatRunning,
+    /// 只有带完成标记的完整快照才能恢复。
+    SnapshotIncomplete,
+    /// 快照清单与云端内容不一致。
+    SnapshotCorrupted,
+    /// 所选快照不存在。
+    SnapshotNotFound,
     AccountNotWritable,
     Locked,
     Cancelled,
@@ -223,6 +231,10 @@ impl TransferErrorCode {
             Self::LocalIo => "local_io_error",
             Self::FileChanged => "file_changed",
             Self::Integrity => "integrity_error",
+            Self::WechatRunning => "wechat_running",
+            Self::SnapshotIncomplete => "snapshot_incomplete",
+            Self::SnapshotCorrupted => "snapshot_corrupted",
+            Self::SnapshotNotFound => "snapshot_not_found",
             Self::AccountNotWritable => "account_not_writable",
             Self::Locked => "locked",
             Self::Cancelled => "cancelled",

@@ -43,6 +43,8 @@ pub use types::{
     BackupSummaryStatus, DEFAULT_DEBOUNCE, DEFAULT_FULL_SCAN_INTERVAL, DEFAULT_RETRY_INTERVAL,
     DEFAULT_WECHAT_SNAPSHOT_INTERVAL, DEFAULT_WECHAT_SNAPSHOT_RETENTION,
     WECHAT_SNAPSHOT_RETENTION_MAX, WECHAT_SNAPSHOT_RETENTION_MIN, WechatAccountBackupStatus,
-    WechatBackupPreflight, WechatBackupSource, WechatCategoryBackupStatus, WechatSnapshotOutcome,
-    WechatSnapshotReport,
+    WechatBackupPreflight, WechatBackupSource, WechatCategoryBackupStatus, WechatDatabaseSnapshot,
+    WechatDiscoveredAccount, WechatEventSource, WechatRestoreCategoryInfo, WechatRestoreReport,
+    WechatRestoreRequest, WechatSnapshotOutcome, WechatSnapshotReport, WechatSnapshotSelection,
 };
+pub use wechat::WechatRestoreTask;

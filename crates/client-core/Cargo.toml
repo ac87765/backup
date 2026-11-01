@@ -73,6 +73,9 @@ security-framework = "3"
 # 判断 WeChat.exe / Weixin.exe / WeChatAppEx.exe 是否存在。相比 WMI 或新增
 # sysinfo 类依赖，ToolHelp 是只读的内核快照 API，不需要额外 crate，也不读取
 # 进程内存或命令行。
+#
+# 第 4 组新增 Win32_System_SystemInformation（同一 crate，仅加 feature）：
+# GetLocalTime 生成数据库目录 `before-restore-<本地时间>` 后缀；不引入日期/时区依赖。
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61", default-features = false, features = [
     "Win32_Foundation",
@@ -82,6 +85,7 @@ windows-sys = { version = "0.61", default-features = false, features = [
     "Win32_System_Com",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Registry",
+    "Win32_System_SystemInformation",
     "Win32_UI_Shell",
 ] }
 
@@ -124,6 +128,12 @@ required-features = ["desktop"]
 [[test]]
 name = "wechat_snapshot"
 path = "tests/wechat_snapshot.rs"
+required-features = ["desktop"]
+
+# 真实 PostgreSQL + MinIO 的“新电脑恢复”逐字节一致性测试（审查者在 WSL 运行）。
+[[test]]
+name = "wechat_restore"
+path = "tests/wechat_restore.rs"
 required-features = ["desktop"]
 
 [features]

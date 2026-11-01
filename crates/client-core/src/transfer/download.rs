@@ -435,7 +435,7 @@ fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
 }
 
 /// 文件夹下载复用的“无进度”入口。
-pub(super) async fn run_silent(
+pub(crate) async fn run_silent(
     client: &Client,
     node_id: Uuid,
     version_id: Uuid,

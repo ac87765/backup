@@ -30,6 +30,8 @@ mod limiter;
 mod scan;
 mod upload;
 
+/// 微信恢复等桌面任务复用“无进度”单文件下载（内部逐块校验、临时文件原子落盘）。
+pub(crate) use download::run_silent as download_file_silent;
 pub(crate) use limiter::TokenBucket;
 
 /// 默认进度通道容量；界面来不及消费时只保留最近事件，不阻塞传输。

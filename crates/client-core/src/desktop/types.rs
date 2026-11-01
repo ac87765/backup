@@ -10,7 +10,9 @@ use std::time::Duration;
 
 use uuid::Uuid;
 
-use super::wechat::{WechatCategory, WechatLocator, WechatProcessProbe, WechatVersion};
+use super::wechat::{
+    WechatAccount, WechatCategory, WechatLocator, WechatProcessProbe, WechatVersion,
+};
 use crate::state::BackupFolderRecord;
 
 /// 文件监听防抖窗口（design D6：5 秒）。
@@ -71,6 +73,15 @@ pub enum BackupPauseReason {
     Network,
 }
 
+/// 微信来源标识（事件流用：账号 + 类别）。
+///
+/// 只含展示数据；账号目录名本来就会显示在“微信备份”页面上，不写日志。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatEventSource {
+    pub account_name: String,
+    pub category: WechatCategory,
+}
+
 /// 单个备份文件夹的状态快照（事件流也用它）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackupFolderState {
@@ -79,6 +90,8 @@ pub struct BackupFolderState {
     pub pause_reason: Option<BackupPauseReason>,
     /// 最近一次完整核对完成的时间（Unix 秒）。
     pub last_backup_at: Option<i64>,
+    /// 普通备份文件夹为 `None`；微信来源带账号与类别，供事件流区分。
+    pub wechat: Option<WechatEventSource>,
 }
 
 /// 全局汇总状态（托盘弹窗用）。
@@ -176,6 +189,8 @@ pub struct BackupActivity {
     pub occurred_at: i64,
     /// 面向用户的失败原因；不含本机绝对路径。
     pub message: Option<String>,
+    /// 微信来源的账号与类别；普通备份文件夹为 `None`。
+    pub wechat: Option<WechatEventSource>,
 }
 
 /// 状态与活动事件（`tokio::sync::broadcast`）。
@@ -383,6 +398,75 @@ pub struct WechatSnapshotReport {
     pub uploaded_files: u64,
     /// 本次上传的明文字节数。
     pub uploaded_bytes: u64,
+}
+
+/// 发现到的微信账号 + 本地备注名（桥接层展示用）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatDiscoveredAccount {
+    pub account: WechatAccount,
+    /// 仅保存在本地状态库的备注名。
+    pub note: Option<String>,
+}
+
+/// 云端一份可恢复的数据库快照。
+///
+/// 只返回带 `快照完成` 标记的快照。账号可能在多台设备上备份过，因此同时带
+/// 设备名，恢复时用它 + 时间戳目录名精确定位。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatDatabaseSnapshot {
+    pub device_name: String,
+    /// 时间戳目录名（`2026-11-01T153000Z`）。
+    pub timestamp: String,
+    /// 快照时间（Unix 秒）。
+    pub snapshot_at: i64,
+    pub total_bytes: u64,
+    pub file_count: u64,
+    /// 始终为 `true`（接口只返回完整快照，字段留给界面展示）。
+    pub complete: bool,
+}
+
+/// 恢复时选择的快照（设备名 + 时间戳目录名）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatSnapshotSelection {
+    pub device_name: String,
+    pub timestamp: String,
+}
+
+/// 云端可恢复的文件类别与大小。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatRestoreCategoryInfo {
+    pub category: WechatCategory,
+    pub file_count: u64,
+    pub total_bytes: u64,
+    /// 云端是否存在该类别的文件。
+    pub available: bool,
+}
+
+/// 一次恢复请求。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatRestoreRequest {
+    /// 目标微信数据根目录。默认由调用方传入发现到的原账号数据根；新电脑上
+    /// 传入用户选择的数据根（账号目录 = `data_root/<account_name>`）。
+    pub data_root: PathBuf,
+    pub account_name: String,
+    pub version: WechatVersion,
+    /// 要恢复的文件类别（“聊天记录数据库”不在这里，由 `restore_database` 控制）。
+    pub categories: Vec<WechatCategory>,
+    pub restore_database: bool,
+    /// `restore_database = true` 时必须是带完成标记的快照。
+    pub snapshot: Option<WechatSnapshotSelection>,
+}
+
+/// 一次恢复的结果统计。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WechatRestoreReport {
+    pub transfer_id: Uuid,
+    pub restored_files: u64,
+    pub restored_bytes: u64,
+    /// 本机已有、按“跳过”策略未覆盖的文件数。
+    pub skipped_files: u64,
+    /// 是否替换了数据库目录（成功写入快照）。
+    pub database_restored: bool,
 }
 
 /// 一次备份运行的结果统计。

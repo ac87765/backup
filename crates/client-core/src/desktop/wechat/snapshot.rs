@@ -45,7 +45,7 @@ use super::process::WechatProcessProbe;
 /// 完整快照的标记文件名。清单 JSON 的内容就写在这个文件里（加密上传）。
 pub(crate) const SNAPSHOT_DONE_FILE: &str = "快照完成";
 /// 云端 `微信备份` 根目录名。
-const WECHAT_CLOUD_ROOT: &str = "微信备份";
+pub(crate) const WECHAT_CLOUD_ROOT: &str = "微信备份";
 /// 上传时每 N 个已确认分块检查一次微信进程（上传任务一批最多确认 32 块）。
 const PROBE_CHECK_CHUNKS: u32 = 8;
 /// 生成时间戳目录名时，若冲突则向后寻找的秒数上限。
@@ -993,6 +993,18 @@ pub(crate) fn format_timestamp(seconds: i64) -> String {
     let minute = (within % 3_600) / 60;
     let second = within % 60;
     format!("{year:04}-{month:02}-{day:02}T{hour:02}{minute:02}{second:02}Z")
+}
+
+/// `20261101-153000` 形式（数据库目录 `before-restore-` 后缀；UTC 回退用）。
+#[cfg_attr(windows, allow(dead_code))]
+pub(crate) fn format_compact_timestamp(seconds: i64) -> String {
+    let days = seconds.div_euclid(86_400);
+    let within = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = within / 3_600;
+    let minute = (within % 3_600) / 60;
+    let second = within % 60;
+    format!("{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}")
 }
 
 /// 解析时间戳目录名；格式不合法或日期越界时返回 `None`（目录不动）。

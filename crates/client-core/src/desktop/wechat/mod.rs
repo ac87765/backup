@@ -15,11 +15,13 @@
 mod layout;
 mod notes;
 mod process;
+mod restore_time;
 mod scan;
 mod system;
 
 pub(crate) mod backup;
 pub(crate) mod exclude;
+pub(crate) mod restore;
 pub(crate) mod snapshot;
 
 #[cfg(test)]
@@ -31,6 +33,7 @@ pub use layout::{
 };
 pub use notes::{WECHAT_NOTE_MAX_CHARS, WechatAccountNotes};
 pub use process::{WechatProcessProbe, default_process_probe};
+pub use restore::WechatRestoreTask;
 pub use system::WechatSystemLocations;
 
 use std::fmt;
@@ -108,6 +111,31 @@ impl WechatAccount {
         self.categories
             .iter()
             .find(|info| info.category == category)
+    }
+
+    /// 只带定位字段的账号引用（桥接层从界面传入数据根、目录名与版本时使用）。
+    ///
+    /// 发现结果里的统计字段保持为空；`set_wechat_categories` / `preflight_wechat`
+    /// / `snapshot_wechat_databases_now` 只需要这三个字段。
+    #[must_use]
+    pub fn reference(
+        data_root: impl Into<PathBuf>,
+        account_name: impl Into<String>,
+        version: WechatVersion,
+    ) -> Self {
+        Self {
+            account_name: account_name.into(),
+            version,
+            data_root: data_root.into(),
+            account_dir: PathBuf::new(),
+            source: WechatSource::Manual,
+            categories: Vec::new(),
+            total_size_bytes: 0,
+            total_file_count: 0,
+            last_modified_ns: None,
+            is_current_login_candidate: false,
+            has_phone_migration_backup: false,
+        }
     }
 }
 
