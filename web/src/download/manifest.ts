@@ -240,5 +240,5 @@ export function formatReleaseDate(value: string): string {
 /** 安装包大小：与设计稿和桌面客户端一致，用十进制 MB（15.4 MB）。 */
 export function formatInstallerSize(bytes: number): string {
   const mb = bytes / 1_000_000
-  return mb >= 1000 ? ` GB` : ` MB`
+  return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${mb.toFixed(1)} MB`
 }
