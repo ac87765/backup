@@ -8,7 +8,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -21,11 +21,12 @@ use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use client_core::desktop::wechat::{
     WechatAccount, WechatCategory, WechatLocator, WechatProcessProbe, WechatSystemLocations,
+    WechatVersion,
 };
 use client_core::desktop::{
-    BackupActivityKind, BackupEngine, BackupEngineConfig, BackupFolderDraft, BackupFolderStatus,
-    BackupFolderUpdate, BackupPauseReason, BackupSummaryStatus, WechatBackupSource,
-    WechatSnapshotOutcome,
+    BackupActivityKind, BackupEngine, BackupEngineConfig, BackupError, BackupFolderDraft,
+    BackupFolderStatus, BackupFolderUpdate, BackupPauseReason, BackupSummaryStatus,
+    WechatBackupSource, WechatRestoreRequest, WechatSnapshotOutcome, WechatSnapshotSelection,
 };
 use client_core::{
     Client, ClientBuilder, Clock, ConflictPolicy, MemorySecretStore, NodeKind, SleepFuture,
@@ -82,25 +83,45 @@ impl Clock for NoWaitClock {
 }
 
 /// 可切换的假微信进程探测（测试绝不枚举真实进程）。
+///
+/// `pause_after_calls` 让“恢复中途微信启动”测试不需要真实进程：前 N 次探测
+/// 返回未运行，之后返回运行中；测试随后调用 `disable_auto_running` 模拟退出。
 #[derive(Debug)]
 struct FakeProbe {
     running: AtomicBool,
+    calls: AtomicUsize,
+    auto_running_after: AtomicUsize,
 }
 
 impl FakeProbe {
     fn new(running: bool) -> Self {
         Self {
             running: AtomicBool::new(running),
+            calls: AtomicUsize::new(0),
+            auto_running_after: AtomicUsize::new(0),
         }
     }
 
     fn set_running(&self, running: bool) {
         self.running.store(running, Ordering::SeqCst);
     }
+
+    fn pause_after_calls(&self, calls: usize) {
+        self.auto_running_after.store(calls, Ordering::SeqCst);
+    }
+
+    fn disable_auto_running(&self) {
+        self.auto_running_after.store(0, Ordering::SeqCst);
+    }
 }
 
 impl WechatProcessProbe for FakeProbe {
     fn is_running(&self, _version: client_core::desktop::wechat::WechatVersion) -> bool {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+        let auto = self.auto_running_after.load(Ordering::SeqCst);
+        if auto > 0 && call > auto {
+            return true;
+        }
         self.running.load(Ordering::SeqCst)
     }
 }
@@ -3215,4 +3236,478 @@ async fn wechat_snapshot_network_error_waits_for_retry_interval() {
     assert!(after > baseline);
     wait_for_db_status(&h.engine, BackupFolderStatus::IdleOk).await;
     h.engine.stop().await;
+}
+
+// ---------------------------------------------------------------------------
+// 恢复到微信（add-wechat-backup 第 4 组）
+// ---------------------------------------------------------------------------
+
+/// 模拟“新电脑”：只有微信登录后生成的基本目录结构，没有旧文件。
+fn create_new_computer_root(base: &Path) -> PathBuf {
+    let root = base.join("新电脑").join("xwechat_files");
+    let account = root.join(WECHAT_ACCOUNT);
+    for directory in [
+        "msg/file/2026-10",
+        "msg/attach/0123456789abcdef0123456789abcdef/2026-10",
+        "msg/video/2026-10",
+        "db_storage/message",
+    ] {
+        std::fs::create_dir_all(account.join(directory)).unwrap();
+    }
+    root
+}
+
+fn restore_request(
+    data_root: &Path,
+    account_name: &str,
+    categories: Vec<WechatCategory>,
+    snapshot: Option<WechatSnapshotSelection>,
+) -> WechatRestoreRequest {
+    WechatRestoreRequest {
+        data_root: data_root.to_path_buf(),
+        account_name: account_name.to_owned(),
+        version: WechatVersion::Wechat4,
+        categories,
+        restore_database: snapshot.is_some(),
+        snapshot,
+    }
+}
+
+async fn restore_progress_until_paused(
+    events: &mut tokio::sync::broadcast::Receiver<client_core::TransferProgress>,
+) {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let event = events.recv().await.expect("恢复进度通道不应关闭");
+            if event.status == client_core::TransferStatus::Paused {
+                assert_eq!(
+                    event.error.as_ref().map(|error| error.code),
+                    Some(client_core::TransferErrorCode::WechatRunning)
+                );
+                break;
+            }
+        }
+    })
+    .await
+    .expect("等待恢复暂停超时");
+}
+
+#[tokio::test]
+async fn wechat_manual_directories_are_persisted_for_the_next_engine() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_wechat_fixture(fixture.path());
+    let h = harness().await;
+    h.engine
+        .add_wechat_manual_directory(documents.clone())
+        .await
+        .unwrap();
+    assert!(
+        h.engine
+            .discover_wechat_accounts()
+            .await
+            .unwrap()
+            .iter()
+            .any(|discovered| discovered.account.account_name == WECHAT_ACCOUNT)
+    );
+
+    // 新引擎不注入手动目录，只通过同一个本地状态库恢复。
+    let locator =
+        WechatLocator::with_system_locations(Arc::new(FakeWechatLocations { documents: None }));
+    let second = build_engine_with_retry(
+        &h.client,
+        Duration::from_millis(50),
+        false,
+        Duration::from_secs(60),
+        Some(locator),
+        h.probe.clone(),
+        Duration::from_secs(10),
+    );
+    let accounts = second.discover_wechat_accounts().await.unwrap();
+    assert!(
+        accounts
+            .iter()
+            .any(|discovered| discovered.account.account_name == WECHAT_ACCOUNT),
+        "手动添加的目录必须从本地状态库恢复"
+    );
+}
+
+#[tokio::test]
+async fn wechat_restore_files_merge_skip_existing_and_preserve_structure_on_new_computer() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_wechat_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(
+            &account,
+            &[WechatCategory::ChatFiles, WechatCategory::ImagesAndVideos],
+        )
+        .await
+        .unwrap();
+    h.engine.scan_all_now().await.unwrap();
+
+    let target_root = create_new_computer_root(fixture.path());
+    let target_account = target_root.join(WECHAT_ACCOUNT);
+    // 新电脑已有一份不同内容的聊天文件：必须保留，不覆盖。
+    write(
+        &target_account.join("msg/file/2026-10/报告.pdf"),
+        b"local-kept",
+    );
+
+    let request = restore_request(
+        &target_root,
+        WECHAT_ACCOUNT,
+        vec![WechatCategory::ChatFiles, WechatCategory::ImagesAndVideos],
+        None,
+    );
+    let task = h.engine.restore_wechat(request).await.unwrap();
+    let mut events = task.subscribe();
+    let handle = task.start();
+    let report = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let event = events.recv().await.expect("恢复进度通道不应关闭");
+            if matches!(
+                event.status,
+                client_core::TransferStatus::Completed
+                    | client_core::TransferStatus::Failed
+                    | client_core::TransferStatus::Cancelled
+            ) {
+                break;
+            }
+        }
+        handle.await.unwrap()
+    })
+    .await
+    .expect("恢复超时")
+    .unwrap();
+
+    assert_eq!(report.restored_files, 2, "缺少的图片/视频要补回");
+    assert_eq!(report.skipped_files, 1, "已有聊天文件按跳过策略保留");
+    assert!(!report.database_restored);
+    assert_eq!(
+        std::fs::read(target_account.join("msg/file/2026-10/报告.pdf")).unwrap(),
+        b"local-kept"
+    );
+    assert_eq!(
+        std::fs::read(
+            target_account.join("msg/attach/0123456789abcdef0123456789abcdef/2026-10/pic.dat")
+        )
+        .unwrap(),
+        b"image-bytes"
+    );
+    assert_eq!(
+        std::fs::read(target_account.join("msg/video/2026-10/clip.mp4")).unwrap(),
+        b"video-bytes"
+    );
+}
+
+#[tokio::test]
+async fn wechat_restore_database_renames_existing_directory_and_matches_snapshot() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::Databases])
+        .await
+        .unwrap();
+    let snapshot = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(snapshot.outcome, WechatSnapshotOutcome::Completed);
+    let snapshots = h
+        .engine
+        .wechat_database_snapshots(WECHAT_ACCOUNT)
+        .await
+        .unwrap();
+    assert_eq!(snapshots.len(), 1);
+    assert!(snapshots[0].complete);
+    let selection = WechatSnapshotSelection {
+        device_name: snapshots[0].device_name.clone(),
+        timestamp: snapshots[0].timestamp.clone(),
+    };
+
+    // 模拟快照之后的新消息：已有文件变化 + 新增文件。
+    let database = account.account_dir.join("db_storage");
+    write(&database.join("message/message_0.db"), b"live-new");
+    write(
+        &database.join("message/after-snapshot.db"),
+        b"after-snapshot",
+    );
+
+    let request = restore_request(
+        &documents.join("xwechat_files"),
+        WECHAT_ACCOUNT,
+        Vec::new(),
+        Some(selection),
+    );
+    let task = h.engine.restore_wechat(request).await.unwrap();
+    let report = task.run().await.unwrap();
+    assert!(report.database_restored);
+    assert_eq!(
+        std::fs::read(database.join("message/message_0.db")).unwrap(),
+        b"database-bytes"
+    );
+    assert_eq!(
+        std::fs::read(database.join("message/message_0.db-wal")).unwrap(),
+        b"wal-bytes"
+    );
+    assert!(!database.join("message/after-snapshot.db").exists());
+
+    let backup = std::fs::read_dir(&account.account_dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("db_storage.before-restore-")
+        })
+        .expect("旧数据库目录必须改名保留");
+    assert_eq!(
+        std::fs::read(backup.path().join("message/message_0.db")).unwrap(),
+        b"live-new"
+    );
+    assert_eq!(
+        std::fs::read(backup.path().join("message/after-snapshot.db")).unwrap(),
+        b"after-snapshot"
+    );
+}
+
+#[tokio::test]
+async fn wechat_restore_refuses_when_wechat_running_without_writing() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_wechat_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::ChatFiles])
+        .await
+        .unwrap();
+    h.engine.scan_all_now().await.unwrap();
+
+    let target_root = create_new_computer_root(fixture.path());
+    let target_account = target_root.join(WECHAT_ACCOUNT);
+    let before = tree_snapshot(&target_account);
+    h.probe.set_running(true);
+    let request = restore_request(
+        &target_root,
+        WECHAT_ACCOUNT,
+        vec![WechatCategory::ChatFiles],
+        None,
+    );
+    let error = match h.engine.restore_wechat(request).await {
+        Ok(_) => panic!("微信运行时不得创建恢复任务"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, BackupError::WechatRunning));
+    assert_eq!(before, tree_snapshot(&target_account));
+}
+
+#[tokio::test]
+async fn wechat_restore_pauses_when_wechat_starts_and_resumes_after_exit() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_wechat_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(
+            &account,
+            &[WechatCategory::ChatFiles, WechatCategory::ImagesAndVideos],
+        )
+        .await
+        .unwrap();
+    h.engine.scan_all_now().await.unwrap();
+
+    let target_root = create_new_computer_root(fixture.path());
+    let target_account = target_root.join(WECHAT_ACCOUNT);
+    // prepare 探测一次、第一个文件再探测一次，之后模拟微信启动。
+    h.probe.pause_after_calls(2);
+    let request = restore_request(
+        &target_root,
+        WECHAT_ACCOUNT,
+        vec![WechatCategory::ChatFiles, WechatCategory::ImagesAndVideos],
+        None,
+    );
+    let task = h.engine.restore_wechat(request).await.unwrap();
+    let mut events = task.subscribe();
+    let handle = task.start();
+    restore_progress_until_paused(&mut events).await;
+
+    let paused_tree = tree_snapshot(&target_account);
+    assert_eq!(paused_tree.len(), 1, "暂停前只允许写入一个文件");
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert_eq!(
+        paused_tree,
+        tree_snapshot(&target_account),
+        "微信运行期间不得继续写入"
+    );
+
+    h.probe.disable_auto_running();
+    h.probe.set_running(false);
+    task.resume();
+    let report = tokio::time::timeout(Duration::from_secs(30), handle)
+        .await
+        .expect("退出微信后恢复应继续完成")
+        .unwrap()
+        .unwrap();
+    assert_eq!(report.restored_files, 3);
+    assert_eq!(
+        tree_snapshot(&target_account).len(),
+        3,
+        "退出微信后应补齐剩余文件"
+    );
+}
+
+#[tokio::test]
+async fn wechat_restore_snapshot_corruption_fails_and_leaves_database_untouched() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+
+    // 手工构造一份“有完成标记、但清单摘要错误”的快照。
+    let root = h.client.account().unwrap().root_node_id;
+    let wechat_root = h.client.create_folder(root, "微信备份").await.unwrap();
+    let device = h
+        .client
+        .create_folder(wechat_root.id, "TEST-PC")
+        .await
+        .unwrap();
+    let account_folder = h
+        .client
+        .create_folder(device.id, WECHAT_ACCOUNT)
+        .await
+        .unwrap();
+    let database_folder = h
+        .client
+        .create_folder(account_folder.id, "聊天记录数据库")
+        .await
+        .unwrap();
+    let timestamp = "2026-11-02T000000Z";
+    let snapshot_folder = h
+        .client
+        .create_folder(database_folder.id, timestamp)
+        .await
+        .unwrap();
+    let message_folder = h
+        .client
+        .create_folder(snapshot_folder.id, "message")
+        .await
+        .unwrap();
+    let source = account.account_dir.join("db_storage/message/message_0.db");
+    h.client
+        .upload_file(message_folder.id, source)
+        .unwrap()
+        .run()
+        .await
+        .unwrap();
+    let marker_dir = tempfile::tempdir().unwrap();
+    let marker_path = marker_dir.path().join("快照完成");
+    let manifest = json!({
+        "snapshot_time": 1_793_577_600_i64,
+        "files": [{
+            "relative_path": "message/message_0.db",
+            "size": 14,
+            "content_sha256": "0".repeat(64),
+        }],
+    });
+    std::fs::write(&marker_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    h.client
+        .upload_file(snapshot_folder.id, marker_path)
+        .unwrap()
+        .run()
+        .await
+        .unwrap();
+
+    let database = account.account_dir.join("db_storage");
+    write(&database.join("message/message_0.db"), b"live-database");
+    let before = tree_snapshot(&database);
+    let request = restore_request(
+        &documents.join("xwechat_files"),
+        WECHAT_ACCOUNT,
+        Vec::new(),
+        Some(WechatSnapshotSelection {
+            device_name: "TEST-PC".to_owned(),
+            timestamp: timestamp.to_owned(),
+        }),
+    );
+    let task = h.engine.restore_wechat(request).await.unwrap();
+    let error = task.run().await.unwrap_err();
+    assert!(matches!(error, BackupError::SnapshotCorrupted));
+    assert_eq!(
+        before,
+        tree_snapshot(&database),
+        "失败时必须保持原数据库目录不变"
+    );
+    assert!(
+        std::fs::read_dir(&account.account_dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .all(|entry| !entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("db_storage.before-restore-")),
+        "下载/校验失败前不应改名旧数据库"
+    );
+    assert!(
+        std::fs::read_dir(&account.account_dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .all(|entry| !entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".db_storage.restore-tmp-")),
+        "失败后必须删除临时目录"
+    );
+}
+
+#[tokio::test]
+async fn wechat_restore_lists_only_complete_snapshots() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::Databases])
+        .await
+        .unwrap();
+    let snapshot = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(snapshot.outcome, WechatSnapshotOutcome::Completed);
+
+    let parent = cloud_folder_by_path(
+        &h.client,
+        &["微信备份", "TEST-PC", WECHAT_ACCOUNT, "聊天记录数据库"],
+    )
+    .await;
+    let incomplete = h
+        .client
+        .create_folder(parent, "2026-11-02T000000Z")
+        .await
+        .unwrap();
+    let file_dir = tempfile::tempdir().unwrap();
+    let file_path = file_dir.path().join("partial.bin");
+    std::fs::write(&file_path, b"partial").unwrap();
+    h.client
+        .upload_file(incomplete.id, file_path)
+        .unwrap()
+        .run()
+        .await
+        .unwrap();
+
+    let snapshots = h
+        .engine
+        .wechat_database_snapshots(WECHAT_ACCOUNT)
+        .await
+        .unwrap();
+    assert_eq!(snapshots.len(), 1, "没有完成标记的快照不得返回");
+    assert_eq!(snapshots[0].file_count, 7);
+    assert!(snapshots[0].total_bytes > 0);
+    assert!(snapshots[0].complete);
 }

@@ -676,6 +676,7 @@ BackupFolderStateDto _goldenBackupState(
         ? BackupPauseReasonDto.user
         : null,
     lastBackupAt: lastBackupAt,
+    wechat: null,
   );
 }
 
@@ -726,6 +727,7 @@ TestHarness _backupHarness({bool paused = false}) {
       relativePath: 'IMG_2041.HEIC',
       kind: BackupActivityKindDto.added,
       occurredAt: _at(10, 5),
+      wechat: null,
     ),
     BackupActivityDto(
       id: 2,
@@ -733,6 +735,7 @@ TestHarness _backupHarness({bool paused = false}) {
       relativePath: 'Q3 预算.xlsx',
       kind: BackupActivityKindDto.newVersion,
       occurredAt: _at(10, 0),
+      wechat: null,
     ),
     BackupActivityDto(
       id: 3,
@@ -740,6 +743,7 @@ TestHarness _backupHarness({bool paused = false}) {
       relativePath: r'~$周报.docx',
       kind: BackupActivityKindDto.retryLater,
       occurredAt: _at(10, 4),
+      wechat: null,
     ),
     BackupActivityDto(
       id: 4,
@@ -747,6 +751,7 @@ TestHarness _backupHarness({bool paused = false}) {
       relativePath: '2026 年度合作协议.pdf',
       kind: BackupActivityKindDto.unchanged,
       occurredAt: _at(10, 5),
+      wechat: null,
     ),
   ];
   bridge.summary = BackupSummaryDto(

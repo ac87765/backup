@@ -135,12 +135,45 @@ class FakeNativeBridge extends NativeBridge {
     includeHidden: false,
     uploadLimitBytesPerSecond: null,
     paused: false,
+    wechatSnapshotRetention: 3,
   );
   final Map<String, BackupPreflightDto> preflightByPath =
       <String, BackupPreflightDto>{};
   BackupFolderDraftDto? lastBackupDraft;
   BackupFolderUpdateDto? lastBackupUpdate;
   int _nextBackupFolder = 1;
+
+  /// 微信备份假数据（第 4 组桥接层；界面在 4b 使用）。
+  List<WechatAccountDto> wechatAccounts = <WechatAccountDto>[];
+  List<WechatAccountBackupStatusDto> wechatStatuses =
+      <WechatAccountBackupStatusDto>[];
+  List<WechatDatabaseSnapshotDto> wechatSnapshots =
+      <WechatDatabaseSnapshotDto>[];
+  List<WechatRestoreCategoryDto> wechatRestoreCategoryList =
+      <WechatRestoreCategoryDto>[];
+  List<String> wechatManualDirs = <String>[];
+  WechatAccountRefDto? lastWechatAccount;
+  List<WechatCategoryDto>? lastWechatCategories;
+  WechatRestoreRequestDto? lastWechatRestoreRequest;
+  WechatBackupPreflightDto wechatPreflightValue =
+      const WechatBackupPreflightDto(
+        fileCount: 0,
+        totalBytes: 0,
+        uploadBytes: 0,
+        uploadBytesWithoutImagesAndVideos: 0,
+        databaseBytes: 0,
+        excludedCount: 0,
+        unreadableCount: 0,
+        remainingQuotaBytes: null,
+        overQuota: false,
+      );
+  WechatSnapshotReportDto wechatSnapshotReport = const WechatSnapshotReportDto(
+    outcome: WechatSnapshotOutcomeDto.waitingForWechatExit,
+    snapshotAt: null,
+    totalFiles: 0,
+    uploadedFiles: 0,
+    uploadedBytes: 0,
+  );
 
   final List<String> calls = <String>[];
   final List<String> pickedFiles = <String>[];
@@ -586,6 +619,7 @@ class FakeNativeBridge extends NativeBridge {
           unreadableCount: 0,
         ),
         lastBackupAt: null,
+        wechat: null,
       ),
     ];
     _refreshSummary();
@@ -650,6 +684,7 @@ class FakeNativeBridge extends NativeBridge {
       includeHidden: backupSettingsValue.includeHidden,
       uploadLimitBytesPerSecond: backupSettingsValue.uploadLimitBytesPerSecond,
       paused: true,
+      wechatSnapshotRetention: backupSettingsValue.wechatSnapshotRetention,
     );
     summary = BackupSummaryDto(
       kind: BackupSummaryStatusKindDto.paused,
@@ -668,6 +703,7 @@ class FakeNativeBridge extends NativeBridge {
       includeHidden: backupSettingsValue.includeHidden,
       uploadLimitBytesPerSecond: backupSettingsValue.uploadLimitBytesPerSecond,
       paused: false,
+      wechatSnapshotRetention: backupSettingsValue.wechatSnapshotRetention,
     );
     summary = BackupSummaryDto(
       kind: BackupSummaryStatusKindDto.allBackedUp,
@@ -822,7 +858,114 @@ class FakeNativeBridge extends NativeBridge {
             ? BackupPauseReasonDto.user
             : null,
         lastBackupAt: current.lastBackupAt,
+        wechat: current.wechat,
       );
+  }
+
+  // ---- 微信备份 ----
+  @override
+  Future<List<WechatAccountDto>> wechatListAccounts() async {
+    calls.add('wechatListAccounts');
+    return List<WechatAccountDto>.of(wechatAccounts);
+  }
+
+  @override
+  Future<List<WechatAccountDto>> wechatAddManualDirectory(String path) async {
+    calls.add('wechatAddManualDirectory:$path');
+    if (!wechatManualDirs.contains(path)) {
+      wechatManualDirs = <String>[...wechatManualDirs, path];
+    }
+    return wechatListAccounts();
+  }
+
+  @override
+  Future<List<WechatAccountDto>> wechatRemoveManualDirectory(
+    String path,
+  ) async {
+    calls.add('wechatRemoveManualDirectory:$path');
+    wechatManualDirs = wechatManualDirs
+        .where((directory) => directory != path)
+        .toList(growable: false);
+    return wechatListAccounts();
+  }
+
+  @override
+  Future<List<String>> wechatManualDirectories() async {
+    calls.add('wechatManualDirectories');
+    return List<String>.of(wechatManualDirs);
+  }
+
+  @override
+  Future<void> wechatSetNote(WechatAccountRefDto account, String note) async {
+    calls.add('wechatSetNote:${account.accountName}');
+    lastWechatAccount = account;
+  }
+
+  @override
+  Future<void> wechatClearNote(WechatAccountRefDto account) async {
+    calls.add('wechatClearNote:${account.accountName}');
+    lastWechatAccount = account;
+  }
+
+  @override
+  Future<void> wechatSetCategories(
+    WechatAccountRefDto account,
+    List<WechatCategoryDto> categories,
+  ) async {
+    calls.add('wechatSetCategories:${account.accountName}');
+    lastWechatAccount = account;
+    lastWechatCategories = List<WechatCategoryDto>.of(categories);
+  }
+
+  @override
+  Future<WechatBackupPreflightDto> wechatPreflight(
+    WechatAccountRefDto account,
+    List<WechatCategoryDto> categories,
+  ) async {
+    calls.add('wechatPreflight:${account.accountName}');
+    lastWechatAccount = account;
+    lastWechatCategories = List<WechatCategoryDto>.of(categories);
+    return wechatPreflightValue;
+  }
+
+  @override
+  Future<List<WechatAccountBackupStatusDto>> wechatAccountStatuses() async {
+    calls.add('wechatAccountStatuses');
+    return List<WechatAccountBackupStatusDto>.of(wechatStatuses);
+  }
+
+  @override
+  Future<WechatSnapshotReportDto> wechatSnapshotNow(
+    WechatAccountRefDto account,
+  ) async {
+    calls.add('wechatSnapshotNow:${account.accountName}');
+    lastWechatAccount = account;
+    return wechatSnapshotReport;
+  }
+
+  @override
+  Future<List<WechatDatabaseSnapshotDto>> wechatDatabaseSnapshots(
+    WechatAccountRefDto account,
+  ) async {
+    calls.add('wechatDatabaseSnapshots:${account.accountName}');
+    lastWechatAccount = account;
+    return List<WechatDatabaseSnapshotDto>.of(wechatSnapshots);
+  }
+
+  @override
+  Future<List<WechatRestoreCategoryDto>> wechatRestoreCategories(
+    WechatAccountRefDto account,
+  ) async {
+    calls.add('wechatRestoreCategories:${account.accountName}');
+    lastWechatAccount = account;
+    return List<WechatRestoreCategoryDto>.of(wechatRestoreCategoryList);
+  }
+
+  @override
+  Future<String> wechatStartRestore(WechatRestoreRequestDto request) async {
+    calls.add('wechatStartRestore:${request.accountName}');
+    lastWechatRestoreRequest = request;
+    return nextTransferId();
   }
 
   String _baseName(String path) {

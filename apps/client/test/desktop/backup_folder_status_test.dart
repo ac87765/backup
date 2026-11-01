@@ -38,6 +38,7 @@ BackupFolderStateDto _state({
     ),
     pauseReason: pauseReason,
     lastBackupAt: 1761900000,
+    wechat: null,
   );
 }
 

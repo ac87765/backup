@@ -44,6 +44,7 @@ BackupFolderStateDto _state(
     ),
     pauseReason: pauseReason,
     lastBackupAt: 1761900000,
+    wechat: null,
   );
 }
 
@@ -90,6 +91,7 @@ void main() {
         relativePath: 'IMG_2041.HEIC',
         kind: BackupActivityKindDto.added,
         occurredAt: 1761900300,
+        wechat: null,
       ),
       const BackupActivityDto(
         id: 2,
@@ -97,6 +99,7 @@ void main() {
         relativePath: 'Q3 预算.xlsx',
         kind: BackupActivityKindDto.newVersion,
         occurredAt: 1761900000,
+        wechat: null,
       ),
       const BackupActivityDto(
         id: 3,
@@ -104,6 +107,7 @@ void main() {
         relativePath: r'~$周报.docx',
         kind: BackupActivityKindDto.retryLater,
         occurredAt: 1761890000,
+        wechat: null,
       ),
     ];
     final harness = TestHarness(bridge: bridge);
