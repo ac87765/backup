@@ -7,6 +7,7 @@
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use ed25519_dalek::{Signer, SigningKey};
+use semver::Version;
 
 use super::*;
 
@@ -240,13 +241,20 @@ fn version_comparison_handles_development_builds() {
     assert_eq!(is_newer("0.1.9", "0.2.0"), VersionVerdict::NotNewer);
     assert_eq!(is_newer("1.0.0", "0.99.99"), VersionVerdict::Newer);
 
+    // 标签构建的 `git describe` 结果带前导 v；归一化后是发布版本。
+    assert_eq!(is_newer("0.2.0", "v0.1.0"), VersionVerdict::Newer);
+    assert_eq!(is_newer("0.2.0", " v0.1.0 "), VersionVerdict::Newer);
+    assert_eq!(is_newer("0.2.0", "v0.2.0"), VersionVerdict::NotNewer);
+
     // 开发构建：git describe 的短 SHA、带预发布/构建元数据的版本。
     for current in [
         "c22934c",
         "0.1.0-dev+abc",
         "0.1.0-dev",
         "0.1.0+abc",
-        "v0.1.0",
+        "v0.1.0-3-gabc1234",
+        "v0.1.0-dirty",
+        "dev",
     ] {
         assert_eq!(
             is_newer("0.2.0", current),
@@ -260,14 +268,40 @@ fn version_comparison_handles_development_builds() {
 }
 
 #[test]
+fn normalize_app_version_strips_tag_prefix() {
+    assert_eq!(
+        normalize_app_version("v0.1.0"),
+        AppVersion::Release(Version::new(0, 1, 0))
+    );
+    assert_eq!(
+        normalize_app_version(" 0.1.0 "),
+        AppVersion::Release(Version::new(0, 1, 0))
+    );
+    assert!(normalize_app_version("v0.1.0").is_release());
+
+    for dev in [
+        "dev",
+        "c22934c",
+        "v0.1.0-3-gabc1234",
+        "v0.1.0-dirty",
+        "0.1.0-dev+abc",
+        "0.1.0+abc",
+        "v",
+        "",
+    ] {
+        assert_eq!(normalize_app_version(dev), AppVersion::Development, "{dev}");
+    }
+}
+
+#[test]
 fn below_min_supported_compares_versions() {
     let manifest = sample_manifest();
     assert_eq!(
-        below_min_supported("0.0.9", &manifest),
+        below_min_supported("v0.0.9", &manifest),
         MinSupportVerdict::BelowMinimum
     );
     assert_eq!(
-        below_min_supported("0.2.0", &manifest),
+        below_min_supported("v0.2.0", &manifest),
         MinSupportVerdict::Supported
     );
     assert_eq!(

@@ -5,8 +5,9 @@
 //! 包裹密钥或服务端请求体；错误码供界面做重试/跳转判断。
 
 use client_core::desktop::BackupError;
+use client_core::desktop::update::UpdateError;
 use client_core::desktop::wechat::WechatError;
-use client_core::{ApiErrorCode, ClientError};
+use client_core::{ApiErrorCode, ClientError, StateError};
 
 /// 桥接 API 的错误 DTO（Dart 侧实现 `FrbException`）。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -70,6 +71,20 @@ impl From<ClientError> for BridgeError {
             code: code.to_owned(),
             message: error.to_string(),
         }
+    }
+}
+
+impl From<StateError> for BridgeError {
+    fn from(_: StateError) -> Self {
+        Self::new("state_error", "本地状态库操作失败")
+    }
+}
+
+impl From<UpdateError> for BridgeError {
+    fn from(error: UpdateError) -> Self {
+        // `UpdateError` 自带稳定错误码与中文提示；`manual_install_required`
+        // 由 `update_install` 在 macOS 无法替换应用时显式构造。
+        Self::new(error.code(), error.user_message())
     }
 }
 

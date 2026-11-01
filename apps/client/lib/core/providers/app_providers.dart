@@ -26,6 +26,7 @@ final bootstrapProvider = FutureProvider<void>((ref) async {
     appDataDir: config.appDataDir,
     serverUrl: config.serverUrl,
     deviceName: config.deviceName,
+    appVersion: appVersion,
   );
 });
 

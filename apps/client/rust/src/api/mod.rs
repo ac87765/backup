@@ -14,6 +14,7 @@ pub mod files;
 pub mod init;
 pub mod transfer;
 pub mod types;
+pub mod update;
 pub mod wechat;
 
 /// flutter_rust_bridge 启动钩子（`RustLib.init()` 时调用一次）。

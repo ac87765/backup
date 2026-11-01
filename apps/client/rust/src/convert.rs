@@ -5,6 +5,7 @@
 
 use std::path::Path;
 
+use client_core::desktop::update::{UpdateDownloadStatus, UpdatePlatform, UpdateProgress};
 use client_core::desktop::wechat::{WechatAccount, WechatCategory, WechatSource, WechatVersion};
 use client_core::desktop::{
     BackupActivity, BackupActivityKind, BackupEvent, BackupFolder, BackupFolderDraft,
@@ -15,6 +16,7 @@ use client_core::desktop::{
     WechatDiscoveredAccount, WechatEventSource, WechatRestoreCategoryInfo, WechatRestoreReport,
     WechatRestoreRequest, WechatSnapshotOutcome, WechatSnapshotReport, WechatSnapshotSelection,
 };
+use client_core::release::ReleaseManifest;
 use client_core::{
     Account, AccountStatus, ConflictPolicy, DownloadOutcome, FolderCounts, FolderDownloadOutcome,
     FolderJobStatus, FolderProgress, FolderUploadOutcome, KdfParamsView, NodeKind, NodeSort,
@@ -34,9 +36,10 @@ use crate::api::types::{
     KdfParamsDto, NodeDto, NodeKindDto, NodeSortDto, NodeSortFieldDto, PendingUploadDto,
     PendingUploadStatusDto, PermanentDeleteOutcomeDto, RestoreTargetDto, SkippedItemDto,
     TransferDirectionDto, TransferFailureDto, TransferProgressDto, TransferStatusDto, TrashItemDto,
-    UploadOutcomeDto, UsageDto, VersionDto, WechatAccountBackupStatusDto, WechatAccountDto,
-    WechatAccountRefDto, WechatBackupPreflightDto, WechatCategoryBackupStatusDto,
-    WechatCategoryDto, WechatCategoryInfoDto, WechatDatabaseSnapshotDto, WechatEventSourceDto,
+    UpdateDownloadStatusDto, UpdateInfoDto, UpdateProgressDto, UploadOutcomeDto, UsageDto,
+    VersionDto, WechatAccountBackupStatusDto, WechatAccountDto, WechatAccountRefDto,
+    WechatBackupPreflightDto, WechatCategoryBackupStatusDto, WechatCategoryDto,
+    WechatCategoryInfoDto, WechatDatabaseSnapshotDto, WechatEventSourceDto,
     WechatRestoreCategoryDto, WechatRestoreOutcomeDto, WechatRestoreRequestDto,
     WechatSnapshotOutcomeDto, WechatSnapshotReportDto, WechatSourceDto, WechatVersionDto,
 };
@@ -61,6 +64,41 @@ pub(crate) fn u64_from_i64(value: i64, field: &str) -> Result<u64, BridgeError> 
 
 pub(crate) fn u32_from_i64(value: i64, field: &str) -> Result<u32, BridgeError> {
     u32::try_from(value).map_err(|_| BridgeError::invalid_number(field))
+}
+
+/// 已验签清单 → 新版本展示数据。
+pub(crate) fn update_info(manifest: &ReleaseManifest, forced: bool) -> UpdateInfoDto {
+    let size = UpdatePlatform::current()
+        .map(|platform| platform.artifact(manifest).size)
+        // 不支持的平台只影响“关于”里的大小展示；安装会返回 unsupported。
+        .unwrap_or(manifest.platforms.windows_x64.size);
+    UpdateInfoDto {
+        version: manifest.version.clone(),
+        released_at: manifest.released_at.clone(),
+        notes: manifest.notes.clone(),
+        size: i64_from_u64(size),
+        forced,
+    }
+}
+
+/// 更新下载进度 → DTO。
+pub(crate) fn update_progress(download_id: &str, progress: &UpdateProgress) -> UpdateProgressDto {
+    UpdateProgressDto {
+        download_id: download_id.to_owned(),
+        status: match progress.status {
+            UpdateDownloadStatus::Downloading => UpdateDownloadStatusDto::Downloading,
+            UpdateDownloadStatus::Completed => UpdateDownloadStatusDto::Completed,
+            UpdateDownloadStatus::Cancelled => UpdateDownloadStatusDto::Cancelled,
+            UpdateDownloadStatus::Failed => UpdateDownloadStatusDto::Failed,
+        },
+        downloaded_bytes: i64_from_u64(progress.downloaded_bytes),
+        total_bytes: i64_from_u64(progress.total_bytes),
+        speed_bytes_per_second: i64_from_u64(progress.speed_bytes_per_second),
+        error: progress.error.as_ref().map(|failure| TransferFailureDto {
+            code: failure.code.clone(),
+            message: failure.message.clone(),
+        }),
+    }
 }
 
 pub(crate) fn parse_uuid(value: &str, kind: &str) -> Result<uuid::Uuid, BridgeError> {

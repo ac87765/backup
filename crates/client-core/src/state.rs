@@ -19,7 +19,7 @@ use crate::io_path::{StatePathError, path_for_io};
 use crate::model::{PendingUpload, PendingUploadStatus};
 
 /// 当前 schema 版本。
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 /// 状态库文件名（位于调用方传入的应用数据目录）。
 pub const DATABASE_FILE_NAME: &str = "client-state.sqlite3";
 
@@ -570,6 +570,25 @@ impl StateStore {
                 );
 
                 PRAGMA user_version = 5;
+                "#,
+            )?;
+            tx.commit()?;
+        }
+        if current < 6 {
+            // 客户端更新（add-client-releases D1）：与登录用户无关的本机键值，
+            // 例如 update.highest_seen_version（防回滚）与
+            // update.banner_dismissed_version（横幅每个版本只提示一次）。
+            // 更新检查在登录前也会执行，因此不能复用带 user_id 的 backup_settings。
+            let tx = connection.transaction()?;
+            tx.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key         TEXT PRIMARY KEY NOT NULL,
+                    value       TEXT NOT NULL,
+                    updated_at  INTEGER NOT NULL
+                );
+
+                PRAGMA user_version = 6;
                 "#,
             )?;
             tx.commit()?;
@@ -1407,6 +1426,45 @@ impl StateStore {
         .await
     }
 
+    /// 读取一个本机应用设置；不存在时返回 `None`。
+    ///
+    /// 与 [`Self::backup_setting`] 不同，这里不绑定用户：更新检查在登录前也会
+    /// 执行，防回滚记录属于本机而不是某个账号。
+    pub(crate) async fn app_setting(&self, key: &str) -> Result<Option<String>, StateError> {
+        let key = key.to_owned();
+        self.run_db(move |connection| {
+            let value = connection
+                .query_row(
+                    "SELECT value FROM app_settings WHERE key = ?1",
+                    params![key],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?;
+            Ok(value)
+        })
+        .await
+    }
+
+    /// 写入一个本机应用设置（幂等）。
+    pub(crate) async fn set_app_setting(&self, key: &str, value: &str) -> Result<(), StateError> {
+        let key = key.to_owned();
+        let value = value.to_owned();
+        self.run_db(move |connection| {
+            connection.execute(
+                r#"
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES (?1, ?2, ?3)
+                ON CONFLICT (key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                "#,
+                params![key, value, unix_seconds()],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
     /// 读取微信账号的本地备注名；不存在时返回 `None`。
     pub(crate) async fn wechat_account_note(
         &self,
@@ -1854,6 +1912,7 @@ mod tests {
         assert!(sql.contains("wechat_accounts"));
         assert!(sql.contains("wechat_backup_selections"));
         assert!(sql.contains("source_kind"));
+        assert!(sql.contains("app_settings"));
         // 只存本机元数据：表结构中不得出现密钥/令牌/密文字段。
         for forbidden in ["wrapped", "token", "ciphertext", "plaintext", "secret"] {
             assert!(
@@ -1861,6 +1920,42 @@ mod tests {
                 "状态库中不应出现字段 {forbidden}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn app_settings_roundtrip_without_user() {
+        let store = StateStore::open_in_memory().unwrap();
+        assert!(
+            store
+                .app_setting("update.highest_seen_version")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        store
+            .set_app_setting("update.highest_seen_version", "0.3.0")
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .app_setting("update.highest_seen_version")
+                .await
+                .unwrap(),
+            Some("0.3.0".to_owned())
+        );
+        // 幂等覆盖。
+        store
+            .set_app_setting("update.highest_seen_version", "0.4.0")
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .app_setting("update.highest_seen_version")
+                .await
+                .unwrap(),
+            Some("0.4.0".to_owned())
+        );
+        assert_eq!(store.app_setting("update.other").await.unwrap(), None);
     }
 
     #[tokio::test]

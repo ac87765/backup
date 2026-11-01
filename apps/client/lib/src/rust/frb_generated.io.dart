@@ -10,6 +10,7 @@ import 'api/files.dart';
 import 'api/init.dart';
 import 'api/transfer.dart';
 import 'api/types.dart';
+import 'api/update.dart';
 import 'api/wechat.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -39,6 +40,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected RustStreamSink<FolderProgressDto> dco_decode_StreamSink_folder_progress_dto_Sse(dynamic raw);
 
 @protected RustStreamSink<TransferProgressDto> dco_decode_StreamSink_transfer_progress_dto_Sse(dynamic raw);
+
+@protected RustStreamSink<UpdateProgressDto> dco_decode_StreamSink_update_progress_dto_Sse(dynamic raw);
 
 @protected String dco_decode_String(dynamic raw);
 
@@ -113,6 +116,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected TransferFailureDto dco_decode_box_autoadd_transfer_failure_dto(dynamic raw);
 
 @protected TransferResultDto dco_decode_box_autoadd_transfer_result_dto(dynamic raw);
+
+@protected UpdateInfoDto dco_decode_box_autoadd_update_info_dto(dynamic raw);
 
 @protected UploadOutcomeDto dco_decode_box_autoadd_upload_outcome_dto(dynamic raw);
 
@@ -222,6 +227,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected TransferResultDto? dco_decode_opt_box_autoadd_transfer_result_dto(dynamic raw);
 
+@protected UpdateInfoDto? dco_decode_opt_box_autoadd_update_info_dto(dynamic raw);
+
 @protected UploadOutcomeDto? dco_decode_opt_box_autoadd_upload_outcome_dto(dynamic raw);
 
 @protected WechatEventSourceDto? dco_decode_opt_box_autoadd_wechat_event_source_dto(dynamic raw);
@@ -257,6 +264,20 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected int dco_decode_u_8(dynamic raw);
 
 @protected void dco_decode_unit(dynamic raw);
+
+@protected UpdateCheckDto dco_decode_update_check_dto(dynamic raw);
+
+@protected UpdateCheckStateDto dco_decode_update_check_state_dto(dynamic raw);
+
+@protected UpdateDownloadStatusDto dco_decode_update_download_status_dto(dynamic raw);
+
+@protected UpdateInfoDto dco_decode_update_info_dto(dynamic raw);
+
+@protected UpdateInstallKindDto dco_decode_update_install_kind_dto(dynamic raw);
+
+@protected UpdateInstallOutcomeDto dco_decode_update_install_outcome_dto(dynamic raw);
+
+@protected UpdateProgressDto dco_decode_update_progress_dto(dynamic raw);
 
 @protected UploadOutcomeDto dco_decode_upload_outcome_dto(dynamic raw);
 
@@ -307,6 +328,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected RustStreamSink<FolderProgressDto> sse_decode_StreamSink_folder_progress_dto_Sse(SseDeserializer deserializer);
 
 @protected RustStreamSink<TransferProgressDto> sse_decode_StreamSink_transfer_progress_dto_Sse(SseDeserializer deserializer);
+
+@protected RustStreamSink<UpdateProgressDto> sse_decode_StreamSink_update_progress_dto_Sse(SseDeserializer deserializer);
 
 @protected String sse_decode_String(SseDeserializer deserializer);
 
@@ -381,6 +404,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected TransferFailureDto sse_decode_box_autoadd_transfer_failure_dto(SseDeserializer deserializer);
 
 @protected TransferResultDto sse_decode_box_autoadd_transfer_result_dto(SseDeserializer deserializer);
+
+@protected UpdateInfoDto sse_decode_box_autoadd_update_info_dto(SseDeserializer deserializer);
 
 @protected UploadOutcomeDto sse_decode_box_autoadd_upload_outcome_dto(SseDeserializer deserializer);
 
@@ -490,6 +515,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected TransferResultDto? sse_decode_opt_box_autoadd_transfer_result_dto(SseDeserializer deserializer);
 
+@protected UpdateInfoDto? sse_decode_opt_box_autoadd_update_info_dto(SseDeserializer deserializer);
+
 @protected UploadOutcomeDto? sse_decode_opt_box_autoadd_upload_outcome_dto(SseDeserializer deserializer);
 
 @protected WechatEventSourceDto? sse_decode_opt_box_autoadd_wechat_event_source_dto(SseDeserializer deserializer);
@@ -525,6 +552,20 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected int sse_decode_u_8(SseDeserializer deserializer);
 
 @protected void sse_decode_unit(SseDeserializer deserializer);
+
+@protected UpdateCheckDto sse_decode_update_check_dto(SseDeserializer deserializer);
+
+@protected UpdateCheckStateDto sse_decode_update_check_state_dto(SseDeserializer deserializer);
+
+@protected UpdateDownloadStatusDto sse_decode_update_download_status_dto(SseDeserializer deserializer);
+
+@protected UpdateInfoDto sse_decode_update_info_dto(SseDeserializer deserializer);
+
+@protected UpdateInstallKindDto sse_decode_update_install_kind_dto(SseDeserializer deserializer);
+
+@protected UpdateInstallOutcomeDto sse_decode_update_install_outcome_dto(SseDeserializer deserializer);
+
+@protected UpdateProgressDto sse_decode_update_progress_dto(SseDeserializer deserializer);
 
 @protected UploadOutcomeDto sse_decode_upload_outcome_dto(SseDeserializer deserializer);
 
@@ -575,6 +616,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected void sse_encode_StreamSink_folder_progress_dto_Sse(RustStreamSink<FolderProgressDto> self, SseSerializer serializer);
 
 @protected void sse_encode_StreamSink_transfer_progress_dto_Sse(RustStreamSink<TransferProgressDto> self, SseSerializer serializer);
+
+@protected void sse_encode_StreamSink_update_progress_dto_Sse(RustStreamSink<UpdateProgressDto> self, SseSerializer serializer);
 
 @protected void sse_encode_String(String self, SseSerializer serializer);
 
@@ -649,6 +692,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected void sse_encode_box_autoadd_transfer_failure_dto(TransferFailureDto self, SseSerializer serializer);
 
 @protected void sse_encode_box_autoadd_transfer_result_dto(TransferResultDto self, SseSerializer serializer);
+
+@protected void sse_encode_box_autoadd_update_info_dto(UpdateInfoDto self, SseSerializer serializer);
 
 @protected void sse_encode_box_autoadd_upload_outcome_dto(UploadOutcomeDto self, SseSerializer serializer);
 
@@ -758,6 +803,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected void sse_encode_opt_box_autoadd_transfer_result_dto(TransferResultDto? self, SseSerializer serializer);
 
+@protected void sse_encode_opt_box_autoadd_update_info_dto(UpdateInfoDto? self, SseSerializer serializer);
+
 @protected void sse_encode_opt_box_autoadd_upload_outcome_dto(UploadOutcomeDto? self, SseSerializer serializer);
 
 @protected void sse_encode_opt_box_autoadd_wechat_event_source_dto(WechatEventSourceDto? self, SseSerializer serializer);
@@ -793,6 +840,20 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected void sse_encode_u_8(int self, SseSerializer serializer);
 
 @protected void sse_encode_unit(void self, SseSerializer serializer);
+
+@protected void sse_encode_update_check_dto(UpdateCheckDto self, SseSerializer serializer);
+
+@protected void sse_encode_update_check_state_dto(UpdateCheckStateDto self, SseSerializer serializer);
+
+@protected void sse_encode_update_download_status_dto(UpdateDownloadStatusDto self, SseSerializer serializer);
+
+@protected void sse_encode_update_info_dto(UpdateInfoDto self, SseSerializer serializer);
+
+@protected void sse_encode_update_install_kind_dto(UpdateInstallKindDto self, SseSerializer serializer);
+
+@protected void sse_encode_update_install_outcome_dto(UpdateInstallOutcomeDto self, SseSerializer serializer);
+
+@protected void sse_encode_update_progress_dto(UpdateProgressDto self, SseSerializer serializer);
 
 @protected void sse_encode_upload_outcome_dto(UploadOutcomeDto self, SseSerializer serializer);
 

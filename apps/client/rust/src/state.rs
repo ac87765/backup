@@ -5,9 +5,14 @@
 //! 内部的 `Client` / `BackupEngine` / 密钥。
 
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex, RwLock};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard, RwLock};
 
+use client_core::desktop::update::{
+    UpdateCancellation, UpdateChecker, UpdateDownloadStatus, UpdateDownloader, UpdatePlatform,
+    UpdateProgress, UpdateProgressSink, VerifiedUpdate,
+};
 use client_core::desktop::{BackupEngine, BackupEvent, WechatRestoreTask};
+use client_core::release::ReleaseManifest;
 use client_core::{
     Client, DownloadTask, FolderDownloadTask, FolderJobStatus, FolderProgress, FolderUploadTask,
     TransferProgress, TransferStatus, UploadTask,
@@ -17,7 +22,7 @@ use tokio::sync::broadcast;
 use crate::api::error::BridgeError;
 use crate::api::types::{
     BackupEventDto, FolderProgressDto, TransferFailureDto, TransferProgressDto, TransferResultDto,
-    TransferStatusDto, WechatRestoreOutcomeDto,
+    TransferStatusDto, UpdateDownloadStatusDto, UpdateProgressDto, WechatRestoreOutcomeDto,
 };
 use crate::frb_generated::StreamSink;
 
@@ -31,6 +36,7 @@ pub(crate) struct AppState {
     pub(crate) transfer_events: broadcast::Sender<TransferProgressDto>,
     pub(crate) folder_events: broadcast::Sender<FolderProgressDto>,
     pub(crate) transfers: Mutex<TransferRegistry>,
+    pub(crate) updates: UpdateState,
 }
 
 impl AppState {
@@ -49,6 +55,56 @@ impl AppState {
             .lock()
             .map_err(|_| BridgeError::internal("传输任务锁已损坏"))
     }
+}
+
+/// 桥接层持有的更新状态。
+pub(crate) struct UpdateState {
+    pub(crate) checker: UpdateChecker,
+    pub(crate) downloader: UpdateDownloader,
+    /// 最近一次检查发现的可下载更新。
+    pub(crate) available: Mutex<Option<AvailableUpdate>>,
+    /// 最近一次下载并通过校验的安装包。
+    pub(crate) verified: Mutex<Option<VerifiedUpdate>>,
+    /// 正在进行的下载（同一时间只允许一个）。
+    pub(crate) active: Mutex<Option<ActiveUpdateDownload>>,
+    pub(crate) events: broadcast::Sender<UpdateProgressDto>,
+}
+
+impl UpdateState {
+    pub(crate) fn subscribe_progress(&self) -> broadcast::Receiver<UpdateProgressDto> {
+        self.events.subscribe()
+    }
+
+    pub(crate) fn available(&self) -> Result<MutexGuard<'_, Option<AvailableUpdate>>, BridgeError> {
+        self.available
+            .lock()
+            .map_err(|_| BridgeError::internal("更新状态锁已损坏"))
+    }
+
+    pub(crate) fn verified(&self) -> Result<MutexGuard<'_, Option<VerifiedUpdate>>, BridgeError> {
+        self.verified
+            .lock()
+            .map_err(|_| BridgeError::internal("更新安装锁已损坏"))
+    }
+
+    pub(crate) fn active(
+        &self,
+    ) -> Result<MutexGuard<'_, Option<ActiveUpdateDownload>>, BridgeError> {
+        self.active
+            .lock()
+            .map_err(|_| BridgeError::internal("更新下载锁已损坏"))
+    }
+}
+
+/// 已发现、等待安装的更新。
+#[derive(Clone)]
+pub(crate) struct AvailableUpdate {
+    pub(crate) manifest: ReleaseManifest,
+}
+
+/// 正在进行的更新下载。
+pub(crate) struct ActiveUpdateDownload {
+    pub(crate) cancel: UpdateCancellation,
 }
 
 /// 传输任务注册表。
@@ -235,15 +291,29 @@ impl TransferTask {
 static STATE: LazyLock<RwLock<Option<Arc<AppState>>>> = LazyLock::new(|| RwLock::new(None));
 
 /// 安装（或替换）应用状态。
-pub(crate) fn install(client: Client, engine: BackupEngine) -> Result<Arc<AppState>, BridgeError> {
+pub(crate) fn install(
+    client: Client,
+    engine: BackupEngine,
+    checker: UpdateChecker,
+    downloader: UpdateDownloader,
+) -> Result<Arc<AppState>, BridgeError> {
     let (transfer_events, _) = broadcast::channel(EVENT_BUFFER);
     let (folder_events, _) = broadcast::channel(EVENT_BUFFER);
+    let (update_events, _) = broadcast::channel(EVENT_BUFFER);
     let state = Arc::new(AppState {
         client,
         engine,
         transfer_events,
         folder_events,
         transfers: Mutex::new(TransferRegistry::default()),
+        updates: UpdateState {
+            checker,
+            downloader,
+            available: Mutex::new(None),
+            verified: Mutex::new(None),
+            active: Mutex::new(None),
+            events: update_events,
+        },
     });
     let mut guard = STATE
         .write()
@@ -288,6 +358,85 @@ pub(crate) fn spawn_transfer(app: Arc<AppState>, task: TransferTask) {
             registry.set_result(transfer_id, result);
         }
     });
+}
+
+/// 在后台线程下载并校验更新；进度通过 `updates.events` 广播。
+pub(crate) fn spawn_update_download(
+    app: Arc<AppState>,
+    download_id: String,
+    update: AvailableUpdate,
+    platform: UpdatePlatform,
+    cancel: UpdateCancellation,
+) {
+    std::thread::spawn(move || {
+        let runtime = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(_) => {
+                let _ = app.updates.events.send(failed_update_progress(
+                    &download_id,
+                    "internal_error",
+                    "无法启动更新下载运行时",
+                ));
+                if let Ok(mut active) = app.updates.active.lock() {
+                    *active = None;
+                }
+                return;
+            }
+        };
+        let sink: UpdateProgressSink = {
+            let app = app.clone();
+            let download_id = download_id.clone();
+            Arc::new(move |progress: UpdateProgress| {
+                // Completed 由本线程在写入 verified 之后发送，避免界面收到
+                // completed 后立刻调用 update_install 时还拿不到已校验文件。
+                if progress.status == UpdateDownloadStatus::Completed {
+                    return;
+                }
+                let dto = crate::convert::update_progress(&download_id, &progress);
+                let _ = app.updates.events.send(dto);
+            })
+        };
+        let result = runtime.block_on(app.updates.downloader.download_update(
+            &update.manifest,
+            platform,
+            &cancel,
+            &sink,
+        ));
+        if let Ok(verified) = result {
+            let total = verified.size;
+            if let Ok(mut guard) = app.updates.verified.lock() {
+                *guard = Some(verified);
+            }
+            let _ = app.updates.events.send(UpdateProgressDto {
+                download_id: download_id.clone(),
+                status: UpdateDownloadStatusDto::Completed,
+                downloaded_bytes: crate::convert::i64_from_u64(total),
+                total_bytes: crate::convert::i64_from_u64(total),
+                speed_bytes_per_second: 0,
+                error: None,
+            });
+        }
+        if let Ok(mut active) = app.updates.active.lock() {
+            *active = None;
+        }
+    });
+}
+
+fn failed_update_progress(download_id: &str, code: &str, message: &str) -> UpdateProgressDto {
+    UpdateProgressDto {
+        download_id: download_id.to_owned(),
+        status: UpdateDownloadStatusDto::Failed,
+        downloaded_bytes: 0,
+        total_bytes: 0,
+        speed_bytes_per_second: 0,
+        error: Some(TransferFailureDto {
+            code: code.to_owned(),
+            message: message.to_owned(),
+        }),
+    }
 }
 
 /// 广播单文件进度到全局事件流；终态事件发送后退出。
@@ -457,6 +606,34 @@ pub(crate) fn forward_backup_stream(
                 match receiver.recv().await {
                     Ok(event) => {
                         if sink.add(BackupEventDto::from(&event)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+    });
+}
+
+/// 把更新下载进度广播转换成 Dart `Stream`。
+pub(crate) fn forward_update_stream(
+    sink: StreamSink<UpdateProgressDto>,
+    mut receiver: broadcast::Receiver<UpdateProgressDto>,
+) {
+    std::thread::spawn(move || {
+        let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
+            return;
+        };
+        runtime.block_on(async move {
+            loop {
+                match receiver.recv().await {
+                    Ok(progress) => {
+                        if sink.add(progress).is_err() {
                             break;
                         }
                     }

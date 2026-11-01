@@ -225,6 +225,41 @@ pub fn parse_stable_version(value: &str) -> Result<Version, ReleaseError> {
     Ok(version)
 }
 
+/// 归一化后的应用版本（add-client-releases D1）。
+///
+/// CI 用 `git describe --tags --always --dirty` 注入 `APP_VERSION`：标签构建是
+/// `v0.1.0`，非标签构建可能是 `v0.1.0-3-gabc1234`、`c22934c` 或 `dev`。
+/// 只有去掉前导 `v` 后仍是稳定 semver 的才是可升级的发布构建。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AppVersion {
+    /// 稳定的发布版本（`v0.1.0` 或 `0.1.0`）。
+    Release(Version),
+    /// 开发构建（提交号、带预发布/构建元数据的 describe 结果、`dev` 等）。
+    Development,
+}
+
+impl AppVersion {
+    /// 是否是可升级的发布构建。
+    #[must_use]
+    pub fn is_release(&self) -> bool {
+        matches!(self, Self::Release(_))
+    }
+}
+
+/// 归一化应用版本：去掉前导 `v`（与空白），再判断是否为稳定 semver。
+///
+/// 清单里的版本仍然由 [`parse_stable_version`] 严格校验（不允许 `v` 前缀）；
+/// 本函数只用于客户端自身由 `git describe` 注入的版本。
+#[must_use]
+pub fn normalize_app_version(raw: &str) -> AppVersion {
+    let trimmed = raw.trim();
+    let without_prefix = trimmed.strip_prefix('v').unwrap_or(trimmed);
+    match parse_stable_version(without_prefix) {
+        Ok(version) => AppVersion::Release(version),
+        Err(_) => AppVersion::Development,
+    }
+}
+
 /// 版本比较结果。
 ///
 /// 当前版本解析失败（开发构建，例如 `c22934c` 或 `0.1.0-dev+abc`）时返回
@@ -240,8 +275,10 @@ pub enum VersionVerdict {
 }
 
 /// 判断 `candidate`（清单版本）是否高于 `current`（当前客户端版本）。
+///
+/// `current` 会先经过 [`normalize_app_version`]（去掉标签版本的前导 `v`）。
 pub fn is_newer(candidate: &str, current: &str) -> VersionVerdict {
-    let Ok(current) = parse_stable_version(current) else {
+    let AppVersion::Release(current) = normalize_app_version(current) else {
         return VersionVerdict::DevelopmentBuild;
     };
     let Ok(candidate) = parse_stable_version(candidate) else {
@@ -269,8 +306,9 @@ pub enum MinSupportVerdict {
 ///
 /// `manifest` 已经过 [`verify_manifest`] 校验，`min_supported` 正常不会解析失败；
 /// 若调用方自行构造了非法清单，这里按“不强制更新”处理，避免误伤用户。
+/// `current` 会先经过 [`normalize_app_version`]（去掉标签版本的前导 `v`）。
 pub fn below_min_supported(current: &str, manifest: &ReleaseManifest) -> MinSupportVerdict {
-    let Ok(current) = parse_stable_version(current) else {
+    let AppVersion::Release(current) = normalize_app_version(current) else {
         return MinSupportVerdict::DevelopmentBuild;
     };
     let Ok(minimum) = parse_stable_version(&manifest.min_supported) else {

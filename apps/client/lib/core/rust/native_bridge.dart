@@ -4,6 +4,7 @@ import '../../src/rust/api/backup.dart' as backup;
 import '../../src/rust/api/files.dart' as files;
 import '../../src/rust/api/init.dart' as init;
 import '../../src/rust/api/transfer.dart' as transfer;
+import '../../src/rust/api/update.dart' as update;
 import '../../src/rust/api/wechat.dart' as wechat;
 import 'models.dart';
 
@@ -22,11 +23,13 @@ class NativeBridge {
     required String appDataDir,
     required String serverUrl,
     required String deviceName,
+    required String appVersion,
   }) {
     return init.initialize(
       appDataDir: appDataDir,
       serverUrl: serverUrl,
       deviceName: deviceName,
+      appVersion: appVersion,
     );
   }
 
@@ -316,4 +319,26 @@ class NativeBridge {
   /// 开始恢复；返回传输 ID，进度通过 [transferProgressStream] 推送。
   Future<String> wechatStartRestore(WechatRestoreRequestDto request) =>
       wechat.wechatStartRestore(request: request);
+
+  // ---- 客户端更新 ----
+  /// 更新下载进度（含已下载 / 总字节 / 速度；终态为 completed/failed/cancelled）。
+  Stream<UpdateProgressDto> updateProgressStream() =>
+      update.updateProgressStream();
+
+  /// 检查更新；`now` 是 Unix 秒（0 表示使用 Rust 侧时间）。
+  Future<UpdateCheckDto> updateCheck(int now) => update.updateCheck(now: now);
+
+  Future<String?> updateBannerDismissedVersion() =>
+      update.updateBannerDismissedVersion();
+
+  Future<void> updateDismissBanner(String version) =>
+      update.updateDismissBanner(version: version);
+
+  Future<String> updateDownload() => update.updateDownload();
+
+  Future<void> updateCancelDownload() => update.updateCancelDownload();
+
+  Future<UpdateInstallOutcomeDto> updateInstall() => update.updateInstall();
+
+  Future<void> updateOpenDmg() => update.updateOpenDmg();
 }

@@ -13,11 +13,13 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
             /// 初始化客户端。
 ///
 /// - `app_data_dir`：本地状态库目录（design D5，由界面传入平台应用数据目录）；
-/// - `server_url`：服务端地址；
-/// - `device_name`：默认云端路径 `电脑备份/<设备名>/<本地文件夹名>` 使用的设备名。
+/// - `server_url`：服务端地址（登录与更新检查共用）；
+/// - `device_name`：默认云端路径 `电脑备份/<设备名>/<本地文件夹名>` 使用的设备名；
+/// - `app_version`：Dart 的 `APP_VERSION`（`git describe` 注入），由界面传入，
+///   桥接层不自行推断。
 ///
 /// 可重复调用：新调用会替换旧状态。初始化本身不登录、不发网络请求。
-Future<void>  initialize({required String appDataDir , required String serverUrl , required String deviceName }) => RustLib.instance.api.crateApiInitInitialize(appDataDir: appDataDir, serverUrl: serverUrl, deviceName: deviceName);
+Future<void>  initialize({required String appDataDir , required String serverUrl , required String deviceName , required String appVersion }) => RustLib.instance.api.crateApiInitInitialize(appDataDir: appDataDir, serverUrl: serverUrl, deviceName: deviceName, appVersion: appVersion);
 
             
             

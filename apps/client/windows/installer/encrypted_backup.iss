@@ -74,6 +74,9 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Run]
 ; 安装完成页的可选“立即启动”（静默安装不启动）。
 Filename: "{app}\{#MyAppExeName}"; Description: "立即启动{#MyAppName}"; Flags: nowait postinstall skipifsilent
+; 更新模式（/UPDATE=1）：安装完成后重新启动客户端。静默安装也要执行，
+; 因为更新流程会先退出应用；见 [Code] 中 IsUpdateMode / InitializeSetup 的说明。
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifnotsilent; Check: IsUpdateMode
 
 [Code]
 const
@@ -81,6 +84,50 @@ const
   // 与 lib/desktop/startup/startup_service.dart 中 launchAtStartup.setup(appName)
   // 及 launch_at_startup 的 Windows 实现一致：HKCU Run 的值名就是“加密备份”。
   StartupValueName = '加密备份';
+  // 与 [Setup] 的 AppMutex 及 windows/runner/main.cpp 的单实例 Mutex 一致。
+  AppMutexName = 'Local\EncryptedBackupClient.SingleInstance';
+  // 客户端自动更新时传给安装包的标志。
+  UpdateModeFlag = '/UPDATE=1';
+
+function IsUpdateMode: Boolean;
+var
+  Index: Integer;
+begin
+  Result := False;
+  for Index := 1 to ParamCount do
+  begin
+    if CompareText(ParamStr(Index), UpdateModeFlag) = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+// 静默模式（/SILENT）下，Inno 遇到“应用正在运行”的提示默认按“取消”处理，
+// 所以更新安装不能依赖 CloseApplications：先循环等待旧客户端释放 AppMutex
+// （每 250 ms 检查一次，最多 30 秒），超时则安静地取消安装并写安装日志。
+function InitializeSetup(): Boolean;
+var
+  Waited: Integer;
+begin
+  Result := True;
+  if not IsUpdateMode then
+    Exit;
+
+  Waited := 0;
+  while CheckForMutexes(AppMutexName) do
+  begin
+    if Waited >= 120 then
+    begin
+      Log('更新安装：等待应用退出超过 30 秒，已取消静默安装。');
+      Result := False;
+      Exit;
+    end;
+    Sleep(250);
+    Waited := Waited + 1;
+  end;
+end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin

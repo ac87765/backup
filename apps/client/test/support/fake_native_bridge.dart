@@ -188,12 +188,30 @@ class FakeNativeBridge extends NativeBridge {
   final List<String> calls = <String>[];
   final List<String> pickedFiles = <String>[];
 
+  /// 更新假数据（第 2 组桥接层；界面在 2b 使用）。
+  UpdateCheckDto updateCheckResult = const UpdateCheckDto(
+    state: UpdateCheckStateDto.upToDate,
+    info: null,
+    checkedAt: 0,
+    reason: null,
+  );
+  String? dismissedUpdateVersion;
+  BridgeError? updateDownloadError;
+  BridgeError? updateInstallError;
+  UpdateInstallOutcomeDto updateInstallResult = const UpdateInstallOutcomeDto(
+    kind: UpdateInstallKindDto.started,
+  );
+  bool updateDownloadStarted = false;
+  bool updateDmgOpened = false;
+
   final StreamController<TransferProgressDto> _progress =
       StreamController<TransferProgressDto>.broadcast();
   final StreamController<FolderProgressDto> _folderProgress =
       StreamController<FolderProgressDto>.broadcast();
   final StreamController<BackupEventDto> _backupEvents =
       StreamController<BackupEventDto>.broadcast();
+  final StreamController<UpdateProgressDto> _updateProgress =
+      StreamController<UpdateProgressDto>.broadcast();
 
   int _nextTransfer = 1;
   int _nextNode = 1;
@@ -208,8 +226,9 @@ class FakeNativeBridge extends NativeBridge {
     required String appDataDir,
     required String serverUrl,
     required String deviceName,
+    required String appVersion,
   }) async {
-    calls.add('initialize:$serverUrl');
+    calls.add('initialize:$serverUrl:$appVersion');
   }
 
   @override
@@ -1110,10 +1129,69 @@ class FakeNativeBridge extends NativeBridge {
   void emitFolderProgress(FolderProgressDto event) =>
       _folderProgress.add(event);
 
+  // ---- 客户端更新 ----
+  @override
+  Future<UpdateCheckDto> updateCheck(int now) async {
+    calls.add('updateCheck:$now');
+    return updateCheckResult;
+  }
+
+  @override
+  Future<String?> updateBannerDismissedVersion() async {
+    calls.add('updateBannerDismissedVersion');
+    return dismissedUpdateVersion;
+  }
+
+  @override
+  Future<void> updateDismissBanner(String version) async {
+    calls.add('updateDismissBanner:$version');
+    dismissedUpdateVersion = version;
+  }
+
+  @override
+  Future<String> updateDownload() async {
+    calls.add('updateDownload');
+    final error = updateDownloadError;
+    if (error != null) {
+      throw error;
+    }
+    updateDownloadStarted = true;
+    return 'update-1';
+  }
+
+  @override
+  Future<void> updateCancelDownload() async {
+    calls.add('updateCancelDownload');
+    updateDownloadStarted = false;
+  }
+
+  @override
+  Future<UpdateInstallOutcomeDto> updateInstall() async {
+    calls.add('updateInstall');
+    final error = updateInstallError;
+    if (error != null) {
+      throw error;
+    }
+    return updateInstallResult;
+  }
+
+  @override
+  Future<void> updateOpenDmg() async {
+    calls.add('updateOpenDmg');
+    updateDmgOpened = true;
+  }
+
+  @override
+  Stream<UpdateProgressDto> updateProgressStream() => _updateProgress.stream;
+
+  void emitUpdateProgress(UpdateProgressDto event) =>
+      _updateProgress.add(event);
+
   Future<void> dispose() async {
     await _progress.close();
     await _folderProgress.close();
     await _backupEvents.close();
+    await _updateProgress.close();
   }
 
   NodeDto? _findNode(String id) {

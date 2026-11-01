@@ -662,3 +662,74 @@ pub struct WechatRestoreOutcomeDto {
     pub skipped_files: i64,
     pub database_restored: bool,
 }
+
+// ---------------------------------------------------------------------------
+// 客户端更新（add-client-releases 第 2 组）
+// ---------------------------------------------------------------------------
+
+/// 更新检查结果类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateCheckStateDto {
+    UpToDate,
+    Available,
+    DevelopmentBuild,
+    Unavailable,
+}
+
+/// 新版本展示数据（来自已验签清单）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateInfoDto {
+    pub version: String,
+    pub released_at: String,
+    pub notes: Vec<String>,
+    /// 当前平台安装包大小；不支持的平台回退为 Windows 包大小（仅展示）。
+    pub size: i64,
+    pub forced: bool,
+}
+
+/// 一次检查更新的结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateCheckDto {
+    pub state: UpdateCheckStateDto,
+    pub info: Option<UpdateInfoDto>,
+    /// Unix 秒；来自 Dart 传入的 `now`（未提供时为 Rust 侧时间）。
+    pub checked_at: i64,
+    /// `Unavailable` 时的原因：network / http_status / invalid_signature /
+    /// invalid_manifest / rollback_rejected / storage。
+    pub reason: Option<String>,
+}
+
+/// 更新下载状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateDownloadStatusDto {
+    Downloading,
+    Completed,
+    Cancelled,
+    Failed,
+}
+
+/// 更新下载进度事件。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateProgressDto {
+    pub download_id: String,
+    pub status: UpdateDownloadStatusDto,
+    pub downloaded_bytes: i64,
+    pub total_bytes: i64,
+    pub speed_bytes_per_second: i64,
+    pub error: Option<TransferFailureDto>,
+}
+
+/// 安装动作类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateInstallKindDto {
+    /// 安装程序/替换脚本已启动；Windows 下 Dart 应立即退出应用。
+    Started,
+    /// 无法自动替换，需要用户手动拖到“应用程序”。
+    ManualInstallRequired,
+}
+
+/// 安装调用结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UpdateInstallOutcomeDto {
+    pub kind: UpdateInstallKindDto,
+}

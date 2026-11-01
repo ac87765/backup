@@ -32,6 +32,7 @@ mod paths;
 mod types;
 mod watcher;
 
+pub mod update;
 pub mod wechat;
 
 pub use engine::BackupEngine;

@@ -10,6 +10,7 @@ import 'api/files.dart';
 import 'api/init.dart';
 import 'api/transfer.dart';
 import 'api/types.dart';
+import 'api/update.dart';
 import 'api/wechat.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -76,7 +77,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
                   String get codegenVersion => '2.13.0';
 
                   @override
-                  int get rustContentHash => 412370426;
+                  int get rustContentHash => 726586123;
 
                   static const kDefaultExternalLibraryLoaderConfig = ExternalLibraryLoaderConfig(
                     stem: 'rust_lib_client',
@@ -150,7 +151,7 @@ Future<bool> crateApiAuthHasStoredSession();
 
 Future<void> crateApiInitApp();
 
-Future<void> crateApiInitInitialize({required String appDataDir , required String serverUrl , required String deviceName });
+Future<void> crateApiInitInitialize({required String appDataDir , required String serverUrl , required String deviceName , required String appVersion });
 
 Future<bool> crateApiAuthIsKeepUnlocked();
 
@@ -211,6 +212,22 @@ Future<TransferResultDto?> crateApiTransferTransferResult({required String trans
 Future<AccountDto> crateApiAuthUnlock({required String password });
 
 Future<AccountDto?> crateApiAuthUnlockWithStoredMasterKey();
+
+Future<String?> crateApiUpdateUpdateBannerDismissedVersion();
+
+Future<void> crateApiUpdateUpdateCancelDownload();
+
+Future<UpdateCheckDto> crateApiUpdateUpdateCheck({required int now });
+
+Future<void> crateApiUpdateUpdateDismissBanner({required String version });
+
+Future<String> crateApiUpdateUpdateDownload();
+
+Future<UpdateInstallOutcomeDto> crateApiUpdateUpdateInstall();
+
+Future<void> crateApiUpdateUpdateOpenDmg();
+
+Stream<UpdateProgressDto> crateApiUpdateUpdateProgressStream();
 
 Future<List<WechatAccountBackupStatusDto>> crateApiWechatWechatAccountStatuses();
 
@@ -1035,12 +1052,13 @@ sse_encode_String(name, serializer);
         );
         
 
-@override Future<void> crateApiInitInitialize({required String appDataDir , required String serverUrl , required String deviceName })  { return handler.executeNormal(NormalTask(
+@override Future<void> crateApiInitInitialize({required String appDataDir , required String serverUrl , required String deviceName , required String appVersion })  { return handler.executeNormal(NormalTask(
             callFfi: (port_) {
               
             final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(appDataDir, serializer);
 sse_encode_String(serverUrl, serializer);
 sse_encode_String(deviceName, serializer);
+sse_encode_String(appVersion, serializer);
             pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32, port: port_);
             
             },
@@ -1051,14 +1069,14 @@ sse_encode_String(deviceName, serializer);
         )
         ,
             constMeta: kCrateApiInitInitializeConstMeta,
-            argValues: [appDataDir, serverUrl, deviceName],
+            argValues: [appDataDir, serverUrl, deviceName, appVersion],
             apiImpl: this,
         )); }
 
 
         TaskConstMeta get kCrateApiInitInitializeConstMeta => const TaskConstMeta(
             debugName: "initialize",
-            argNames: ["appDataDir", "serverUrl", "deviceName"],
+            argNames: ["appDataDir", "serverUrl", "deviceName", "appVersion"],
         );
         
 
@@ -1837,11 +1855,215 @@ sse_encode_String(localPath, serializer);
         );
         
 
-@override Future<List<WechatAccountBackupStatusDto>> crateApiWechatWechatAccountStatuses()  { return handler.executeNormal(NormalTask(
+@override Future<String?> crateApiUpdateUpdateBannerDismissedVersion()  { return handler.executeNormal(NormalTask(
             callFfi: (port_) {
               
             final serializer = SseSerializer(generalizedFrbRustBinding);
             pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_opt_String,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiUpdateUpdateBannerDismissedVersionConstMeta,
+            argValues: [],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiUpdateUpdateBannerDismissedVersionConstMeta => const TaskConstMeta(
+            debugName: "update_banner_dismissed_version",
+            argNames: [],
+        );
+        
+
+@override Future<void> crateApiUpdateUpdateCancelDownload()  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiUpdateUpdateCancelDownloadConstMeta,
+            argValues: [],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiUpdateUpdateCancelDownloadConstMeta => const TaskConstMeta(
+            debugName: "update_cancel_download",
+            argNames: [],
+        );
+        
+
+@override Future<UpdateCheckDto> crateApiUpdateUpdateCheck({required int now })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_CastedPrimitive_i_64(now, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_update_check_dto,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiUpdateUpdateCheckConstMeta,
+            argValues: [now],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiUpdateUpdateCheckConstMeta => const TaskConstMeta(
+            debugName: "update_check",
+            argNames: ["now"],
+        );
+        
+
+@override Future<void> crateApiUpdateUpdateDismissBanner({required String version })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(version, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiUpdateUpdateDismissBannerConstMeta,
+            argValues: [version],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiUpdateUpdateDismissBannerConstMeta => const TaskConstMeta(
+            debugName: "update_dismiss_banner",
+            argNames: ["version"],
+        );
+        
+
+@override Future<String> crateApiUpdateUpdateDownload()  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiUpdateUpdateDownloadConstMeta,
+            argValues: [],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiUpdateUpdateDownloadConstMeta => const TaskConstMeta(
+            debugName: "update_download",
+            argNames: [],
+        );
+        
+
+@override Future<UpdateInstallOutcomeDto> crateApiUpdateUpdateInstall()  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_update_install_outcome_dto,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiUpdateUpdateInstallConstMeta,
+            argValues: [],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiUpdateUpdateInstallConstMeta => const TaskConstMeta(
+            debugName: "update_install",
+            argNames: [],
+        );
+        
+
+@override Future<void> crateApiUpdateUpdateOpenDmg()  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiUpdateUpdateOpenDmgConstMeta,
+            argValues: [],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiUpdateUpdateOpenDmgConstMeta => const TaskConstMeta(
+            debugName: "update_open_dmg",
+            argNames: [],
+        );
+        
+
+@override Stream<UpdateProgressDto> crateApiUpdateUpdateProgressStream()  { 
+            final sink = RustStreamSink<UpdateProgressDto>();
+            unawaited(handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_StreamSink_update_progress_dto_Sse(sink, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        )
+        ,
+            constMeta: kCrateApiUpdateUpdateProgressStreamConstMeta,
+            argValues: [sink],
+            apiImpl: this,
+        )));
+            return sink.stream;
+             }
+
+
+        TaskConstMeta get kCrateApiUpdateUpdateProgressStreamConstMeta => const TaskConstMeta(
+            debugName: "update_progress_stream",
+            argNames: ["sink"],
+        );
+        
+
+@override Future<List<WechatAccountBackupStatusDto>> crateApiWechatWechatAccountStatuses()  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71, port: port_);
             
             },
             codec: 
@@ -1866,7 +2088,7 @@ sse_encode_String(localPath, serializer);
             callFfi: (port_) {
               
             final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(path, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72, port: port_);
             
             },
             codec: 
@@ -1891,7 +2113,7 @@ sse_encode_String(localPath, serializer);
             callFfi: (port_) {
               
             final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73, port: port_);
             
             },
             codec: 
@@ -1916,7 +2138,7 @@ sse_encode_String(localPath, serializer);
             callFfi: (port_) {
               
             final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 74, port: port_);
             
             },
             codec: 
@@ -1941,7 +2163,7 @@ sse_encode_String(localPath, serializer);
             callFfi: (port_) {
               
             final serializer = SseSerializer(generalizedFrbRustBinding);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 75, port: port_);
             
             },
             codec: 
@@ -1966,7 +2188,7 @@ sse_encode_String(localPath, serializer);
             callFfi: (port_) {
               
             final serializer = SseSerializer(generalizedFrbRustBinding);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 76, port: port_);
             
             },
             codec: 
@@ -1992,7 +2214,7 @@ sse_encode_String(localPath, serializer);
               
             final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
 sse_encode_list_wechat_category_dto(categories, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 77, port: port_);
             
             },
             codec: 
@@ -2017,7 +2239,7 @@ sse_encode_list_wechat_category_dto(categories, serializer);
             callFfi: (port_) {
               
             final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(path, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 78, port: port_);
             
             },
             codec: 
@@ -2042,7 +2264,7 @@ sse_encode_list_wechat_category_dto(categories, serializer);
             callFfi: (port_) {
               
             final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 79, port: port_);
             
             },
             codec: 
@@ -2068,7 +2290,7 @@ sse_encode_list_wechat_category_dto(categories, serializer);
               
             final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
 sse_encode_list_wechat_category_dto(categories, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 80, port: port_);
             
             },
             codec: 
@@ -2094,7 +2316,7 @@ sse_encode_list_wechat_category_dto(categories, serializer);
               
             final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
 sse_encode_String(note, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 81, port: port_);
             
             },
             codec: 
@@ -2119,7 +2341,7 @@ sse_encode_String(note, serializer);
             callFfi: (port_) {
               
             final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 74, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 82, port: port_);
             
             },
             codec: 
@@ -2144,7 +2366,7 @@ sse_encode_String(note, serializer);
             callFfi: (port_) {
               
             final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_restore_request_dto(request, serializer);
-            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 75, port: port_);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 83, port: port_);
             
             },
             codec: 
@@ -2180,6 +2402,9 @@ throw UnimplementedError(); }
 throw UnimplementedError(); }
 
 @protected RustStreamSink<TransferProgressDto> dco_decode_StreamSink_transfer_progress_dto_Sse(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+throw UnimplementedError(); }
+
+@protected RustStreamSink<UpdateProgressDto> dco_decode_StreamSink_update_progress_dto_Sse(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 throw UnimplementedError(); }
 
 @protected String dco_decode_String(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -2382,6 +2607,9 @@ return dco_decode_transfer_failure_dto(raw); }
 
 @protected TransferResultDto dco_decode_box_autoadd_transfer_result_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return dco_decode_transfer_result_dto(raw); }
+
+@protected UpdateInfoDto dco_decode_box_autoadd_update_info_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return dco_decode_update_info_dto(raw); }
 
 @protected UploadOutcomeDto dco_decode_box_autoadd_upload_outcome_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return dco_decode_upload_outcome_dto(raw); }
@@ -2610,6 +2838,9 @@ return raw == null ? null : dco_decode_box_autoadd_transfer_failure_dto(raw); }
 @protected TransferResultDto? dco_decode_opt_box_autoadd_transfer_result_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return raw == null ? null : dco_decode_box_autoadd_transfer_result_dto(raw); }
 
+@protected UpdateInfoDto? dco_decode_opt_box_autoadd_update_info_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return raw == null ? null : dco_decode_box_autoadd_update_info_dto(raw); }
+
 @protected UploadOutcomeDto? dco_decode_opt_box_autoadd_upload_outcome_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return raw == null ? null : dco_decode_box_autoadd_upload_outcome_dto(raw); }
 
@@ -2712,6 +2943,47 @@ return raw as int; }
 
 @protected void dco_decode_unit(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return; }
+
+@protected UpdateCheckDto dco_decode_update_check_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 4) throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+                return UpdateCheckDto(state: dco_decode_update_check_state_dto(arr[0]),
+info: dco_decode_opt_box_autoadd_update_info_dto(arr[1]),
+checkedAt: dco_decode_CastedPrimitive_i_64(arr[2]),
+reason: dco_decode_opt_String(arr[3]),); }
+
+@protected UpdateCheckStateDto dco_decode_update_check_state_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return UpdateCheckStateDto.values[raw as int]; }
+
+@protected UpdateDownloadStatusDto dco_decode_update_download_status_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return UpdateDownloadStatusDto.values[raw as int]; }
+
+@protected UpdateInfoDto dco_decode_update_info_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 5) throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+                return UpdateInfoDto(version: dco_decode_String(arr[0]),
+releasedAt: dco_decode_String(arr[1]),
+notes: dco_decode_list_String(arr[2]),
+size: dco_decode_CastedPrimitive_i_64(arr[3]),
+forced: dco_decode_bool(arr[4]),); }
+
+@protected UpdateInstallKindDto dco_decode_update_install_kind_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return UpdateInstallKindDto.values[raw as int]; }
+
+@protected UpdateInstallOutcomeDto dco_decode_update_install_outcome_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 1) throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+                return UpdateInstallOutcomeDto(kind: dco_decode_update_install_kind_dto(arr[0]),); }
+
+@protected UpdateProgressDto dco_decode_update_progress_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 6) throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+                return UpdateProgressDto(downloadId: dco_decode_String(arr[0]),
+status: dco_decode_update_download_status_dto(arr[1]),
+downloadedBytes: dco_decode_CastedPrimitive_i_64(arr[2]),
+totalBytes: dco_decode_CastedPrimitive_i_64(arr[3]),
+speedBytesPerSecond: dco_decode_CastedPrimitive_i_64(arr[4]),
+error: dco_decode_opt_box_autoadd_transfer_failure_dto(arr[5]),); }
 
 @protected UploadOutcomeDto dco_decode_upload_outcome_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 final arr = raw as List<dynamic>;
@@ -2887,6 +3159,9 @@ throw UnimplementedError('Unreachable ()'); }
 throw UnimplementedError('Unreachable ()'); }
 
 @protected RustStreamSink<TransferProgressDto> sse_decode_StreamSink_transfer_progress_dto_Sse(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+throw UnimplementedError('Unreachable ()'); }
+
+@protected RustStreamSink<UpdateProgressDto> sse_decode_StreamSink_update_progress_dto_Sse(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 throw UnimplementedError('Unreachable ()'); }
 
 @protected String sse_decode_String(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
@@ -3084,6 +3359,9 @@ return (sse_decode_transfer_failure_dto(deserializer)); }
 
 @protected TransferResultDto sse_decode_box_autoadd_transfer_result_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 return (sse_decode_transfer_result_dto(deserializer)); }
+
+@protected UpdateInfoDto sse_decode_box_autoadd_update_info_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+return (sse_decode_update_info_dto(deserializer)); }
 
 @protected UploadOutcomeDto sse_decode_box_autoadd_upload_outcome_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 return (sse_decode_upload_outcome_dto(deserializer)); }
@@ -3483,6 +3761,15 @@ var inner = sse_decode_i_32(deserializer);
             }
              }
 
+@protected UpdateInfoDto? sse_decode_opt_box_autoadd_update_info_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+            if (sse_decode_bool(deserializer)) {
+                return (sse_decode_box_autoadd_update_info_dto(deserializer));
+            } else {
+                return null;
+            }
+             }
+
 @protected UploadOutcomeDto? sse_decode_opt_box_autoadd_upload_outcome_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 
             if (sse_decode_bool(deserializer)) {
@@ -3610,6 +3897,46 @@ return deserializer.buffer.getUint8(); }
 
 @protected void sse_decode_unit(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
  }
+
+@protected UpdateCheckDto sse_decode_update_check_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_state = sse_decode_update_check_state_dto(deserializer);
+var var_info = sse_decode_opt_box_autoadd_update_info_dto(deserializer);
+var var_checkedAt = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_reason = sse_decode_opt_String(deserializer);
+return UpdateCheckDto(state: var_state, info: var_info, checkedAt: var_checkedAt, reason: var_reason); }
+
+@protected UpdateCheckStateDto sse_decode_update_check_state_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var inner = sse_decode_i_32(deserializer);
+        return UpdateCheckStateDto.values[inner]; }
+
+@protected UpdateDownloadStatusDto sse_decode_update_download_status_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var inner = sse_decode_i_32(deserializer);
+        return UpdateDownloadStatusDto.values[inner]; }
+
+@protected UpdateInfoDto sse_decode_update_info_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_version = sse_decode_String(deserializer);
+var var_releasedAt = sse_decode_String(deserializer);
+var var_notes = sse_decode_list_String(deserializer);
+var var_size = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_forced = sse_decode_bool(deserializer);
+return UpdateInfoDto(version: var_version, releasedAt: var_releasedAt, notes: var_notes, size: var_size, forced: var_forced); }
+
+@protected UpdateInstallKindDto sse_decode_update_install_kind_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var inner = sse_decode_i_32(deserializer);
+        return UpdateInstallKindDto.values[inner]; }
+
+@protected UpdateInstallOutcomeDto sse_decode_update_install_outcome_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_kind = sse_decode_update_install_kind_dto(deserializer);
+return UpdateInstallOutcomeDto(kind: var_kind); }
+
+@protected UpdateProgressDto sse_decode_update_progress_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_downloadId = sse_decode_String(deserializer);
+var var_status = sse_decode_update_download_status_dto(deserializer);
+var var_downloadedBytes = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_totalBytes = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_speedBytesPerSecond = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_error = sse_decode_opt_box_autoadd_transfer_failure_dto(deserializer);
+return UpdateProgressDto(downloadId: var_downloadId, status: var_status, downloadedBytes: var_downloadedBytes, totalBytes: var_totalBytes, speedBytesPerSecond: var_speedBytesPerSecond, error: var_error); }
 
 @protected UploadOutcomeDto sse_decode_upload_outcome_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 var var_nodeId = sse_decode_String(deserializer);
@@ -3779,6 +4106,12 @@ sse_encode_String(self.setupAndSerialize(codec: SseCodec(
 @protected void sse_encode_StreamSink_transfer_progress_dto_Sse(RustStreamSink<TransferProgressDto> self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 sse_encode_String(self.setupAndSerialize(codec: SseCodec(
             decodeSuccessData: sse_decode_transfer_progress_dto,
+            decodeErrorData: sse_decode_AnyhowException,
+        )), serializer); }
+
+@protected void sse_encode_StreamSink_update_progress_dto_Sse(RustStreamSink<UpdateProgressDto> self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_String(self.setupAndSerialize(codec: SseCodec(
+            decodeSuccessData: sse_decode_update_progress_dto,
             decodeErrorData: sse_decode_AnyhowException,
         )), serializer); }
 
@@ -3970,6 +4303,9 @@ sse_encode_transfer_failure_dto(self, serializer); }
 
 @protected void sse_encode_box_autoadd_transfer_result_dto(TransferResultDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 sse_encode_transfer_result_dto(self, serializer); }
+
+@protected void sse_encode_box_autoadd_update_info_dto(UpdateInfoDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_update_info_dto(self, serializer); }
 
 @protected void sse_encode_box_autoadd_upload_outcome_dto(UploadOutcomeDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 sse_encode_upload_outcome_dto(self, serializer); }
@@ -4282,6 +4618,14 @@ sse_encode_i_32(self.index, serializer); }
                 }
                  }
 
+@protected void sse_encode_opt_box_autoadd_update_info_dto(UpdateInfoDto? self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+                sse_encode_bool(self != null, serializer);
+                if (self != null) {
+                    sse_encode_box_autoadd_update_info_dto(self, serializer);
+                }
+                 }
+
 @protected void sse_encode_opt_box_autoadd_upload_outcome_dto(UploadOutcomeDto? self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 
                 sse_encode_bool(self != null, serializer);
@@ -4400,6 +4744,43 @@ sse_encode_String(self.trashBatchId, serializer);
 serializer.buffer.putUint8(self); }
 
 @protected void sse_encode_unit(void self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+ }
+
+@protected void sse_encode_update_check_dto(UpdateCheckDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_update_check_state_dto(self.state, serializer);
+sse_encode_opt_box_autoadd_update_info_dto(self.info, serializer);
+sse_encode_CastedPrimitive_i_64(self.checkedAt, serializer);
+sse_encode_opt_String(self.reason, serializer);
+ }
+
+@protected void sse_encode_update_check_state_dto(UpdateCheckStateDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.index, serializer); }
+
+@protected void sse_encode_update_download_status_dto(UpdateDownloadStatusDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.index, serializer); }
+
+@protected void sse_encode_update_info_dto(UpdateInfoDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_String(self.version, serializer);
+sse_encode_String(self.releasedAt, serializer);
+sse_encode_list_String(self.notes, serializer);
+sse_encode_CastedPrimitive_i_64(self.size, serializer);
+sse_encode_bool(self.forced, serializer);
+ }
+
+@protected void sse_encode_update_install_kind_dto(UpdateInstallKindDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.index, serializer); }
+
+@protected void sse_encode_update_install_outcome_dto(UpdateInstallOutcomeDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_update_install_kind_dto(self.kind, serializer);
+ }
+
+@protected void sse_encode_update_progress_dto(UpdateProgressDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_String(self.downloadId, serializer);
+sse_encode_update_download_status_dto(self.status, serializer);
+sse_encode_CastedPrimitive_i_64(self.downloadedBytes, serializer);
+sse_encode_CastedPrimitive_i_64(self.totalBytes, serializer);
+sse_encode_CastedPrimitive_i_64(self.speedBytesPerSecond, serializer);
+sse_encode_opt_box_autoadd_transfer_failure_dto(self.error, serializer);
  }
 
 @protected void sse_encode_upload_outcome_dto(UploadOutcomeDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
