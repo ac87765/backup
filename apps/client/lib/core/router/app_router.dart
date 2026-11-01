@@ -53,12 +53,18 @@ GoRouter buildAppRouter({
         case AuthStage.initializing:
         case AuthStage.failure:
           return path == '/splash' ? null : '/splash';
+        // “关于”只有版本与更新信息，不需要登录：托盘的“有新版本”在未登录时也
+        // 要能打开它。
         case AuthStage.login:
-          return path == '/login' ? null : '/login';
+          return path == '/login' || _isAboutPage(state.uri) ? null : '/login';
         case AuthStage.unlock:
-          return path == '/unlock' ? null : '/unlock';
+          return path == '/unlock' || _isAboutPage(state.uri)
+              ? null
+              : '/unlock';
         case AuthStage.pending:
-          return path == '/pending' ? null : '/pending';
+          return path == '/pending' || _isAboutPage(state.uri)
+              ? null
+              : '/pending';
         case AuthStage.ready:
           if (needsOnboarding?.call() ?? false) {
             return path == '/onboarding' ? null : '/onboarding';
@@ -122,6 +128,10 @@ GoRouter buildAppRouter({
       ),
     ],
   );
+}
+
+bool _isAboutPage(Uri uri) {
+  return uri.path == '/settings' && uri.queryParameters['tab'] == 'about';
 }
 
 SettingsTab _settingsTab(String? name) {

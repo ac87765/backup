@@ -360,6 +360,33 @@ void main() {
     expect(find.byKey(const Key('login-title')), findsNothing);
   });
 
+  testWidgets('未登录时托盘能打开关于查看新版本，其他设置仍要先登录', (tester) async {
+    setTestWindow(tester, const Size(1280, 800));
+    final harness = _harness(bridge: FakeNativeBridge());
+    await pumpApp(tester, harness);
+    expect(find.byKey(const Key('login-title')), findsOneWidget);
+
+    harness.bridge.updateCheckResult = _available();
+    await _check(tester, harness);
+    final router = ProviderScope.containerOf(
+      tester.element(find.byType(EncryptedBackupApp)),
+      listen: false,
+    ).read(routerProvider);
+
+    router.go('/settings?tab=about');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('login-title')), findsNothing);
+    expect(find.text('有新版本'), findsOneWidget);
+    expect(find.byKey(const Key('update-download')), findsOneWidget);
+    expect(find.text('通用'), findsNothing);
+    expect(find.text('账号'), findsNothing);
+    expect(find.text('安全与隐私说明'), findsNothing);
+
+    router.go('/settings');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('login-title')), findsOneWidget);
+  });
+
   testWidgets('无法获取更新信息时不提示横幅', (tester) async {
     setTestWindow(tester, const Size(1280, 800));
     final harness = _harness();

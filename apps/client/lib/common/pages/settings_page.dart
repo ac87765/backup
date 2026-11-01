@@ -47,10 +47,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final tokens = DesktopTokens.of(context);
     final auth = ref.watch(authControllerProvider);
     final config = ref.watch(appConfigProvider).value;
+    // 未登录、未解锁或待审核时只能看“关于”：其他标签都依赖账号。
+    final aboutOnly = switch (auth.stage) {
+      AuthStage.login || AuthStage.unlock || AuthStage.pending => true,
+      _ => false,
+    };
+    final tab = aboutOnly ? SettingsTab.about : _tab;
     return AppWindowScaffold(
       width: DesktopMetrics.settingsWindowWidth,
       height: DesktopMetrics.settingsWindowHeight,
-      title: '设置',
+      title: aboutOnly ? '关于' : '设置',
       onClose: () {
         if (context.canPop()) {
           context.pop();
@@ -71,31 +77,33 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _TabItem(
-                  label: '通用',
-                  icon: LucideIcons.sliders,
-                  selected: _tab == SettingsTab.general,
-                  onTap: () => setState(() => _tab = SettingsTab.general),
-                ),
-                const SizedBox(height: 2),
-                _TabItem(
-                  label: '安全',
-                  icon: LucideIcons.shield,
-                  selected: _tab == SettingsTab.security,
-                  onTap: () => setState(() => _tab = SettingsTab.security),
-                ),
-                const SizedBox(height: 2),
-                _TabItem(
-                  label: '账号',
-                  icon: LucideIcons.user,
-                  selected: _tab == SettingsTab.account,
-                  onTap: () => setState(() => _tab = SettingsTab.account),
-                ),
-                const SizedBox(height: 2),
+                if (!aboutOnly) ...[
+                  _TabItem(
+                    label: '通用',
+                    icon: LucideIcons.sliders,
+                    selected: tab == SettingsTab.general,
+                    onTap: () => setState(() => _tab = SettingsTab.general),
+                  ),
+                  const SizedBox(height: 2),
+                  _TabItem(
+                    label: '安全',
+                    icon: LucideIcons.shield,
+                    selected: tab == SettingsTab.security,
+                    onTap: () => setState(() => _tab = SettingsTab.security),
+                  ),
+                  const SizedBox(height: 2),
+                  _TabItem(
+                    label: '账号',
+                    icon: LucideIcons.user,
+                    selected: tab == SettingsTab.account,
+                    onTap: () => setState(() => _tab = SettingsTab.account),
+                  ),
+                  const SizedBox(height: 2),
+                ],
                 _TabItem(
                   label: '关于',
                   icon: LucideIcons.info,
-                  selected: _tab == SettingsTab.about,
+                  selected: tab == SettingsTab.about,
                   onTap: () => setState(() => _tab = SettingsTab.about),
                 ),
               ],
@@ -104,7 +112,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-              child: switch (_tab) {
+              child: switch (tab) {
                 SettingsTab.general => _GeneralPanel(tokens: tokens),
                 SettingsTab.security => _SecurityPanel(
                   tokens: tokens,
@@ -121,7 +129,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 SettingsTab.about => _AboutPanel(
                   tokens: tokens,
                   config: config,
-                  onOpenSecurity: () => context.go('/security'),
+                  // 安全与隐私页在登录之后才能打开。
+                  onOpenSecurity: aboutOnly
+                      ? null
+                      : () => context.go('/security'),
                   onOpenLicenses: _showLicenses,
                 ),
               },
@@ -685,7 +696,7 @@ class _AboutPanel extends ConsumerWidget {
 
   final DesktopTokens tokens;
   final AppConfig? config;
-  final VoidCallback onOpenSecurity;
+  final VoidCallback? onOpenSecurity;
   final VoidCallback onOpenLicenses;
 
   @override
@@ -747,12 +758,13 @@ class _AboutPanel extends ConsumerWidget {
                   ? null
                   : () => openUpdateDownloadPage(context, ref),
             ),
-            TokensButton(
-              label: '安全与隐私说明',
-              icon: LucideIcons.shield,
-              variant: TokensButtonVariant.ghost,
-              onPressed: onOpenSecurity,
-            ),
+            if (onOpenSecurity != null)
+              TokensButton(
+                label: '安全与隐私说明',
+                icon: LucideIcons.shield,
+                variant: TokensButtonVariant.ghost,
+                onPressed: onOpenSecurity,
+              ),
             TokensButton(
               label: '开源许可',
               variant: TokensButtonVariant.ghost,

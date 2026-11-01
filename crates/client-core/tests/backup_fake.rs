@@ -214,6 +214,8 @@ struct FakeState {
     mutate_path_on_first_put: Mutex<Option<PathBuf>>,
     lock_client_on_first_put: Mutex<Option<Client>>,
     flip_probe_on_first_put: Mutex<Option<Arc<FakeProbe>>>,
+    /// 第一个 PUT 在这里等待放行；取走后为 `None`，测试据此知道上传已开始。
+    hold_first_put: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
     trashed: Mutex<HashSet<Uuid>>,
     requests: Mutex<u64>,
     quota_bytes: Mutex<i64>,
@@ -260,6 +262,7 @@ impl FakeState {
             mutate_path_on_first_put: Mutex::new(None),
             lock_client_on_first_put: Mutex::new(None),
             flip_probe_on_first_put: Mutex::new(None),
+            hold_first_put: Mutex::new(None),
             trashed: Mutex::new(HashSet::new()),
             requests: Mutex::new(0),
             quota_bytes: Mutex::new(10 * 1024 * 1024 * 1024),
@@ -669,6 +672,10 @@ async fn put_object(
     AxumPath((id, idx)): AxumPath<(Uuid, u32)>,
     body: Bytes,
 ) -> Response {
+    let hold = state.hold_first_put.lock().unwrap().take();
+    if let Some(hold) = hold {
+        let _ = hold.acquire().await;
+    }
     if let Some(status) = *state.reject_puts_with_status.lock().unwrap() {
         return status.into_response();
     }
@@ -3243,6 +3250,92 @@ async fn wechat_snapshot_network_error_waits_for_retry_interval() {
     let after = wait_for_requests_above(&h.state, baseline).await;
     assert!(after > baseline);
     wait_for_db_status(&h.engine, BackupFolderStatus::IdleOk).await;
+    h.engine.stop().await;
+}
+
+async fn database_statuses(engine: &BackupEngine) -> Vec<Option<BackupFolderStatus>> {
+    engine
+        .list_wechat_accounts()
+        .await
+        .unwrap()
+        .iter()
+        .flat_map(|account| account.categories.iter())
+        .filter(|category| category.category == WechatCategory::Databases)
+        .map(|category| category.status)
+        .collect()
+}
+
+/// 账号按顺序逐个快照：解锁后，排队中的账号不能还显示“需要解锁”。
+#[tokio::test]
+async fn wechat_queued_account_stops_showing_needs_unlock_after_unlock() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    add_second_snapshot_account(&documents);
+    let h = harness_full_with(
+        false,
+        Duration::from_millis(50),
+        Duration::from_secs(60),
+        Some(documents.clone()),
+        Arc::new(FakeProbe::new(false)),
+        Duration::from_millis(50),
+    )
+    .await;
+    let locator = WechatLocator::with_system_locations(Arc::new(FakeWechatLocations {
+        documents: Some(documents.clone()),
+    }));
+    for account in &locator.discover(&[]).await.unwrap() {
+        h.engine
+            .set_wechat_categories(account, &[WechatCategory::Databases])
+            .await
+            .unwrap();
+    }
+    let hold = Arc::new(tokio::sync::Semaphore::new(0));
+    *h.state.hold_first_put.lock().unwrap() = Some(hold.clone());
+    h.client.lock().unwrap();
+
+    h.engine.start().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while database_statuses(&h.engine).await
+            != [
+                Some(BackupFolderStatus::NeedsUnlock),
+                Some(BackupFolderStatus::NeedsUnlock),
+            ]
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("未解锁时两个账号都应显示需要解锁");
+
+    h.client.unlock(PASSWORD).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while h.state.hold_first_put.lock().unwrap().is_some() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("解锁后第一个账号应开始上传");
+
+    // 第一个账号卡在上传中，第二个账号还在排队。
+    let statuses = database_statuses(&h.engine).await;
+    assert!(
+        !statuses.contains(&Some(BackupFolderStatus::NeedsUnlock)),
+        "已解锁后不应再显示需要解锁：{statuses:?}"
+    );
+
+    hold.add_permits(1);
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while database_statuses(&h.engine).await
+            != [
+                Some(BackupFolderStatus::IdleOk),
+                Some(BackupFolderStatus::IdleOk),
+            ]
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("两个账号都应完成快照");
     h.engine.stop().await;
 }
 

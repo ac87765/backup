@@ -1259,6 +1259,19 @@ impl BackupEngine {
         Ok(())
     }
 
+    /// 解锁后把快照状态从“需要解锁”改为“正在检查”。账号是逐个快照的，轮到之前
+    /// 不会更新状态；不清掉的话，排队的账号会一直误显示需要解锁。
+    fn clear_snapshot_needs_unlock(&self) {
+        if let Ok(mut runtime) = self.inner.runtime.lock() {
+            for snapshot in runtime.snapshots.values_mut() {
+                if snapshot.status == BackupFolderStatus::NeedsUnlock {
+                    snapshot.status = BackupFolderStatus::Scanning;
+                    snapshot.pause_reason = None;
+                }
+            }
+        }
+    }
+
     fn set_snapshot_state(
         &self,
         key: &SnapshotKey,
@@ -3149,6 +3162,7 @@ async fn run_scheduler(
             was_locked = true;
         } else if was_locked {
             was_locked = false;
+            engine.clear_snapshot_needs_unlock();
             if let Err(error) = engine.scan_all_now().await {
                 tracing::warn!(code = error.code(), "解锁后继续备份失败");
             }
