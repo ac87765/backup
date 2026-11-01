@@ -1,0 +1,39 @@
+[package]
+name = "release-tool"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# 发布工具只在维护者电脑上运行，不发布到 crates.io。
+publish = false
+description = "客户端发布工具：生成签名密钥、生成/签名/校验 latest.json"
+
+# 依赖理由（AGENTS.md 要求逐个说明；全部为 Cargo.lock 中已有版本，不新增外部 crate）：
+# - client-core：发布清单类型、严格校验、验签与版本比较的唯一实现，避免工具与
+#   客户端出现两套格式规则。
+# - base64：私钥种子、公钥与签名的标准 Base64 编解码（与 deploy/release-signing.pub 一致）。
+# - ed25519-dalek：Ed25519 签名（RustCrypto 生态；客户端验签使用同一实现）。
+# - getrandom：keygen 用操作系统 CSPRNG 生成 32 字节种子（AGENTS.md 禁止弱随机源）。
+# - hex：把 SHA-256 摘要编码为清单要求的小写十六进制。
+# - semver：校验标签版本与“新版本必须更高”；与 client-core 使用同一 crate。
+# - serde_json：清单读写（字段顺序由 client-core 的结构体声明顺序固定）。
+# - sha2：计算安装包 SHA-256（与 crypto-core 使用的版本一致）。
+# - subtle：安装包哈希比较使用常量时间实现（AGENTS.md 硬性规则）。
+# - zeroize：私钥种子与读入的 Base64 文本离开作用域时清零。
+# - tempfile（dev）：集成测试的临时目录。
+[dependencies]
+base64 = "0.22"
+client-core = { version = "0.1.0", path = "../client-core" }
+ed25519-dalek = "2"
+getrandom = "0.2"
+hex = "0.4"
+semver = "1"
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

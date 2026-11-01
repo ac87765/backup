@@ -48,6 +48,11 @@ caddy version
 
 step "目录与脚本：$DEST"
 install -d -m 700 "$DEST" "$DEST/db-backups"
+# 客户端下载目录：root 拥有、755，由发布脚本写入，Caddy 直接读取（D4）。
+# Caddy 在 Debian 上以 caddy 用户运行，需要穿过 /opt/backup 才能读到 downloads；
+# 父目录设为 711（可穿越、不可列出），其余文件仍是 600/644。
+install -d -o root -g root -m 755 "$DEST/downloads"
+chmod 711 "$DEST"
 install -m 644 "$SRC/compose.yml" "$DEST/compose.yml"
 for script in db-backup.sh restore-db.sh upgrade.sh rollback.sh get-link.sh; do
   install -m 755 "$SRC/$script" "$DEST/$script"

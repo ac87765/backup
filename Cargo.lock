@@ -3453,6 +3453,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "release-tool"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "client-core",
+ "ed25519-dalek",
+ "getrandom 0.2.17",
+ "hex",
+ "semver",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "tempfile",
+ "zeroize",
+]
+
+[[package]]
 name = "reqsign-aliyun-oss"
 version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

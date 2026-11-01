@@ -10,10 +10,10 @@
 
 ## 1. 发布基础设施
 
-- [ ] 1.1 `release-tool`（Rust 小工具）：生成密钥对、签名清单、验签；`deploy/release-signing.pub`
-- [ ] 1.2 `deploy/release-client.ps1`：取回标签 CI 产物、生成并签名 `latest.json`、自检、上传与原子替换、保留 3 个版本
-- [ ] 1.3 Caddyfile 模板 `/downloads/` 静态目录与缓存头；`install.sh` / `upgrade.sh` 创建目录；运维文档
-- [ ] 1.4 测试：清单生成与验签往返、篡改检测、发布脚本的干跑模式
+- [x] 1.1 `release-tool`（Rust 小工具）：生成密钥对、签名清单、验签；`deploy/release-signing.pub`
+- [x] 1.2 `deploy/release-client.ps1`：取回标签 CI 产物、生成并签名 `latest.json`、自检、上传与原子替换、保留 3 个版本
+- [x] 1.3 Caddyfile 模板 `/downloads/` 静态目录与缓存头；`install.sh` / `upgrade.sh` 创建目录；运维文档
+- [x] 1.4 测试：清单生成与验签往返、篡改检测、发布脚本的干跑模式
 
 ## 2. 客户端更新（Rust + Flutter）
 

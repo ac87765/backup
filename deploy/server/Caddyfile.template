@@ -16,6 +16,26 @@
 https://{{SITE_HOST}} {
 	{{TLS_BLOCK}}
 	encode zstd gzip
+
+	# 客户端下载（add-client-releases D4）：Caddy 直接读取 /opt/backup/downloads，
+	# 不经过应用容器。handle_path 会去掉 /downloads 前缀，root 下是
+	# latest.json、latest.json.sig 与 <版本>/安装包。
+	# - 清单与签名必须每次回源：no-cache；
+	# - 版本目录内文件名含版本号、内容不可变：长期缓存；
+	# - 安装包强制下载（浏览器不内联打开）。
+	# 应用的 CSP 等安全头只作用于反向代理的响应；下载由 Caddy 直接提供，
+	# 不经过应用，因此不会被这些头影响。
+	handle_path /downloads/* {
+		root * /opt/backup/downloads
+		@manifest path /latest.json /latest.json.sig
+		header @manifest Cache-Control "no-cache"
+		@versioned path_regexp ^/[0-9]+\.[0-9]+\.[0-9]+/.*$
+		header @versioned Cache-Control "public, max-age=31536000, immutable"
+		@installer path *.exe *.dmg
+		header @installer Content-Disposition "attachment"
+		file_server
+	}
+
 	reverse_proxy 127.0.0.1:8080
 }
 

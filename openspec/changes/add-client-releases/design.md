@@ -29,8 +29,8 @@
       { "version": "0.1.0", "released_at": "2026-11-01T10:00:00Z", "notes": ["首个版本"] }
     ],
     "platforms": {
-      "windows-x64": { "file": "加密备份-0.2.0-windows-x64.exe", "size": 15400000, "sha256": "<64 hex>" },
-      "macos-universal": { "file": "加密备份-0.2.0-macos.dmg", "size": 38500000, "sha256": "<64 hex>" }
+      "windows-x64": { "file": "EncryptedBackup-0.2.0-windows-x64.exe", "size": 15400000, "sha256": "<64 hex>" },
+      "macos-universal": { "file": "EncryptedBackup-0.2.0-macos.dmg", "size": 38500000, "sha256": "<64 hex>" }
     }
   }
   ```

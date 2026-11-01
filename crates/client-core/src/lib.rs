@@ -27,6 +27,8 @@ mod state;
 mod transfer;
 
 pub mod error;
+/// 发布清单验签与版本判断（不受 `desktop` feature 限制）。
+pub mod release;
 
 pub use client::{
     Account, AccountStatus, Client, ClientBuilder, Clock, KdfParamsView, SleepFuture, SystemClock,

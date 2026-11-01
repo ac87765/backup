@@ -6,6 +6,7 @@ members = [
     "crates/client-core-desktop-tests",
     "crates/crypto-core",
     "crates/crypto-wasm",
+    "crates/release-tool",
     "crates/server",
 ]
 

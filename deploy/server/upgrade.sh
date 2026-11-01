@@ -11,6 +11,10 @@ set -euo pipefail
 target="${1:?用法：upgrade.sh <镜像包.tar.gz | 镜像名:标签>}"
 cd /opt/backup
 
+# 客户端下载目录（D4）：升级时幂等创建；Caddy 以 caddy 用户运行，父目录需可穿越。
+install -d -o root -g root -m 755 /opt/backup/downloads
+chmod 711 /opt/backup
+
 if [ -f "$target" ]; then
   echo "== 加载镜像包：$target"
   loaded=$(gunzip -c "$target" | docker load | sed -n 's/^Loaded image: //p' | tail -n1)

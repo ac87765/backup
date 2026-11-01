@@ -21,8 +21,10 @@ OSS 的 bucket、RAM 最小权限与 CORS 配置见 [deploy/oss/README.md](../os
 | `db-backup.sh` / `restore-db.sh` | 数据库备份（每天 03:30，保留 14 天）/ 恢复 |
 | `get-link.sh` | 未配置 SMTP 时取验证邮件链接 |
 
-服务器上的目录 `/opt/backup`（权限 700）：`compose.yml`、脚本、`.env`（数据库密码与当前镜像）、
-`backup.env`（应用配置与密钥）、`db-backups/`、`.previous-image`（回滚用）。
+服务器上的目录 `/opt/backup`（权限 711：Caddy 以 `caddy` 用户运行，需要穿越到
+`downloads/` 读取客户端安装包；目录不可列出）：`compose.yml`、脚本、`.env`（数据库密码与当前镜像）、
+`backup.env`（应用配置与密钥）、`db-backups/`、`.previous-image`（回滚用）、
+`downloads/`（客户端发布目录，root 拥有、755）。
 `.env` 与 `backup.env` 只存在服务器上，权限 600，永远不进仓库。
 
 ## 前置条件
@@ -73,6 +75,87 @@ SERVER=root@<host> SSH_KEY=~/.ssh/<key> deploy/server/release.sh
 90 秒内未就绪会自动回滚到之前的镜像并报错退出。
 
 发布前建议确认该提交在 GitHub CI 上全部通过。
+
+## 客户端发布（Windows / macOS）
+
+客户端更新由维护者电脑上的离线 Ed25519 私钥签名，服务器只保存安装包、清单与签名。
+完整流程与设计见 `openspec/changes/add-client-releases/design.md` 的 D2/D3。
+
+前提：
+
+- 维护者 Windows 电脑安装 PowerShell 7、Rust 1.98.1、GitHub CLI 与 OpenSSH；
+  先运行 `gh auth login`，并能用 SSH 密钥以 root 登录服务器。
+- 签名私钥在 `%USERPROFILE%\.backup-release\release-signing.key`（32 字节种子的
+  标准 Base64），权限仅当前用户；**私钥不得放进仓库、CI、服务器或日志**。
+  请另做离线备份（U 盘 / 密码管理器）。仓库里的 `deploy/release-signing.pub`
+  是公钥，`client-core` 内置同一份。
+- 标签 `vX.Y.Z` 已推送，且 `.github/workflows/client.yml` 的 Windows / macOS
+  两个 job 都成功（脚本只接受该标签最近一次成功运行）。
+- `/opt/backup/downloads` 由 `install.sh` / `upgrade.sh` 创建（root、755）；
+  Caddy 的 `/downloads/*` 直接提供该目录，`latest.json` 与 `.sig` 不缓存。
+
+发布（在仓库根目录）：
+
+```powershell
+# 更新说明文件 UTF-8，每行一条
+pwsh deploy/release-client.ps1 -Tag v0.1.0 -Notes .\notes-0.1.0.txt
+
+# 可选参数：最低支持版本（默认继承上一份清单）、服务器、SSH 密钥、自检公钥
+pwsh deploy/release-client.ps1 -Tag v0.2.0 -Notes .\notes-0.2.0.txt -MinSupported 0.1.0
+pwsh deploy/release-client.ps1 -Tag v0.2.0 -Notes .\notes-0.2.0.txt `
+  -Server root@120.79.245.99 -SshKey ~/.ssh/id_dsh
+```
+
+脚本做的事：校验标签与本地私钥位置 → 用 `gh run list --workflow client.yml
+--branch <标签>` 找到成功运行并 `gh run download` 取回两个安装包 → 按
+`EncryptedBackup-<版本>-windows-x64.exe` / `EncryptedBackup-<版本>-macos.dmg` 改名 →
+从服务器取回上一份 `latest.json`（不存在则按首个版本） → `release-tool
+manifest/sign/verify` 本地自检（验签并重新计算大小与 SHA-256） → 上传
+`/opt/backup/downloads/<版本>/` → 远端 `sha256sum` 复核 → 上传
+`latest.json.tmp` / `latest.json.sig.tmp` → 一条 ssh 命令里先 `mv` sig 再
+`mv` json → 按 semver 只保留最近 3 个版本目录。
+
+DryRun（不连接服务器、不调用 gh）：需要本地两个安装包与测试密钥，`-Previous`
+可提供本地上一份清单；脚本会完整执行生成清单、签名和本地验签，然后只打印远端命令。
+
+```powershell
+cargo run -q -p release-tool --release -- keygen `
+  --out "$env:TEMP\test-release.key" --pub "$env:TEMP\test-release.pub"
+pwsh deploy/release-client.ps1 -Tag v0.1.0 -Notes .\notes.txt `
+  -Artifacts .\fake-installers -Previous .\latest.json `
+  -Key "$env:TEMP\test-release.key" -PublicKey "$env:TEMP\test-release.pub" -DryRun
+```
+
+回滚：
+
+- 脚本不会在本地保留旧 `latest.json`。发布前先备份服务器上的当前清单与签名：
+
+  ```powershell
+  scp root@<host>:/opt/backup/downloads/latest.json .\latest.json.previous
+  scp root@<host>:/opt/backup/downloads/latest.json.sig .\latest.json.sig.previous
+  ```
+
+- 回滚时把上一份清单与签名放回（同样先临时名、再 `mv`）：
+
+  ```bash
+  scp latest.json.previous root@<host>:/opt/backup/downloads/latest.json.tmp
+  scp latest.json.sig.previous root@<host>:/opt/backup/downloads/latest.json.sig.tmp
+  ssh root@<host> "mv -f /opt/backup/downloads/latest.json.sig.tmp /opt/backup/downloads/latest.json.sig && mv -f /opt/backup/downloads/latest.json.tmp /opt/backup/downloads/latest.json"
+  ```
+
+- 客户端有防回滚记录：只接受版本号高于当前版本的清单。回滚只会让**新下载的用户**
+  拿到旧版本；已经升级的客户端不会降级。如果旧清单引用的版本目录已被清理（只保留
+  最近 3 个），需先重新上传该版本安装包。
+
+密钥丢失与轮换：
+
+- 私钥丢失后无法再发布可自动安装的更新。补救方式是生成新密钥，构建一个内置新公钥
+  的客户端版本，通过 GitHub Release / 下载页让用户**手动重装**；旧客户端仍只信任旧
+  公钥，不会自动升级。
+- 轮换时先生成新密钥并离线备份，在客户端版本中内置“当前公钥 + 下一把公钥”
+  （design D2），由旧密钥完成过渡签名；新客户端普及后再切换。当前 `release-tool`
+  只内置一把公钥，轮换后的自检用 `-PublicKey` 指定新公钥，签名用 `-Key` 指定新私钥。
+- `release-tool keygen` 拒绝覆盖已有私钥；生成后不要打印或复制私钥内容。
 
 ## 回滚
 
