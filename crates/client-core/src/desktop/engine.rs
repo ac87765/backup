@@ -1415,6 +1415,12 @@ impl BackupEngine {
         let unlocked = self.inner.client.is_unlocked();
         let paused = settings.paused || self.inner.paused_all.load(Ordering::SeqCst);
 
+        // 放在这里而不是只放在调度器的解锁分支：解锁可能恰好发生在调度器判断锁定
+        // 之后，这一轮检查会直接开始逐个快照。
+        if unlocked {
+            self.clear_snapshot_needs_unlock();
+        }
+
         if cleanup && unlocked {
             let context = self.snapshot_context(&settings);
             for account in accounts.values() {
