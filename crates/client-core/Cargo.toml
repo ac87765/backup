@@ -35,6 +35,13 @@ description = "原生客户端核心：认证、密钥边界与凭据存储（�
 # - tower（dev）：假服务器与测试工具复用 axum 生态。
 [dependencies]
 crypto-core = { version = "0.1.0", path = "../crypto-core" }
+# 发布清单验签（add-client-releases D1/D3，理由见该 change 的 design.md）：
+# - ed25519-dalek：RustCrypto 生态的 Ed25519，BSD-3-Clause；
+# - base64：签名与公钥的 Base64 编码，已在依赖树中；
+# - semver：版本号解析与比较（防回滚、最低支持版本），已在依赖树中。
+base64 = "0.22"
+ed25519-dalek = "2"
+semver = "1"
 getrandom = "0.2"
 # desktop feature 专用依赖（理由见文件头注释）。
 globset = { version = "0.4", optional = true }
