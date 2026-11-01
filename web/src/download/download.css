@@ -1,0 +1,71 @@
+/*
+ * 公开下载页的少量局部样式：渐变首屏、进入动画与浮动截图。
+ * 其余布局使用 web/src/index.css 中的设计令牌与 Tailwind 工具类。
+ */
+
+.download-page {
+  overflow-x: clip;
+}
+
+.download-hero {
+  background:
+    radial-gradient(60% 80% at 100% 0%, var(--color-brand-50), transparent 70%),
+    radial-gradient(50% 60% at 0% 100%, #f3f7ff, transparent 70%);
+}
+
+/* 首屏文字依次淡入上移（320ms，间隔 60ms）。 */
+.download-enter > * {
+  animation: download-enter 320ms var(--ease-out) both;
+}
+
+.download-enter > *:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.download-enter > *:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+.download-enter > *:nth-child(4) {
+  animation-delay: 180ms;
+}
+
+@keyframes download-enter {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+/* 客户端截图：轻微透视 + 7 秒缓慢浮动 8px。 */
+.download-shot {
+  transform: perspective(1400px) rotateY(-8deg) rotateX(3deg);
+  animation: download-float 7s ease-in-out infinite;
+}
+
+@keyframes download-float {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -8px;
+  }
+}
+
+@media (max-width: 767px) {
+  .download-shot {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .download-enter > *,
+  .download-shot {
+    animation: none;
+  }
+}

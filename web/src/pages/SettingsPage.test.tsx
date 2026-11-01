@@ -68,4 +68,13 @@ describe('账号设置页', () => {
     await user.click(screen.getByRole('tab', { name: '登录设备' }))
     expect(await screen.findByText('没有活跃会话')).toBeVisible()
   })
+
+  it('提供桌面客户端下载入口', () => {
+    renderSettings('/settings')
+
+    expect(screen.getByTestId('settings-download-client')).toHaveAttribute(
+      'href',
+      '/download',
+    )
+  })
 })

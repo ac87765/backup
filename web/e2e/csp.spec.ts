@@ -32,6 +32,7 @@ test('真实服务端返回严格 CSP 且所有公开页面没有 CSP 违规', a
     '/register',
     '/reset',
     '/security',
+    '/download',
     '/verify-email',
     '/',
   ]) {

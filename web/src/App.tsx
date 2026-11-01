@@ -15,6 +15,7 @@ import { AdminLayout, RequireAdmin } from './admin/AdminLayout'
 import { AdminOverviewPage } from './admin/AdminOverviewPage'
 import { AdminSettingsPage } from './admin/AdminSettingsPage'
 import { AdminUsersPage } from './admin/AdminUsersPage'
+import { DownloadPage } from './download/DownloadPage'
 import { FilesPage } from './pages/FilesPage'
 import { LoginPage } from './pages/LoginPage'
 import { PendingPage } from './pages/PendingPage'
@@ -181,13 +182,25 @@ function AppRoutes() {
 function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <UsageProvider>
-          <ToastProvider>
-            <AppRoutes />
-          </ToastProvider>
-        </UsageProvider>
-      </AuthProvider>
+      <Routes>
+        {/*
+         * 公开下载页不挂 AuthProvider：不恢复会话、不创建 crypto worker，
+         * 也不会因为未登录被重定向到登录页。已登录时同样可以直接访问。
+         */}
+        <Route path="/download" element={<DownloadPage />} />
+        <Route
+          path="*"
+          element={
+            <AuthProvider>
+              <UsageProvider>
+                <ToastProvider>
+                  <AppRoutes />
+                </ToastProvider>
+              </UsageProvider>
+            </AuthProvider>
+          }
+        />
+      </Routes>
     </BrowserRouter>
   )
 }

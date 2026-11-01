@@ -70,6 +70,11 @@ export function LoginPage() {
               了解加密方式
             </Link>
           </p>
+          <p>
+            <Link to="/download" className="text-brand-600 hover:underline">
+              下载桌面客户端
+            </Link>
+          </p>
         </div>
       }
     >

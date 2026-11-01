@@ -30,6 +30,14 @@ function renderLogin(login: WorkerApi['login']) {
 }
 
 describe('登录页', () => {
+  it('底部提供下载桌面客户端入口', () => {
+    renderLogin(vi.fn())
+
+    expect(
+      screen.getByRole('link', { name: '下载桌面客户端' }),
+    ).toHaveAttribute('href', '/download')
+  })
+
   it('密码错误时在表单顶部显示错误，密码框保持可编辑且按钮恢复可用', async () => {
     const user = userEvent.setup()
     const login = vi.fn().mockRejectedValue(new Error('邮箱或密码错误'))
