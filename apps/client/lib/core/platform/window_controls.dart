@@ -5,8 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 ///
 /// - [auth]：登录 / 解锁 / 待审核 / 启动页，880×560，不可调整大小、不可最大化；
 /// - [onboarding]：首次引导，760×720，不可调整大小；
-/// - [main]：主界面，1280×800（记住上次主窗口尺寸），可调整，最小 960×600。
-enum WindowMode { auth, onboarding, main }
+/// - [main]：主界面，1280×800（记住上次主窗口尺寸），可调整，最小 960×600；
+/// - [forced]：强制更新阻断页，初始 880×560，可调整大小（设计稿显示最大化）。
+enum WindowMode { auth, onboarding, main, forced }
 
 /// 当前窗口模式，标题栏据此决定是否显示最大化按钮。
 class WindowModeController extends Notifier<WindowMode> {

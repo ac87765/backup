@@ -24,6 +24,7 @@ GoRouter buildAppRouter({
   List<RouteBase> extraRoutes = const <RouteBase>[],
   AuthStage Function()? authStage,
   bool Function()? needsOnboarding,
+  bool Function()? forcedUpdate,
   Listenable? refreshListenable,
 }) {
   final visibleDestinations =
@@ -39,11 +40,15 @@ GoRouter buildAppRouter({
     initialLocation: '/splash',
     refreshListenable: refreshListenable,
     redirect: (context, state) {
+      final path = state.uri.path;
+      // 强制更新优先于认证守卫：登录前后都只能停在阻断页。
+      if (forcedUpdate?.call() ?? false) {
+        return path == '/forced-update' ? null : '/forced-update';
+      }
       final stage = authStage?.call();
       if (stage == null) {
-        return null;
+        return path == '/forced-update' ? '/files' : null;
       }
-      final path = state.uri.path;
       switch (stage) {
         case AuthStage.initializing:
         case AuthStage.failure:
@@ -65,6 +70,7 @@ GoRouter buildAppRouter({
               path == '/login' ||
               path == '/unlock' ||
               path == '/pending' ||
+              path == '/forced-update' ||
               path == '/') {
             return '/files';
           }
@@ -81,7 +87,9 @@ GoRouter buildAppRouter({
       ),
       GoRoute(
         path: '/settings',
-        builder: (context, state) => const SettingsPage(),
+        builder: (context, state) => SettingsPage(
+          initialTab: _settingsTab(state.uri.queryParameters['tab']),
+        ),
       ),
       ...extraRoutes,
       ShellRoute(
@@ -114,4 +122,13 @@ GoRouter buildAppRouter({
       ),
     ],
   );
+}
+
+SettingsTab _settingsTab(String? name) {
+  return switch (name) {
+    'security' => SettingsTab.security,
+    'account' => SettingsTab.account,
+    'about' => SettingsTab.about,
+    _ => SettingsTab.general,
+  };
 }

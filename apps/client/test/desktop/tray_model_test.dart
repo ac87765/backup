@@ -70,6 +70,41 @@ void main() {
     expect(model.statusLabel, '备份遇到问题');
   });
 
+  test('有新版本时托盘菜单显示可点击的版本项', () {
+    final model = trayMenuModelFor(
+      _summary(BackupSummaryStatusKindDto.allBackedUp),
+      update: const TrayUpdateEntry.available('0.2.0'),
+    );
+    expect(model.update?.label, '有新版本 0.2.0…');
+    expect(model.update?.enabled, isTrue);
+  });
+
+  test('下载中托盘菜单显示百分比并禁用', () {
+    final model = trayMenuModelFor(
+      _summary(BackupSummaryStatusKindDto.allBackedUp),
+      update: const TrayUpdateEntry.downloading(62),
+    );
+    expect(model.update?.label, '正在下载更新 62%');
+    expect(model.update?.enabled, isFalse);
+  });
+
+  test('强制更新时禁用暂停/恢复并提示需要更新', () {
+    final model = trayMenuModelFor(
+      _summary(BackupSummaryStatusKindDto.allBackedUp),
+      backupBlocked: true,
+    );
+    expect(model.pauseResumeEnabled, isFalse);
+    expect(model.statusLabel, '需要更新后才能继续使用');
+    expect(model.update, isNull);
+  });
+
+  test('没有更新时不生成托盘更新项', () {
+    final model = trayMenuModelFor(
+      _summary(BackupSummaryStatusKindDto.allBackedUp),
+    );
+    expect(model.update, isNull);
+  });
+
   test('图标资源路径', () {
     expect(
       trayIconAsset(TrayIconState.needsUnlock, macOS: false),

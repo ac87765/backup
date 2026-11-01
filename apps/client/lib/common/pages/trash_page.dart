@@ -6,6 +6,7 @@ import '../../core/clock.dart';
 import '../../core/format/format.dart';
 import '../../core/rust/models.dart';
 import '../../core/theme/design_tokens.dart';
+import '../../desktop/widgets/update_banner.dart';
 import '../dialogs/confirm_dialog.dart';
 import '../state/trash_controller.dart';
 import '../widgets/controls.dart';
@@ -49,6 +50,7 @@ class TrashPage extends ConsumerWidget {
             ],
           ),
         ),
+        const UpdateBanner(),
         Expanded(child: _body(context, ref, state)),
       ],
     );

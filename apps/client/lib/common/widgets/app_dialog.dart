@@ -15,6 +15,7 @@ class TokensDialogShell extends StatelessWidget {
     this.headerIconBackground,
     this.width = DesktopMetrics.dialogWidth,
     this.onClose,
+    this.showClose = true,
     super.key,
   });
 
@@ -26,6 +27,9 @@ class TokensDialogShell extends StatelessWidget {
   final Color? headerIconBackground;
   final double width;
   final VoidCallback? onClose;
+
+  /// 是否为右上角关闭按钮留位置；确认类对话框按设计稿隐藏。
+  final bool showClose;
 
   @override
   Widget build(BuildContext context) {
@@ -80,12 +84,13 @@ class TokensDialogShell extends StatelessWidget {
                           ),
                         ),
                       ),
-                      TokensIconButton(
-                        icon: LucideIcons.x,
-                        tooltip: '关闭',
-                        onPressed:
-                            onClose ?? () => Navigator.of(context).maybePop(),
-                      ),
+                      if (showClose)
+                        TokensIconButton(
+                          icon: LucideIcons.x,
+                          tooltip: '关闭',
+                          onPressed:
+                              onClose ?? () => Navigator.of(context).maybePop(),
+                        ),
                     ],
                   ),
                 ),

@@ -14,6 +14,7 @@ import '../dialogs/wechat_note_dialog.dart';
 import '../dialogs/wechat_restore_dialog.dart';
 import '../state/wechat_controller.dart';
 import '../state/wechat_status.dart';
+import '../widgets/update_banner.dart';
 
 /// “微信备份”页面（design/desktop/wechat.html 的五个状态）。
 ///
@@ -49,6 +50,7 @@ class _WechatBackupPageState extends ConsumerState<WechatBackupPage> {
     return Column(
       children: [
         _Toolbar(state: state),
+        const UpdateBanner(),
         Expanded(child: _Content(state: state)),
       ],
     );

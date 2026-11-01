@@ -5,11 +5,12 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/config/app_config.dart';
-import '../../core/platform/external_links.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/rust/models.dart';
 import '../../core/theme/design_tokens.dart';
+import '../../desktop/settings/update_about_card.dart';
 import '../../desktop/startup/startup_service.dart';
+import '../../desktop/widgets/update_actions.dart';
 import '../dialogs/keep_unlocked_dialog.dart';
 import '../state/auth_controller.dart';
 import '../widgets/app_dialog.dart';
@@ -21,14 +22,25 @@ enum SettingsTab { general, security, account, about }
 
 /// 设置窗口（settings.html 的 general / security / confirm / about 状态）。
 class SettingsPage extends ConsumerStatefulWidget {
-  const SettingsPage({super.key});
+  const SettingsPage({this.initialTab = SettingsTab.general, super.key});
+
+  /// 从托盘 / 横幅进入“关于”时使用；默认“通用”。
+  final SettingsTab initialTab;
 
   @override
   ConsumerState<SettingsPage> createState() => _SettingsPageState();
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
-  SettingsTab _tab = SettingsTab.general;
+  late SettingsTab _tab = widget.initialTab;
+
+  @override
+  void didUpdateWidget(SettingsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialTab != widget.initialTab) {
+      _tab = widget.initialTab;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +59,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         }
       },
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
             width: DesktopMetrics.settingsTabsWidth,
@@ -110,7 +123,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   config: config,
                   onOpenSecurity: () => context.go('/security'),
                   onOpenLicenses: _showLicenses,
-                  onDownload: _downloadLatest,
                 ),
               },
             ),
@@ -131,14 +143,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   Future<void> _logout() async {
     await ref.read(authControllerProvider.notifier).logout();
-  }
-
-  Future<void> _downloadLatest() async {
-    if (releasesUrl.isEmpty) {
-      _showMessage('尚未配置下载地址');
-      return;
-    }
-    await ref.read(externalLinkOpenerProvider)(Uri.parse(releasesUrl));
   }
 
   Future<void> _showLicenses() {
@@ -172,12 +176,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ],
         );
       },
-    );
-  }
-
-  void _showMessage(String message) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 }
@@ -677,23 +675,23 @@ class _AccountPanel extends StatelessWidget {
   }
 }
 
-class _AboutPanel extends StatelessWidget {
+class _AboutPanel extends ConsumerWidget {
   const _AboutPanel({
     required this.tokens,
     required this.config,
     required this.onOpenSecurity,
     required this.onOpenLicenses,
-    required this.onDownload,
   });
 
   final DesktopTokens tokens;
   final AppConfig? config;
   final VoidCallback onOpenSecurity;
   final VoidCallback onOpenLicenses;
-  final VoidCallback onDownload;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final version = ref.watch(appVersionProvider);
+    final commit = ref.watch(gitCommitProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -727,27 +725,27 @@ class _AboutPanel extends StatelessWidget {
           ],
         ),
         SizedBox(height: tokens.space4),
-        _DescriptionRow(tokens: tokens, label: '版本', value: appVersion),
-        _DescriptionRow(
-          tokens: tokens,
-          label: '提交',
-          value: gitCommit,
-          mono: true,
-        ),
+        _DescriptionRow(tokens: tokens, label: '当前版本', value: version),
+        _DescriptionRow(tokens: tokens, label: '提交', value: commit, mono: true),
         _DescriptionRow(
           tokens: tokens,
           label: '服务器',
           value: config?.serverUrl ?? '—',
         ),
+        const UpdateAboutCard(),
         SizedBox(height: tokens.space5),
         Wrap(
           spacing: tokens.space2,
           runSpacing: tokens.space2,
           children: [
             TokensButton(
-              label: '下载最新版本',
+              key: const Key('about-download-page'),
+              label: '下载页面',
               icon: LucideIcons.externalLink,
-              onPressed: releasesUrl.isEmpty ? null : onDownload,
+              variant: TokensButtonVariant.ghost,
+              onPressed: config == null
+                  ? null
+                  : () => openUpdateDownloadPage(context, ref),
             ),
             TokensButton(
               label: '安全与隐私说明',

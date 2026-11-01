@@ -9,8 +9,11 @@ import 'package:encrypted_backup_client/common/pages/settings_page.dart';
 import 'package:encrypted_backup_client/common/state/file_browser_controller.dart';
 import 'package:encrypted_backup_client/common/state/file_drop_controller.dart';
 import 'package:encrypted_backup_client/common/state/transfer_controller.dart';
+import 'package:encrypted_backup_client/core/platform/window_controls.dart';
 import 'package:encrypted_backup_client/core/rust/models.dart';
+import 'package:encrypted_backup_client/desktop/pages/forced_update_page.dart';
 import 'package:encrypted_backup_client/desktop/settings/local_settings.dart';
+import 'package:encrypted_backup_client/desktop/state/update_controller.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -610,6 +613,163 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
     skip: !_fontsExist,
   );
+
+  testWidgets(
+    'update-banner',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final harness = _updateBannerHarness();
+      await pumpApp(tester, harness);
+      await tester.tap(find.text('备份文件夹').first);
+      await tester.pumpAndSettle();
+      await _checkUpdate(tester);
+      await capture(tester, 'update-banner-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'update-available',
+    (tester) async {
+      setTestWindow(tester, const Size(760, 600));
+      final harness = _updateSettingsHarness();
+      harness.bridge.updateCheckResult = _updateAvailable();
+      await tester.pumpWidget(
+        harness.page(const SettingsPage(initialTab: SettingsTab.about)),
+      );
+      await tester.pumpAndSettle();
+      await _checkUpdate(tester);
+      await capture(tester, 'update-available-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'update-downloading',
+    (tester) async {
+      setTestWindow(tester, const Size(760, 600));
+      final harness = _updateSettingsHarness();
+      harness.bridge.updateCheckResult = _updateAvailable();
+      await tester.pumpWidget(
+        harness.page(const SettingsPage(initialTab: SettingsTab.about)),
+      );
+      await tester.pumpAndSettle();
+      await _checkUpdate(tester);
+      await _startUpdateDownload(tester);
+      harness.bridge.emitUpdateProgress(
+        const UpdateProgressDto(
+          downloadId: 'update-1',
+          status: UpdateDownloadStatusDto.downloading,
+          downloadedBytes: 9600000,
+          totalBytes: 15400000,
+          speedBytesPerSecond: 2100000,
+        ),
+      );
+      await tester.pump();
+      await capture(tester, 'update-downloading-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'update-restart',
+    (tester) async {
+      setTestWindow(tester, const Size(760, 600));
+      final harness = _updateSettingsHarness();
+      harness.bridge.updateCheckResult = _updateAvailable();
+      await tester.pumpWidget(
+        harness.page(const SettingsPage(initialTab: SettingsTab.about)),
+      );
+      await tester.pumpAndSettle();
+      await _checkUpdate(tester);
+      harness.bridge.emitUpdateProgress(
+        const UpdateProgressDto(
+          downloadId: 'update-1',
+          status: UpdateDownloadStatusDto.completed,
+          downloadedBytes: 15400000,
+          totalBytes: 15400000,
+          speedBytesPerSecond: 0,
+        ),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+      await capture(tester, 'update-restart-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'update-failed',
+    (tester) async {
+      setTestWindow(tester, const Size(760, 600));
+      final harness = _updateSettingsHarness();
+      harness.bridge.updateCheckResult = _updateAvailable();
+      await tester.pumpWidget(
+        harness.page(const SettingsPage(initialTab: SettingsTab.about)),
+      );
+      await tester.pumpAndSettle();
+      await _checkUpdate(tester);
+      harness.bridge.emitUpdateProgress(
+        const UpdateProgressDto(
+          downloadId: 'update-1',
+          status: UpdateDownloadStatusDto.failed,
+          downloadedBytes: 9600000,
+          totalBytes: 15400000,
+          speedBytesPerSecond: 0,
+          error: TransferFailureDto(
+            code: 'integrity_error',
+            message: '下载的文件不完整或被篡改，已删除，没有运行。可能是网络中断或被安全软件修改。',
+          ),
+        ),
+      );
+      await tester.pump();
+      await capture(tester, 'update-failed-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'update-latest',
+    (tester) async {
+      setTestWindow(tester, const Size(760, 600));
+      final harness = _updateSettingsHarness();
+      harness.bridge.updateCheckResult = const UpdateCheckDto(
+        state: UpdateCheckStateDto.upToDate,
+        checkedAt: 1761905100,
+      );
+      await tester.pumpWidget(
+        harness.page(const SettingsPage(initialTab: SettingsTab.about)),
+      );
+      await tester.pumpAndSettle();
+      await _checkUpdate(tester);
+      await capture(tester, 'update-latest-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'update-forced',
+    (tester) async {
+      setTestWindow(tester, const Size(880, 560));
+      final harness = _updateSettingsHarness();
+      harness.bridge.updateCheckResult = _updateAvailable(forced: true);
+      await tester.pumpWidget(
+        harness.page(const ForcedUpdatePage(), windowMode: WindowMode.forced),
+      );
+      await tester.pumpAndSettle();
+      await _checkUpdate(tester);
+      await tester.pump();
+      await capture(tester, 'update-forced-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
 }
 
 WechatCategoryInfoDto _wechatInfo(
@@ -1161,4 +1321,84 @@ TransferProgressDto _progress(
     totalChunks: 0,
     error: error,
   );
+}
+
+const List<String> _updateNotesShort = <String>['新增微信备份', '托盘菜单与退出修复'];
+
+const List<String> _updateNotesLong = <String>[
+  '新增微信备份：聊天文件、图片视频与聊天记录快照，可恢复到微信',
+  '托盘菜单与退出修复',
+];
+
+UpdateCheckDto _updateAvailable({
+  bool forced = false,
+  List<String> notes = _updateNotesLong,
+}) {
+  return UpdateCheckDto(
+    state: UpdateCheckStateDto.available,
+    info: UpdateInfoDto(
+      version: '0.2.0',
+      releasedAt: '2026-11-05T10:00:00Z',
+      notes: notes,
+      size: 15400000,
+      forced: forced,
+    ),
+    checkedAt: 1761905100,
+  );
+}
+
+TestHarness _updateSettingsHarness() {
+  return TestHarness(
+    bridge: FakeNativeBridge(account: testAccount(), storedSession: true),
+  );
+}
+
+TestHarness _updateBannerHarness() {
+  final bridge = FakeNativeBridge(account: testAccount(), storedSession: true);
+  bridge.backupFolders = <BackupFolderDto>[
+    _goldenBackupFolder(
+      id: 'work',
+      name: '工作资料',
+      localPath: r'D:\工作资料',
+      lastBackupAt: _at(10, 0),
+    ),
+    _goldenBackupFolder(
+      id: 'photos',
+      name: '照片',
+      localPath: r'C:\Users\tlj\Pictures',
+      lastBackupAt: _at(9, 0),
+    ),
+  ];
+  bridge.backupStates = <BackupFolderStateDto>[
+    _goldenBackupState('work', lastBackupAt: _at(10, 0)),
+    _goldenBackupState('photos', lastBackupAt: _at(9, 0)),
+  ];
+  bridge.summary = BackupSummaryDto(
+    kind: BackupSummaryStatusKindDto.allBackedUp,
+    done: 0,
+    total: 0,
+    unreadableCount: 0,
+    folderCount: 3,
+    lastCheckedAt: _at(10, 5),
+  );
+  bridge.updateCheckResult = _updateAvailable(notes: _updateNotesShort);
+  return TestHarness(bridge: bridge);
+}
+
+Future<void> _checkUpdate(WidgetTester tester) async {
+  final container = ProviderScope.containerOf(
+    tester.element(find.byKey(const Key('golden-root'))),
+    listen: false,
+  );
+  await container.read(updateControllerProvider.notifier).checkNow();
+  await tester.pump();
+}
+
+Future<void> _startUpdateDownload(WidgetTester tester) async {
+  final container = ProviderScope.containerOf(
+    tester.element(find.byKey(const Key('golden-root'))),
+    listen: false,
+  );
+  await container.read(updateControllerProvider.notifier).startDownload();
+  await tester.pump();
 }

@@ -10,6 +10,8 @@ import '../../core/platform/external_links.dart';
 import '../../core/platform/window_controls.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/rust/models.dart';
+import '../lifecycle/app_quit.dart';
+import '../state/update_controller.dart';
 import 'tray_model.dart';
 
 /// 系统托盘 / 菜单栏（design D7 第一版）：
@@ -32,6 +34,7 @@ class TrayService {
   // 打开 / 关闭事件），所以监听器挂在每个菜单项上，重建菜单时一并移除。
   final List<(MenuItem, ListenerId?)> _items = <(MenuItem, ListenerId?)>[];
   BackupSummaryDto? _summary;
+  UpdateState? _updateState;
   AuthStage _stage = AuthStage.initializing;
   bool _started = false;
   bool _available = false;
@@ -59,6 +62,9 @@ class TrayService {
     _tray = tray;
     _menu = menu;
     _available = true;
+    _ref
+        .read(appQuitProvider)
+        .registerTrayHider(() => _tray?.setVisible(false));
     tray.setTooltip('加密备份');
     tray.setVisible(true);
     if (Platform.isMacOS) {
@@ -112,6 +118,21 @@ class TrayService {
     }
   }
 
+  /// 更新状态变化（由 provider 的 listen 调用）。
+  void updateUpdate(UpdateState state) {
+    final wasForced = _updateState?.forced ?? false;
+    _updateState = state;
+    if (state.forced && !wasForced) {
+      // 强制更新页不允许继续备份；引擎若已启动则停掉，之后也不再启动。
+      _engineStarted = false;
+      unawaited(_stopEngine());
+    } else if (!state.forced && wasForced && _stage == AuthStage.ready) {
+      // 清单更新后不再强制（例如服务器修正了最低支持版本）时恢复备份。
+      unawaited(_ensureEngine());
+    }
+    _render();
+  }
+
   Future<void> _stopEngine() async {
     try {
       await _ref.read(nativeBridgeProvider).backupStop();
@@ -122,7 +143,7 @@ class TrayService {
 
   /// 登录 / 解锁后启动备份引擎（幂等）；关闭窗口后备份继续依赖它。
   Future<void> _ensureEngine() async {
-    if (_engineStarted) {
+    if (_engineStarted || (_updateState?.forced ?? false)) {
       return;
     }
     _engineStarted = true;
@@ -149,6 +170,8 @@ class TrayService {
       final model = trayMenuModelFor(
         _summary,
         needsUnlock: _stage == AuthStage.unlock,
+        backupBlocked: _updateState?.forced ?? false,
+        update: _updateEntry(),
       );
       final tray = _tray;
       if (tray != null) {
@@ -164,6 +187,28 @@ class TrayService {
     } finally {
       _rendering = false;
     }
+  }
+
+  TrayUpdateEntry? _updateEntry() {
+    final state = _updateState;
+    if (state == null || state.forced) {
+      return null;
+    }
+    final info = state.info;
+    if (info == null) {
+      return null;
+    }
+    final progress = state.download;
+    if (state.phase == UpdatePhase.downloading) {
+      final percent = progress != null && progress.totalBytes > 0
+          ? (progress.downloadedBytes * 100 / progress.totalBytes)
+                .floor()
+                .clamp(0, 100)
+                .toInt()
+          : 0;
+      return TrayUpdateEntry.downloading(percent);
+    }
+    return TrayUpdateEntry.available(info.version);
   }
 
   void _renderMenu(TrayMenuModel model) {
@@ -182,6 +227,17 @@ class TrayService {
       enabled: model.pauseResumeEnabled,
       action: model.pauseResumeLabel == '恢复备份' ? _resumeBackup : _pauseBackup,
     );
+    final update = model.update;
+    if (update != null) {
+      menu.addSeparator();
+      _addItem(
+        menu,
+        update.label,
+        enabled: update.enabled,
+        action: update.enabled ? _openAbout : null,
+      );
+      menu.addSeparator();
+    }
     _addItem(menu, '打开应用', action: _openApp);
     _addItem(menu, '打开网页版', action: _openWeb);
     _addItem(menu, '设置', action: _openSettings);
@@ -243,6 +299,11 @@ class TrayService {
     _ref.read(routerProvider).go('/settings');
   }
 
+  Future<void> _openAbout() async {
+    await _ref.read(windowControlsProvider).showAndFocus();
+    _ref.read(routerProvider).go('/settings?tab=about');
+  }
+
   Future<void> _pauseBackup() async {
     try {
       await _ref.read(nativeBridgeProvider).backupPauseAll();
@@ -259,28 +320,7 @@ class TrayService {
     }
   }
 
-  Future<void> _quit() async {
-    // 先让用户立刻看到“已退出”：隐藏托盘图标与窗口，再在后台收尾。
-    // 停止引擎会关闭文件监听（Windows 上要等监听线程结束，约 1–2 秒），
-    // 不能让托盘图标和窗口在这段时间里看起来像卡住。
-    _tray?.setVisible(false);
-    final controls = _ref.read(windowControlsProvider);
-    try {
-      await controls.hideToTray();
-    } catch (_) {
-      // 隐藏失败不影响退出。
-    }
-    try {
-      // 最多等 3 秒：引擎停不下来也必须能退出。
-      await _ref
-          .read(nativeBridgeProvider)
-          .backupStop()
-          .timeout(const Duration(seconds: 3));
-    } catch (_) {
-      // 退出前尽量停止引擎；失败也要允许退出。
-    }
-    await controls.quit();
-  }
+  Future<void> _quit() => _ref.read(appQuitProvider).quit();
 
   void dispose() {
     unawaited(_events?.cancel());
@@ -303,6 +343,10 @@ class TrayService {
 
 final trayServiceProvider = Provider<TrayService>((ref) {
   final service = TrayService(ref);
+  service.updateUpdate(ref.read(updateControllerProvider));
+  ref.listen(updateControllerProvider, (previous, next) {
+    service.updateUpdate(next);
+  });
   service.updateAuth(ref.read(authControllerProvider).stage);
   ref.listen(authControllerProvider, (previous, next) {
     service.updateAuth(next.stage);

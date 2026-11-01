@@ -101,8 +101,8 @@ class _TitleBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final controls = ref.read(windowControlsProvider);
     final mode = ref.watch(windowModeProvider);
-    // 认证 / 引导窗口不可最大化：Windows 只显示最小化与关闭（login.html 注释）。
-    final canMaximize = mode == WindowMode.main;
+    // 认证 / 引导窗口不可最大化；强制更新页与主界面可最大化。
+    final canMaximize = mode == WindowMode.main || mode == WindowMode.forced;
     final height = isMac
         ? DesktopMetrics.titleBarHeightMac
         : DesktopMetrics.titleBarHeight;

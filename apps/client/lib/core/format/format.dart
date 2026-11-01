@@ -33,6 +33,23 @@ String formatBytes(int? bytes) {
   return '$text ${units[unit]}';
 }
 
+/// 安装包大小：更新稿固定显示到 0.1 MB（`15.4 MB`），与普通文件列表的
+/// “10 MB 以上取整”规则不同。
+String formatPackageBytes(int? bytes) {
+  if (bytes == null || bytes <= 0) {
+    return formatBytes(bytes);
+  }
+  const megabyte = 1000000;
+  if (bytes >= megabyte && bytes < 1000 * megabyte) {
+    var text = (bytes / megabyte).toStringAsFixed(1);
+    if (text.endsWith('.0')) {
+      text = text.substring(0, text.length - 2);
+    }
+    return '$text MB';
+  }
+  return formatBytes(bytes);
+}
+
 /// 传输速度，例如 `8.4 MB/s`。
 String formatSpeed(double? bytesPerSecond) {
   if (bytesPerSecond == null || bytesPerSecond <= 0) {

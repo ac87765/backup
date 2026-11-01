@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/theme/design_tokens.dart';
+import '../../desktop/widgets/update_banner.dart';
 import '../state/auth_controller.dart';
 import '../widgets/controls.dart';
 
@@ -35,6 +36,7 @@ class SecurityPage extends ConsumerWidget {
             ),
           ),
         ),
+        const UpdateBanner(),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),

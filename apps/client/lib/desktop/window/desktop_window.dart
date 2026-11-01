@@ -73,6 +73,25 @@ class DesktopWindowControls implements WindowControls {
             DesktopMetrics.onboardingWindowHeight,
           ),
         );
+      case WindowMode.forced:
+        if (await windowManager.isMaximized()) {
+          await windowManager.unmaximize();
+        }
+        await windowManager.setMinimumSize(
+          const Size(
+            DesktopMetrics.authWindowWidth,
+            DesktopMetrics.authWindowHeight,
+          ),
+        );
+        await windowManager.setResizable(true);
+        await windowManager.setMaximizable(true);
+        await windowManager.setSize(
+          const Size(
+            DesktopMetrics.authWindowWidth,
+            DesktopMetrics.authWindowHeight,
+          ),
+        );
+        await windowManager.center();
       case WindowMode.main:
         await windowManager.setMinimumSize(
           const Size(

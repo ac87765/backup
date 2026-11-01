@@ -13,6 +13,7 @@ import '../../core/rust/models.dart';
 import '../../core/theme/design_tokens.dart';
 import '../../desktop/dialogs/restore_folder_dialog.dart';
 import '../../desktop/transfer/drop_router.dart';
+import '../../desktop/widgets/update_banner.dart';
 import '../dialogs/folder_picker_dialog.dart';
 import '../dialogs/name_dialog.dart';
 import '../dialogs/versions_dialog.dart';
@@ -68,6 +69,7 @@ class _FilesPageState extends ConsumerState<FilesPage> {
           onCreateFolder: _createFolder,
           onRefresh: () => ref.read(fileBrowserProvider.notifier).refresh(),
         ),
+        const UpdateBanner(),
         Expanded(
           child: DropTarget(
             key: const Key('file-drop-target'),

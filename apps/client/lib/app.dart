@@ -12,6 +12,7 @@ import 'core/router/destinations.dart';
 import 'core/theme/app_theme.dart';
 import 'desktop/router/desktop_routes.dart';
 import 'desktop/settings/local_settings.dart';
+import 'desktop/state/update_controller.dart';
 
 /// 当前构建是否启用桌面专有路由（Windows / macOS）。
 ///
@@ -41,11 +42,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         ? <RouteBase>[backupFoldersRoute, wechatRoute]
         : const <RouteBase>[],
     extraRoutes: isDesktopPlatform
-        ? <RouteBase>[onboardingRoute]
+        ? <RouteBase>[forcedUpdateRoute, onboardingRoute]
         : const <RouteBase>[],
     authStage: () => ref.read(authControllerProvider).stage,
     needsOnboarding: isDesktopPlatform
         ? () => ref.read(onboardingRequiredProvider)
+        : null,
+    forcedUpdate: isDesktopPlatform
+        ? () => ref.read(updateControllerProvider).forced
         : null,
     refreshListenable: refresh,
   );
@@ -59,15 +63,23 @@ class _AuthRefresh extends ChangeNotifier {
     _settings = ref.listen(localSettingsProvider, (previous, next) {
       notifyListeners();
     });
+    _update = ref.listen(updateControllerProvider, (previous, next) {
+      // 只在“强制更新”切换时重算路由，下载进度等变化不触发导航。
+      if ((previous?.forced ?? false) != next.forced) {
+        notifyListeners();
+      }
+    });
   }
 
   late final ProviderSubscription<AuthState> _auth;
   late final ProviderSubscription<LocalSettings?> _settings;
+  late final ProviderSubscription<UpdateState> _update;
 
   @override
   void dispose() {
     _auth.close();
     _settings.close();
+    _update.close();
     super.dispose();
   }
 }

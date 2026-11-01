@@ -122,7 +122,8 @@ pub async fn update_cancel_download() -> Result<(), BridgeError> {
 /// 先停止备份引擎，再启动安装：
 /// - Windows：静默安装包已在后台启动，Dart 收到 `started` 后应立即退出应用；
 /// - macOS：替换脚本已启动，会等待当前进程退出后替换并重新打开；
-/// - 无法写入当前应用目录时打开 `.dmg` 并返回 `manual_install_required`。
+/// - 无法写入当前应用目录时返回 `manual_install_required`，由界面调用
+///   `update_open_dmg` 打开 `.dmg`。
 pub async fn update_install() -> Result<UpdateInstallOutcomeDto, BridgeError> {
     let app = state::app()?;
     let verified = {
@@ -132,23 +133,19 @@ pub async fn update_install() -> Result<UpdateInstallOutcomeDto, BridgeError> {
             .ok_or_else(|| BridgeError::new("no_verified_update", "请先下载并校验更新"))?
     };
 
-    app.engine.stop().await;
-
+    // 安装程序 / 替换脚本都会等当前进程退出，所以启动成功后再停引擎；
+    // 启动失败或需要手动安装时应用继续运行，备份不能因此停下。
     match client_core::desktop::update::install_update(&verified) {
-        Ok(InstallOutcome::Started) => Ok(UpdateInstallOutcomeDto {
-            kind: UpdateInstallKindDto::Started,
-        }),
-        Ok(InstallOutcome::ManualInstallRequired) => {
-            let opened = client_core::desktop::update::open_update_dmg(&verified).is_ok();
-            Err(BridgeError::new(
-                "manual_install_required",
-                if opened {
-                    "无法替换当前应用，安装包已打开，请把“加密备份”拖到“应用程序”"
-                } else {
-                    "无法替换当前应用，请打开下载页面手动安装"
-                },
-            ))
+        Ok(InstallOutcome::Started) => {
+            app.engine.stop().await;
+            Ok(UpdateInstallOutcomeDto {
+                kind: UpdateInstallKindDto::Started,
+            })
         }
+        Ok(InstallOutcome::ManualInstallRequired) => Err(BridgeError::new(
+            "manual_install_required",
+            "无法替换当前应用，请把“加密备份”拖到“应用程序”",
+        )),
         Err(error) => Err(error.into()),
     }
 }

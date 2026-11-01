@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/theme/design_tokens.dart';
+import '../../desktop/widgets/update_banner.dart';
 
 /// 最近：桥接 API 没有跨文件夹“最近文件”接口，这里如实显示占位说明。
 ///
@@ -33,6 +34,7 @@ class RecentPage extends StatelessWidget {
             ),
           ),
         ),
+        const UpdateBanner(),
         Expanded(
           child: Center(
             child: ConstrainedBox(

@@ -8,8 +8,10 @@ import 'package:encrypted_backup_client/core/platform/window_controls.dart';
 import 'package:encrypted_backup_client/core/providers/app_providers.dart';
 import 'package:encrypted_backup_client/core/theme/app_theme.dart';
 import 'package:encrypted_backup_client/desktop/onboarding/standard_folders.dart';
+import 'package:encrypted_backup_client/desktop/lifecycle/app_quit.dart';
 import 'package:encrypted_backup_client/desktop/settings/local_settings.dart';
 import 'package:encrypted_backup_client/desktop/startup/startup_service.dart';
+import 'package:encrypted_backup_client/desktop/state/update_controller.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -114,6 +116,46 @@ class FakeWindowControls implements WindowControls {
   }
 }
 
+class FakeAppQuit implements AppQuit {
+  int quitCalls = 0;
+  TrayHider? trayHider;
+
+  @override
+  void registerTrayHider(TrayHider hider) {
+    trayHider = hider;
+  }
+
+  @override
+  Future<void> quit() async {
+    quitCalls += 1;
+  }
+}
+
+/// 可手动触发的更新计时器：测试不留下真实 Timer，也不依赖 24 小时真实时间。
+class FakeUpdateScheduler implements UpdateScheduler {
+  Duration? nextDelay;
+  void Function()? _callback;
+
+  bool get hasPending => _callback != null;
+
+  @override
+  void schedule(Duration delay, void Function() callback) {
+    nextDelay = delay;
+    _callback = callback;
+  }
+
+  @override
+  void cancel() {
+    _callback = null;
+  }
+
+  void fire() {
+    final callback = _callback;
+    _callback = null;
+    callback?.call();
+  }
+}
+
 class MemoryLocalSettingsStore implements LocalSettingsStore {
   MemoryLocalSettingsStore([this.settings = const LocalSettings()]);
 
@@ -177,12 +219,18 @@ class TestHarness {
   final FakeFolderInspector folderInspector = FakeFolderInspector();
   final FakeStartupService startup = FakeStartupService();
   final FakeWindowControls windowControls = FakeWindowControls();
+  final FakeAppQuit appQuit = FakeAppQuit();
+  final FakeUpdateScheduler updateScheduler = FakeUpdateScheduler();
   final MemoryLocalSettingsStore settingsStore;
   final List<StandardFolder> standardFolders;
   final FakeClock clock = FakeClock();
   final List<Uri> openedUris = <Uri>[];
   final Set<String> missingDirectories = <String>{};
   AppConfig config = testConfig;
+
+  /// 与设计稿一致的关于页版本 / 提交；golden 不依赖构建时的 --dart-define。
+  String appVersion = '0.1.0';
+  String gitCommit = '7d82ea1';
 
   /// 与运行测试的主机无关：默认按桌面端（Windows / macOS）构建路由。
   bool desktop = true;
@@ -201,6 +249,10 @@ class TestHarness {
     localSettingsStoreProvider.overrideWith((ref) async => settingsStore),
     startupServiceProvider.overrideWithValue(startup),
     windowControlsProvider.overrideWithValue(windowControls),
+    appQuitProvider.overrideWithValue(appQuit),
+    updateSchedulerProvider.overrideWithValue(updateScheduler),
+    appVersionProvider.overrideWithValue(appVersion),
+    gitCommitProvider.overrideWithValue(gitCommit),
     standardFoldersProvider.overrideWith((ref) async => standardFolders),
     externalLinkOpenerProvider.overrideWithValue((uri) async {
       openedUris.add(uri);

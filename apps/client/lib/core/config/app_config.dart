@@ -14,9 +14,6 @@ const String gitCommit = String.fromEnvironment(
   defaultValue: 'dev',
 );
 
-/// 发布产物地址（可选）；未配置时“关于”页禁用下载按钮。
-const String releasesUrl = String.fromEnvironment('RELEASES_URL');
-
 /// 应用启动配置（服务器地址、本地状态库目录、设备名）。
 ///
 /// - 服务器地址：编译期 `String.fromEnvironment('SERVER_URL')`，缺省为生产

@@ -16,6 +16,7 @@ import '../dialogs/backup_folder_dialog.dart';
 import '../dialogs/restore_folder_dialog.dart';
 import '../state/backup_folder_status.dart';
 import '../state/backup_folders_controller.dart';
+import '../widgets/update_banner.dart';
 
 void _showMessage(BuildContext context, String message) {
   ScaffoldMessenger.maybeOf(context)?.showSnackBar(
@@ -37,6 +38,7 @@ class BackupFoldersPage extends ConsumerWidget {
     return Column(
       children: [
         _Toolbar(state: state),
+        const UpdateBanner(),
         Expanded(child: _Content(state: state)),
       ],
     );

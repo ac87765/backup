@@ -88,6 +88,7 @@ class _WindowModeDriverState extends ConsumerState<WindowModeDriver> {
     return switch (uri.path) {
       '/onboarding' => WindowMode.onboarding,
       '/splash' || '/login' || '/unlock' || '/pending' => WindowMode.auth,
+      '/forced-update' => WindowMode.forced,
       _ => WindowMode.main,
     };
   }
