@@ -78,6 +78,11 @@ FolderStatusView folderStatusView(
             : '备份遇到问题',
         tone: FolderStatusTone.warn,
       );
+    case BackupFolderStatusKindDto.waitingForWechatExit:
+      return const FolderStatusView(
+        label: '等微信退出后备份',
+        tone: FolderStatusTone.paused,
+      );
     case BackupFolderStatusKindDto.idleOk:
     case BackupFolderStatusKindDto.paused:
     case BackupFolderStatusKindDto.needsUnlock:

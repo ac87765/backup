@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 
-            // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+            // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 
             
@@ -65,15 +65,17 @@ final String relativePath;
 final BackupActivityKindDto kind;
 final int occurredAt;
 final String? message;
+/// 微信来源的账号 + 类别；普通备份文件夹为 `None`。
+final WechatEventSourceDto? wechat;
 
-                const BackupActivityDto({required this.id ,required this.folderId ,required this.relativePath ,required this.kind ,required this.occurredAt ,this.message ,});
+                const BackupActivityDto({required this.id ,required this.folderId ,required this.relativePath ,required this.kind ,required this.occurredAt ,this.message ,this.wechat ,});
 
 
 
 
 
         @override
-        int get hashCode => id.hashCode^folderId.hashCode^relativePath.hashCode^kind.hashCode^occurredAt.hashCode^message.hashCode;
+        int get hashCode => id.hashCode^folderId.hashCode^relativePath.hashCode^kind.hashCode^occurredAt.hashCode^message.hashCode^wechat.hashCode;
 
 
 
@@ -82,7 +84,7 @@ final String? message;
             identical(this, other) ||
             other is BackupActivityDto &&
                 runtimeType == other.runtimeType
-                && id == other.id&& folderId == other.folderId&& relativePath == other.relativePath&& kind == other.kind&& occurredAt == other.occurredAt&& message == other.message;
+                && id == other.id&& folderId == other.folderId&& relativePath == other.relativePath&& kind == other.kind&& occurredAt == other.occurredAt&& message == other.message&& wechat == other.wechat;
 
             }
 
@@ -199,15 +201,17 @@ class BackupFolderStateDto  {
 final BackupFolderStatusDto status;
 final BackupPauseReasonDto? pauseReason;
 final int? lastBackupAt;
+/// 微信来源的账号 + 类别；普通备份文件夹为 `None`。
+final WechatEventSourceDto? wechat;
 
-                const BackupFolderStateDto({required this.folderId ,required this.status ,this.pauseReason ,this.lastBackupAt ,});
+                const BackupFolderStateDto({required this.folderId ,required this.status ,this.pauseReason ,this.lastBackupAt ,this.wechat ,});
 
 
 
 
 
         @override
-        int get hashCode => folderId.hashCode^status.hashCode^pauseReason.hashCode^lastBackupAt.hashCode;
+        int get hashCode => folderId.hashCode^status.hashCode^pauseReason.hashCode^lastBackupAt.hashCode^wechat.hashCode;
 
 
 
@@ -216,7 +220,7 @@ final int? lastBackupAt;
             identical(this, other) ||
             other is BackupFolderStateDto &&
                 runtimeType == other.runtimeType
-                && folderId == other.folderId&& status == other.status&& pauseReason == other.pauseReason&& lastBackupAt == other.lastBackupAt;
+                && folderId == other.folderId&& status == other.status&& pauseReason == other.pauseReason&& lastBackupAt == other.lastBackupAt&& wechat == other.wechat;
 
             }
 
@@ -255,6 +259,8 @@ uploading,
 paused,
 error,
 needsUnlock,
+/// 聊天记录数据库：等微信退出后再快照（design D3）。
+waitingForWechatExit,
                     ;
                     
                 }
@@ -369,15 +375,17 @@ class BackupSettingsDto  {
                 final bool includeHidden;
 final int? uploadLimitBytesPerSecond;
 final bool paused;
+/// 每个微信账号保留的完整数据库快照份数（1–10，默认 3）。
+final int wechatSnapshotRetention;
 
-                const BackupSettingsDto({required this.includeHidden ,this.uploadLimitBytesPerSecond ,required this.paused ,});
+                const BackupSettingsDto({required this.includeHidden ,this.uploadLimitBytesPerSecond ,required this.paused ,required this.wechatSnapshotRetention ,});
 
 
 
 
 
         @override
-        int get hashCode => includeHidden.hashCode^uploadLimitBytesPerSecond.hashCode^paused.hashCode;
+        int get hashCode => includeHidden.hashCode^uploadLimitBytesPerSecond.hashCode^paused.hashCode^wechatSnapshotRetention.hashCode;
 
 
 
@@ -386,7 +394,7 @@ final bool paused;
             identical(this, other) ||
             other is BackupSettingsDto &&
                 runtimeType == other.runtimeType
-                && includeHidden == other.includeHidden&& uploadLimitBytesPerSecond == other.uploadLimitBytesPerSecond&& paused == other.paused;
+                && includeHidden == other.includeHidden&& uploadLimitBytesPerSecond == other.uploadLimitBytesPerSecond&& paused == other.paused&& wechatSnapshotRetention == other.wechatSnapshotRetention;
 
             }
 
@@ -905,15 +913,17 @@ final UploadOutcomeDto? upload;
 final DownloadOutcomeDto? download;
 final FolderUploadOutcomeDto? folderUpload;
 final FolderDownloadOutcomeDto? folderDownload;
+/// 微信恢复任务的结果。
+final WechatRestoreOutcomeDto? wechatRestore;
 
-                const TransferResultDto({required this.transferId ,required this.status ,this.error ,this.upload ,this.download ,this.folderUpload ,this.folderDownload ,});
+                const TransferResultDto({required this.transferId ,required this.status ,this.error ,this.upload ,this.download ,this.folderUpload ,this.folderDownload ,this.wechatRestore ,});
 
 
 
 
 
         @override
-        int get hashCode => transferId.hashCode^status.hashCode^error.hashCode^upload.hashCode^download.hashCode^folderUpload.hashCode^folderDownload.hashCode;
+        int get hashCode => transferId.hashCode^status.hashCode^error.hashCode^upload.hashCode^download.hashCode^folderUpload.hashCode^folderDownload.hashCode^wechatRestore.hashCode;
 
 
 
@@ -922,7 +932,7 @@ final FolderDownloadOutcomeDto? folderDownload;
             identical(this, other) ||
             other is TransferResultDto &&
                 runtimeType == other.runtimeType
-                && transferId == other.transferId&& status == other.status&& error == other.error&& upload == other.upload&& download == other.download&& folderUpload == other.folderUpload&& folderDownload == other.folderDownload;
+                && transferId == other.transferId&& status == other.status&& error == other.error&& upload == other.upload&& download == other.download&& folderUpload == other.folderUpload&& folderDownload == other.folderDownload&& wechatRestore == other.wechatRestore;
 
             }
 
@@ -1048,4 +1058,413 @@ final String createdAt;
                 && id == other.id&& contentId == other.contentId&& size == other.size&& mtime == other.mtime&& mime == other.mime&& isCurrent == other.isCurrent&& createdAt == other.createdAt;
 
             }
+
+/// 一个微信账号的备份状态。
+class WechatAccountBackupStatusDto  {
+                final String dataRoot;
+final String accountName;
+final WechatVersionDto version;
+final List<WechatCategoryBackupStatusDto> categories;
+final int? lastBackupAt;
+
+                const WechatAccountBackupStatusDto({required this.dataRoot ,required this.accountName ,required this.version ,required this.categories ,this.lastBackupAt ,});
+
+
+
+
+
+        @override
+        int get hashCode => dataRoot.hashCode^accountName.hashCode^version.hashCode^categories.hashCode^lastBackupAt.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatAccountBackupStatusDto &&
+                runtimeType == other.runtimeType
+                && dataRoot == other.dataRoot&& accountName == other.accountName&& version == other.version&& categories == other.categories&& lastBackupAt == other.lastBackupAt;
+
+            }
+
+/// 发现到的微信账号（展示字段 + 本地备注名）。
+class WechatAccountDto  {
+                final String accountName;
+final WechatVersionDto version;
+final String dataRoot;
+final String accountDir;
+final WechatSourceDto source;
+final List<WechatCategoryInfoDto> categories;
+final int totalSizeBytes;
+final int totalFileCount;
+final int? lastModifiedNs;
+final bool isCurrentLoginCandidate;
+final bool hasPhoneMigrationBackup;
+/// 仅保存在本地的备注名。
+final String? note;
+
+                const WechatAccountDto({required this.accountName ,required this.version ,required this.dataRoot ,required this.accountDir ,required this.source ,required this.categories ,required this.totalSizeBytes ,required this.totalFileCount ,this.lastModifiedNs ,required this.isCurrentLoginCandidate ,required this.hasPhoneMigrationBackup ,this.note ,});
+
+
+
+
+
+        @override
+        int get hashCode => accountName.hashCode^version.hashCode^dataRoot.hashCode^accountDir.hashCode^source.hashCode^categories.hashCode^totalSizeBytes.hashCode^totalFileCount.hashCode^lastModifiedNs.hashCode^isCurrentLoginCandidate.hashCode^hasPhoneMigrationBackup.hashCode^note.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatAccountDto &&
+                runtimeType == other.runtimeType
+                && accountName == other.accountName&& version == other.version&& dataRoot == other.dataRoot&& accountDir == other.accountDir&& source == other.source&& categories == other.categories&& totalSizeBytes == other.totalSizeBytes&& totalFileCount == other.totalFileCount&& lastModifiedNs == other.lastModifiedNs&& isCurrentLoginCandidate == other.isCurrentLoginCandidate&& hasPhoneMigrationBackup == other.hasPhoneMigrationBackup&& note == other.note;
+
+            }
+
+/// 只带定位字段的账号引用（设置类别 / 预检 / 立即快照 / 恢复时使用）。
+class WechatAccountRefDto  {
+                final String dataRoot;
+final String accountName;
+final WechatVersionDto version;
+
+                const WechatAccountRefDto({required this.dataRoot ,required this.accountName ,required this.version ,});
+
+
+
+
+
+        @override
+        int get hashCode => dataRoot.hashCode^accountName.hashCode^version.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatAccountRefDto &&
+                runtimeType == other.runtimeType
+                && dataRoot == other.dataRoot&& accountName == other.accountName&& version == other.version;
+
+            }
+
+/// 微信备份首次上传预检。
+class WechatBackupPreflightDto  {
+                final int fileCount;
+final int totalBytes;
+final int uploadBytes;
+final int uploadBytesWithoutImagesAndVideos;
+final int databaseBytes;
+final int excludedCount;
+final int unreadableCount;
+final int? remainingQuotaBytes;
+final bool overQuota;
+
+                const WechatBackupPreflightDto({required this.fileCount ,required this.totalBytes ,required this.uploadBytes ,required this.uploadBytesWithoutImagesAndVideos ,required this.databaseBytes ,required this.excludedCount ,required this.unreadableCount ,this.remainingQuotaBytes ,required this.overQuota ,});
+
+
+
+
+
+        @override
+        int get hashCode => fileCount.hashCode^totalBytes.hashCode^uploadBytes.hashCode^uploadBytesWithoutImagesAndVideos.hashCode^databaseBytes.hashCode^excludedCount.hashCode^unreadableCount.hashCode^remainingQuotaBytes.hashCode^overQuota.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatBackupPreflightDto &&
+                runtimeType == other.runtimeType
+                && fileCount == other.fileCount&& totalBytes == other.totalBytes&& uploadBytes == other.uploadBytes&& uploadBytesWithoutImagesAndVideos == other.uploadBytesWithoutImagesAndVideos&& databaseBytes == other.databaseBytes&& excludedCount == other.excludedCount&& unreadableCount == other.unreadableCount&& remainingQuotaBytes == other.remainingQuotaBytes&& overQuota == other.overQuota;
+
+            }
+
+/// 一个账号内某个类别的备份状态。
+class WechatCategoryBackupStatusDto  {
+                final WechatCategoryDto category;
+final bool selected;
+final BackupFolderStatusDto? status;
+final BackupPauseReasonDto? pauseReason;
+final int? lastBackupAt;
+
+                const WechatCategoryBackupStatusDto({required this.category ,required this.selected ,this.status ,this.pauseReason ,this.lastBackupAt ,});
+
+
+
+
+
+        @override
+        int get hashCode => category.hashCode^selected.hashCode^status.hashCode^pauseReason.hashCode^lastBackupAt.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatCategoryBackupStatusDto &&
+                runtimeType == other.runtimeType
+                && category == other.category&& selected == other.selected&& status == other.status&& pauseReason == other.pauseReason&& lastBackupAt == other.lastBackupAt;
+
+            }
+
+/// 微信备份类别。
+enum WechatCategoryDto {
+                    chatFiles,
+imagesAndVideos,
+databases,
+phoneMigration,
+                    ;
+                    
+                }
+
+/// 一个类别的发现结果。
+class WechatCategoryInfoDto  {
+                final WechatCategoryDto category;
+final int sizeBytes;
+final int fileCount;
+final int? lastModifiedNs;
+final bool exists;
+
+                const WechatCategoryInfoDto({required this.category ,required this.sizeBytes ,required this.fileCount ,this.lastModifiedNs ,required this.exists ,});
+
+
+
+
+
+        @override
+        int get hashCode => category.hashCode^sizeBytes.hashCode^fileCount.hashCode^lastModifiedNs.hashCode^exists.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatCategoryInfoDto &&
+                runtimeType == other.runtimeType
+                && category == other.category&& sizeBytes == other.sizeBytes&& fileCount == other.fileCount&& lastModifiedNs == other.lastModifiedNs&& exists == other.exists;
+
+            }
+
+/// 一份可恢复的数据库快照。
+class WechatDatabaseSnapshotDto  {
+                final String deviceName;
+final String timestamp;
+final int snapshotAt;
+final int totalBytes;
+final int fileCount;
+final bool complete;
+
+                const WechatDatabaseSnapshotDto({required this.deviceName ,required this.timestamp ,required this.snapshotAt ,required this.totalBytes ,required this.fileCount ,required this.complete ,});
+
+
+
+
+
+        @override
+        int get hashCode => deviceName.hashCode^timestamp.hashCode^snapshotAt.hashCode^totalBytes.hashCode^fileCount.hashCode^complete.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatDatabaseSnapshotDto &&
+                runtimeType == other.runtimeType
+                && deviceName == other.deviceName&& timestamp == other.timestamp&& snapshotAt == other.snapshotAt&& totalBytes == other.totalBytes&& fileCount == other.fileCount&& complete == other.complete;
+
+            }
+
+/// 事件流里的微信来源标识（账号 + 类别）。
+class WechatEventSourceDto  {
+                final String accountName;
+final WechatCategoryDto category;
+
+                const WechatEventSourceDto({required this.accountName ,required this.category ,});
+
+
+
+
+
+        @override
+        int get hashCode => accountName.hashCode^category.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatEventSourceDto &&
+                runtimeType == other.runtimeType
+                && accountName == other.accountName&& category == other.category;
+
+            }
+
+/// 云端可恢复的文件类别。
+class WechatRestoreCategoryDto  {
+                final WechatCategoryDto category;
+final int fileCount;
+final int totalBytes;
+final bool available;
+
+                const WechatRestoreCategoryDto({required this.category ,required this.fileCount ,required this.totalBytes ,required this.available ,});
+
+
+
+
+
+        @override
+        int get hashCode => category.hashCode^fileCount.hashCode^totalBytes.hashCode^available.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatRestoreCategoryDto &&
+                runtimeType == other.runtimeType
+                && category == other.category&& fileCount == other.fileCount&& totalBytes == other.totalBytes&& available == other.available;
+
+            }
+
+/// 一次恢复的结果统计。
+class WechatRestoreOutcomeDto  {
+                final String transferId;
+final int restoredFiles;
+final int restoredBytes;
+final int skippedFiles;
+final bool databaseRestored;
+
+                const WechatRestoreOutcomeDto({required this.transferId ,required this.restoredFiles ,required this.restoredBytes ,required this.skippedFiles ,required this.databaseRestored ,});
+
+
+
+
+
+        @override
+        int get hashCode => transferId.hashCode^restoredFiles.hashCode^restoredBytes.hashCode^skippedFiles.hashCode^databaseRestored.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatRestoreOutcomeDto &&
+                runtimeType == other.runtimeType
+                && transferId == other.transferId&& restoredFiles == other.restoredFiles&& restoredBytes == other.restoredBytes&& skippedFiles == other.skippedFiles&& databaseRestored == other.databaseRestored;
+
+            }
+
+/// 开始恢复的请求。
+class WechatRestoreRequestDto  {
+                final String dataRoot;
+final String accountName;
+final WechatVersionDto version;
+final List<WechatCategoryDto> categories;
+final bool restoreDatabase;
+final WechatSnapshotSelectionDto? snapshot;
+
+                const WechatRestoreRequestDto({required this.dataRoot ,required this.accountName ,required this.version ,required this.categories ,required this.restoreDatabase ,this.snapshot ,});
+
+
+
+
+
+        @override
+        int get hashCode => dataRoot.hashCode^accountName.hashCode^version.hashCode^categories.hashCode^restoreDatabase.hashCode^snapshot.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatRestoreRequestDto &&
+                runtimeType == other.runtimeType
+                && dataRoot == other.dataRoot&& accountName == other.accountName&& version == other.version&& categories == other.categories&& restoreDatabase == other.restoreDatabase&& snapshot == other.snapshot;
+
+            }
+
+/// 一次数据库快照尝试的结果。
+enum WechatSnapshotOutcomeDto {
+                    completed,
+unchanged,
+waitingForWechatExit,
+aborted,
+paused,
+needsUnlock,
+                    ;
+                    
+                }
+
+/// 一次数据库快照尝试的统计。
+class WechatSnapshotReportDto  {
+                final WechatSnapshotOutcomeDto outcome;
+final int? snapshotAt;
+final int totalFiles;
+final int uploadedFiles;
+final int uploadedBytes;
+
+                const WechatSnapshotReportDto({required this.outcome ,this.snapshotAt ,required this.totalFiles ,required this.uploadedFiles ,required this.uploadedBytes ,});
+
+
+
+
+
+        @override
+        int get hashCode => outcome.hashCode^snapshotAt.hashCode^totalFiles.hashCode^uploadedFiles.hashCode^uploadedBytes.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatSnapshotReportDto &&
+                runtimeType == other.runtimeType
+                && outcome == other.outcome&& snapshotAt == other.snapshotAt&& totalFiles == other.totalFiles&& uploadedFiles == other.uploadedFiles&& uploadedBytes == other.uploadedBytes;
+
+            }
+
+/// 恢复时选择的快照。
+class WechatSnapshotSelectionDto  {
+                final String deviceName;
+final String timestamp;
+
+                const WechatSnapshotSelectionDto({required this.deviceName ,required this.timestamp ,});
+
+
+
+
+
+        @override
+        int get hashCode => deviceName.hashCode^timestamp.hashCode;
+
+
+
+        @override
+        bool operator ==(Object other) =>
+            identical(this, other) ||
+            other is WechatSnapshotSelectionDto &&
+                runtimeType == other.runtimeType
+                && deviceName == other.deviceName&& timestamp == other.timestamp;
+
+            }
+
+/// 账号目录来源。
+enum WechatSourceDto {
+                    manual,
+registry,
+configFile,
+defaultLocation,
+                    ;
+                    
+                }
+
+/// 微信版本。
+enum WechatVersionDto {
+                    wechat3,
+wechat4,
+                    ;
+                    
+                }
             

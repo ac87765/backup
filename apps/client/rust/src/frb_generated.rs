@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
                     default_rust_auto_opaque = RustAutoOpaqueMoi,
                 );
                 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -66783865;
+                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 412370426;
             
 
 // Section: executor
@@ -631,6 +631,126 @@ let api_local_path = <String>::sse_decode(&mut deserializer);deserializer.end();
                          let output_ok = crate::api::auth::unlock_with_stored_master_key().await?;   std::result::Result::Ok(output_ok)
                     })().await)
                 } })
+            }fn wire__crate__api__wechat__wechat_account_statuses_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_account_statuses", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_account_statuses().await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__wechat__wechat_add_manual_directory_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_add_manual_directory", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_path = <String>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_add_manual_directory(api_path).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__wechat__wechat_clear_note_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_clear_note", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_account = <crate::api::types::WechatAccountRefDto>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_clear_note(api_account).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__wechat__wechat_database_snapshots_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_database_snapshots", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_account = <crate::api::types::WechatAccountRefDto>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_database_snapshots(api_account).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__wechat__wechat_list_accounts_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_list_accounts", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_list_accounts().await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__wechat__wechat_manual_directories_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_manual_directories", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_manual_directories().await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__wechat__wechat_preflight_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_preflight", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_account = <crate::api::types::WechatAccountRefDto>::sse_decode(&mut deserializer);
+let api_categories = <Vec<crate::api::types::WechatCategoryDto>>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_preflight(api_account, api_categories).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__wechat__wechat_remove_manual_directory_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_remove_manual_directory", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_path = <String>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_remove_manual_directory(api_path).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__wechat__wechat_restore_categories_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_restore_categories", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_account = <crate::api::types::WechatAccountRefDto>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_restore_categories(api_account).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__wechat__wechat_set_categories_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_set_categories", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_account = <crate::api::types::WechatAccountRefDto>::sse_decode(&mut deserializer);
+let api_categories = <Vec<crate::api::types::WechatCategoryDto>>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_set_categories(api_account, api_categories).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__wechat__wechat_set_note_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_set_note", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_account = <crate::api::types::WechatAccountRefDto>::sse_decode(&mut deserializer);
+let api_note = <String>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_set_note(api_account, api_note).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__wechat__wechat_snapshot_now_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_snapshot_now", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_account = <crate::api::types::WechatAccountRefDto>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_snapshot_now(api_account).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__wechat__wechat_start_restore_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "wechat_start_restore", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request = <crate::api::types::WechatRestoreRequestDto>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, crate::api::error::BridgeError>((move || async move {
+                         let output_ok = crate::api::wechat::wechat_start_restore(api_request).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
             }
 
 // Section: dart2rust
@@ -701,7 +821,8 @@ let mut var_relativePath = <String>::sse_decode(deserializer);
 let mut var_kind = <crate::api::types::BackupActivityKindDto>::sse_decode(deserializer);
 let mut var_occurredAt = <i64>::sse_decode(deserializer);
 let mut var_message = <Option<String>>::sse_decode(deserializer);
-return crate::api::types::BackupActivityDto{id: var_id, folder_id: var_folderId, relative_path: var_relativePath, kind: var_kind, occurred_at: var_occurredAt, message: var_message};}
+let mut var_wechat = <Option<crate::api::types::WechatEventSourceDto>>::sse_decode(deserializer);
+return crate::api::types::BackupActivityDto{id: var_id, folder_id: var_folderId, relative_path: var_relativePath, kind: var_kind, occurred_at: var_occurredAt, message: var_message, wechat: var_wechat};}
                 }
                 
                 impl SseDecode for crate::api::types::BackupActivityKindDto {
@@ -767,7 +888,8 @@ return crate::api::types::BackupFolderDto{id: var_id, local_path: var_localPath,
 let mut var_status = <crate::api::types::BackupFolderStatusDto>::sse_decode(deserializer);
 let mut var_pauseReason = <Option<crate::api::types::BackupPauseReasonDto>>::sse_decode(deserializer);
 let mut var_lastBackupAt = <Option<i64>>::sse_decode(deserializer);
-return crate::api::types::BackupFolderStateDto{folder_id: var_folderId, status: var_status, pause_reason: var_pauseReason, last_backup_at: var_lastBackupAt};}
+let mut var_wechat = <Option<crate::api::types::WechatEventSourceDto>>::sse_decode(deserializer);
+return crate::api::types::BackupFolderStateDto{folder_id: var_folderId, status: var_status, pause_reason: var_pauseReason, last_backup_at: var_lastBackupAt, wechat: var_wechat};}
                 }
                 
                 impl SseDecode for crate::api::types::BackupFolderStatusDto {
@@ -789,6 +911,7 @@ return crate::api::types::BackupFolderStatusDto{kind: var_kind, done: var_done, 
 3 => crate::api::types::BackupFolderStatusKindDto::Paused,
 4 => crate::api::types::BackupFolderStatusKindDto::Error,
 5 => crate::api::types::BackupFolderStatusKindDto::NeedsUnlock,
+6 => crate::api::types::BackupFolderStatusKindDto::WaitingForWechatExit,
             _ => unreachable!("Invalid variant for BackupFolderStatusKindDto: {}", inner),
         };}
                 }
@@ -847,7 +970,8 @@ return crate::api::types::BackupRunReportDto{folder_id: var_folderId, status: va
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_includeHidden = <bool>::sse_decode(deserializer);
 let mut var_uploadLimitBytesPerSecond = <Option<i64>>::sse_decode(deserializer);
 let mut var_paused = <bool>::sse_decode(deserializer);
-return crate::api::types::BackupSettingsDto{include_hidden: var_includeHidden, upload_limit_bytes_per_second: var_uploadLimitBytesPerSecond, paused: var_paused};}
+let mut var_wechatSnapshotRetention = <i64>::sse_decode(deserializer);
+return crate::api::types::BackupSettingsDto{include_hidden: var_includeHidden, upload_limit_bytes_per_second: var_uploadLimitBytesPerSecond, paused: var_paused, wechat_snapshot_retention: var_wechatSnapshotRetention};}
                 }
                 
                 impl SseDecode for crate::api::types::BackupSummaryDto {
@@ -1078,6 +1202,62 @@ return crate::api::types::KdfParamsDto{algorithm: var_algorithm, memory_kib: var
         return ans_;}
                 }
                 
+                impl SseDecode for Vec<crate::api::types::WechatAccountBackupStatusDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ { ans_.push(<crate::api::types::WechatAccountBackupStatusDto>::sse_decode(deserializer)); }
+        return ans_;}
+                }
+                
+                impl SseDecode for Vec<crate::api::types::WechatAccountDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ { ans_.push(<crate::api::types::WechatAccountDto>::sse_decode(deserializer)); }
+        return ans_;}
+                }
+                
+                impl SseDecode for Vec<crate::api::types::WechatCategoryBackupStatusDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ { ans_.push(<crate::api::types::WechatCategoryBackupStatusDto>::sse_decode(deserializer)); }
+        return ans_;}
+                }
+                
+                impl SseDecode for Vec<crate::api::types::WechatCategoryDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ { ans_.push(<crate::api::types::WechatCategoryDto>::sse_decode(deserializer)); }
+        return ans_;}
+                }
+                
+                impl SseDecode for Vec<crate::api::types::WechatCategoryInfoDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ { ans_.push(<crate::api::types::WechatCategoryInfoDto>::sse_decode(deserializer)); }
+        return ans_;}
+                }
+                
+                impl SseDecode for Vec<crate::api::types::WechatDatabaseSnapshotDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ { ans_.push(<crate::api::types::WechatDatabaseSnapshotDto>::sse_decode(deserializer)); }
+        return ans_;}
+                }
+                
+                impl SseDecode for Vec<crate::api::types::WechatRestoreCategoryDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ { ans_.push(<crate::api::types::WechatRestoreCategoryDto>::sse_decode(deserializer)); }
+        return ans_;}
+                }
+                
                 impl SseDecode for crate::api::types::NodeDto {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_id = <String>::sse_decode(deserializer);
@@ -1169,6 +1349,15 @@ return crate::api::types::NodeSortDto{field: var_field, descending: var_descendi
             }}
                 }
                 
+                impl SseDecode for Option<crate::api::types::BackupFolderStatusDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {if (<bool>::sse_decode(deserializer)) {
+                return Some(<crate::api::types::BackupFolderStatusDto>::sse_decode(deserializer));
+            } else {
+                return None;
+            }}
+                }
+                
                 impl SseDecode for Option<crate::api::types::BackupPauseReasonDto> {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {if (<bool>::sse_decode(deserializer)) {
@@ -1254,6 +1443,33 @@ return crate::api::types::NodeSortDto{field: var_field, descending: var_descendi
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {if (<bool>::sse_decode(deserializer)) {
                 return Some(<crate::api::types::UploadOutcomeDto>::sse_decode(deserializer));
+            } else {
+                return None;
+            }}
+                }
+                
+                impl SseDecode for Option<crate::api::types::WechatEventSourceDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {if (<bool>::sse_decode(deserializer)) {
+                return Some(<crate::api::types::WechatEventSourceDto>::sse_decode(deserializer));
+            } else {
+                return None;
+            }}
+                }
+                
+                impl SseDecode for Option<crate::api::types::WechatRestoreOutcomeDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {if (<bool>::sse_decode(deserializer)) {
+                return Some(<crate::api::types::WechatRestoreOutcomeDto>::sse_decode(deserializer));
+            } else {
+                return None;
+            }}
+                }
+                
+                impl SseDecode for Option<crate::api::types::WechatSnapshotSelectionDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {if (<bool>::sse_decode(deserializer)) {
+                return Some(<crate::api::types::WechatSnapshotSelectionDto>::sse_decode(deserializer));
             } else {
                 return None;
             }}
@@ -1358,7 +1574,8 @@ let mut var_upload = <Option<crate::api::types::UploadOutcomeDto>>::sse_decode(d
 let mut var_download = <Option<crate::api::types::DownloadOutcomeDto>>::sse_decode(deserializer);
 let mut var_folderUpload = <Option<crate::api::types::FolderUploadOutcomeDto>>::sse_decode(deserializer);
 let mut var_folderDownload = <Option<crate::api::types::FolderDownloadOutcomeDto>>::sse_decode(deserializer);
-return crate::api::types::TransferResultDto{transfer_id: var_transferId, status: var_status, error: var_error, upload: var_upload, download: var_download, folder_upload: var_folderUpload, folder_download: var_folderDownload};}
+let mut var_wechatRestore = <Option<crate::api::types::WechatRestoreOutcomeDto>>::sse_decode(deserializer);
+return crate::api::types::TransferResultDto{transfer_id: var_transferId, status: var_status, error: var_error, upload: var_upload, download: var_download, folder_upload: var_folderUpload, folder_download: var_folderDownload, wechat_restore: var_wechatRestore};}
                 }
                 
                 impl SseDecode for crate::api::types::TransferStatusDto {
@@ -1422,6 +1639,188 @@ let mut var_mime = <String>::sse_decode(deserializer);
 let mut var_isCurrent = <bool>::sse_decode(deserializer);
 let mut var_createdAt = <String>::sse_decode(deserializer);
 return crate::api::types::VersionDto{id: var_id, content_id: var_contentId, size: var_size, mtime: var_mtime, mime: var_mime, is_current: var_isCurrent, created_at: var_createdAt};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatAccountBackupStatusDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_dataRoot = <String>::sse_decode(deserializer);
+let mut var_accountName = <String>::sse_decode(deserializer);
+let mut var_version = <crate::api::types::WechatVersionDto>::sse_decode(deserializer);
+let mut var_categories = <Vec<crate::api::types::WechatCategoryBackupStatusDto>>::sse_decode(deserializer);
+let mut var_lastBackupAt = <Option<i64>>::sse_decode(deserializer);
+return crate::api::types::WechatAccountBackupStatusDto{data_root: var_dataRoot, account_name: var_accountName, version: var_version, categories: var_categories, last_backup_at: var_lastBackupAt};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatAccountDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_accountName = <String>::sse_decode(deserializer);
+let mut var_version = <crate::api::types::WechatVersionDto>::sse_decode(deserializer);
+let mut var_dataRoot = <String>::sse_decode(deserializer);
+let mut var_accountDir = <String>::sse_decode(deserializer);
+let mut var_source = <crate::api::types::WechatSourceDto>::sse_decode(deserializer);
+let mut var_categories = <Vec<crate::api::types::WechatCategoryInfoDto>>::sse_decode(deserializer);
+let mut var_totalSizeBytes = <i64>::sse_decode(deserializer);
+let mut var_totalFileCount = <i64>::sse_decode(deserializer);
+let mut var_lastModifiedNs = <Option<i64>>::sse_decode(deserializer);
+let mut var_isCurrentLoginCandidate = <bool>::sse_decode(deserializer);
+let mut var_hasPhoneMigrationBackup = <bool>::sse_decode(deserializer);
+let mut var_note = <Option<String>>::sse_decode(deserializer);
+return crate::api::types::WechatAccountDto{account_name: var_accountName, version: var_version, data_root: var_dataRoot, account_dir: var_accountDir, source: var_source, categories: var_categories, total_size_bytes: var_totalSizeBytes, total_file_count: var_totalFileCount, last_modified_ns: var_lastModifiedNs, is_current_login_candidate: var_isCurrentLoginCandidate, has_phone_migration_backup: var_hasPhoneMigrationBackup, note: var_note};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatAccountRefDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_dataRoot = <String>::sse_decode(deserializer);
+let mut var_accountName = <String>::sse_decode(deserializer);
+let mut var_version = <crate::api::types::WechatVersionDto>::sse_decode(deserializer);
+return crate::api::types::WechatAccountRefDto{data_root: var_dataRoot, account_name: var_accountName, version: var_version};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatBackupPreflightDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_fileCount = <i64>::sse_decode(deserializer);
+let mut var_totalBytes = <i64>::sse_decode(deserializer);
+let mut var_uploadBytes = <i64>::sse_decode(deserializer);
+let mut var_uploadBytesWithoutImagesAndVideos = <i64>::sse_decode(deserializer);
+let mut var_databaseBytes = <i64>::sse_decode(deserializer);
+let mut var_excludedCount = <i64>::sse_decode(deserializer);
+let mut var_unreadableCount = <i64>::sse_decode(deserializer);
+let mut var_remainingQuotaBytes = <Option<i64>>::sse_decode(deserializer);
+let mut var_overQuota = <bool>::sse_decode(deserializer);
+return crate::api::types::WechatBackupPreflightDto{file_count: var_fileCount, total_bytes: var_totalBytes, upload_bytes: var_uploadBytes, upload_bytes_without_images_and_videos: var_uploadBytesWithoutImagesAndVideos, database_bytes: var_databaseBytes, excluded_count: var_excludedCount, unreadable_count: var_unreadableCount, remaining_quota_bytes: var_remainingQuotaBytes, over_quota: var_overQuota};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatCategoryBackupStatusDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_category = <crate::api::types::WechatCategoryDto>::sse_decode(deserializer);
+let mut var_selected = <bool>::sse_decode(deserializer);
+let mut var_status = <Option<crate::api::types::BackupFolderStatusDto>>::sse_decode(deserializer);
+let mut var_pauseReason = <Option<crate::api::types::BackupPauseReasonDto>>::sse_decode(deserializer);
+let mut var_lastBackupAt = <Option<i64>>::sse_decode(deserializer);
+return crate::api::types::WechatCategoryBackupStatusDto{category: var_category, selected: var_selected, status: var_status, pause_reason: var_pauseReason, last_backup_at: var_lastBackupAt};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatCategoryDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::types::WechatCategoryDto::ChatFiles,
+1 => crate::api::types::WechatCategoryDto::ImagesAndVideos,
+2 => crate::api::types::WechatCategoryDto::Databases,
+3 => crate::api::types::WechatCategoryDto::PhoneMigration,
+            _ => unreachable!("Invalid variant for WechatCategoryDto: {}", inner),
+        };}
+                }
+                
+                impl SseDecode for crate::api::types::WechatCategoryInfoDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_category = <crate::api::types::WechatCategoryDto>::sse_decode(deserializer);
+let mut var_sizeBytes = <i64>::sse_decode(deserializer);
+let mut var_fileCount = <i64>::sse_decode(deserializer);
+let mut var_lastModifiedNs = <Option<i64>>::sse_decode(deserializer);
+let mut var_exists = <bool>::sse_decode(deserializer);
+return crate::api::types::WechatCategoryInfoDto{category: var_category, size_bytes: var_sizeBytes, file_count: var_fileCount, last_modified_ns: var_lastModifiedNs, exists: var_exists};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatDatabaseSnapshotDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_deviceName = <String>::sse_decode(deserializer);
+let mut var_timestamp = <String>::sse_decode(deserializer);
+let mut var_snapshotAt = <i64>::sse_decode(deserializer);
+let mut var_totalBytes = <i64>::sse_decode(deserializer);
+let mut var_fileCount = <i64>::sse_decode(deserializer);
+let mut var_complete = <bool>::sse_decode(deserializer);
+return crate::api::types::WechatDatabaseSnapshotDto{device_name: var_deviceName, timestamp: var_timestamp, snapshot_at: var_snapshotAt, total_bytes: var_totalBytes, file_count: var_fileCount, complete: var_complete};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatEventSourceDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_accountName = <String>::sse_decode(deserializer);
+let mut var_category = <crate::api::types::WechatCategoryDto>::sse_decode(deserializer);
+return crate::api::types::WechatEventSourceDto{account_name: var_accountName, category: var_category};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatRestoreCategoryDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_category = <crate::api::types::WechatCategoryDto>::sse_decode(deserializer);
+let mut var_fileCount = <i64>::sse_decode(deserializer);
+let mut var_totalBytes = <i64>::sse_decode(deserializer);
+let mut var_available = <bool>::sse_decode(deserializer);
+return crate::api::types::WechatRestoreCategoryDto{category: var_category, file_count: var_fileCount, total_bytes: var_totalBytes, available: var_available};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatRestoreOutcomeDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_transferId = <String>::sse_decode(deserializer);
+let mut var_restoredFiles = <i64>::sse_decode(deserializer);
+let mut var_restoredBytes = <i64>::sse_decode(deserializer);
+let mut var_skippedFiles = <i64>::sse_decode(deserializer);
+let mut var_databaseRestored = <bool>::sse_decode(deserializer);
+return crate::api::types::WechatRestoreOutcomeDto{transfer_id: var_transferId, restored_files: var_restoredFiles, restored_bytes: var_restoredBytes, skipped_files: var_skippedFiles, database_restored: var_databaseRestored};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatRestoreRequestDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_dataRoot = <String>::sse_decode(deserializer);
+let mut var_accountName = <String>::sse_decode(deserializer);
+let mut var_version = <crate::api::types::WechatVersionDto>::sse_decode(deserializer);
+let mut var_categories = <Vec<crate::api::types::WechatCategoryDto>>::sse_decode(deserializer);
+let mut var_restoreDatabase = <bool>::sse_decode(deserializer);
+let mut var_snapshot = <Option<crate::api::types::WechatSnapshotSelectionDto>>::sse_decode(deserializer);
+return crate::api::types::WechatRestoreRequestDto{data_root: var_dataRoot, account_name: var_accountName, version: var_version, categories: var_categories, restore_database: var_restoreDatabase, snapshot: var_snapshot};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatSnapshotOutcomeDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::types::WechatSnapshotOutcomeDto::Completed,
+1 => crate::api::types::WechatSnapshotOutcomeDto::Unchanged,
+2 => crate::api::types::WechatSnapshotOutcomeDto::WaitingForWechatExit,
+3 => crate::api::types::WechatSnapshotOutcomeDto::Aborted,
+4 => crate::api::types::WechatSnapshotOutcomeDto::Paused,
+5 => crate::api::types::WechatSnapshotOutcomeDto::NeedsUnlock,
+            _ => unreachable!("Invalid variant for WechatSnapshotOutcomeDto: {}", inner),
+        };}
+                }
+                
+                impl SseDecode for crate::api::types::WechatSnapshotReportDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_outcome = <crate::api::types::WechatSnapshotOutcomeDto>::sse_decode(deserializer);
+let mut var_snapshotAt = <Option<i64>>::sse_decode(deserializer);
+let mut var_totalFiles = <i64>::sse_decode(deserializer);
+let mut var_uploadedFiles = <i64>::sse_decode(deserializer);
+let mut var_uploadedBytes = <i64>::sse_decode(deserializer);
+return crate::api::types::WechatSnapshotReportDto{outcome: var_outcome, snapshot_at: var_snapshotAt, total_files: var_totalFiles, uploaded_files: var_uploadedFiles, uploaded_bytes: var_uploadedBytes};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatSnapshotSelectionDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_deviceName = <String>::sse_decode(deserializer);
+let mut var_timestamp = <String>::sse_decode(deserializer);
+return crate::api::types::WechatSnapshotSelectionDto{device_name: var_deviceName, timestamp: var_timestamp};}
+                }
+                
+                impl SseDecode for crate::api::types::WechatSourceDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::types::WechatSourceDto::Manual,
+1 => crate::api::types::WechatSourceDto::Registry,
+2 => crate::api::types::WechatSourceDto::ConfigFile,
+3 => crate::api::types::WechatSourceDto::DefaultLocation,
+            _ => unreachable!("Invalid variant for WechatSourceDto: {}", inner),
+        };}
+                }
+                
+                impl SseDecode for crate::api::types::WechatVersionDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::types::WechatVersionDto::Wechat3,
+1 => crate::api::types::WechatVersionDto::Wechat4,
+            _ => unreachable!("Invalid variant for WechatVersionDto: {}", inner),
+        };}
                 }
                 
                 fn pde_ffi_dispatcher_primary_impl(
@@ -1494,6 +1893,19 @@ return crate::api::types::VersionDto{id: var_id, content_id: var_contentId, size
 60 => wire__crate__api__transfer__transfer_result_impl(port, ptr, rust_vec_len, data_len),
 61 => wire__crate__api__auth__unlock_impl(port, ptr, rust_vec_len, data_len),
 62 => wire__crate__api__auth__unlock_with_stored_master_key_impl(port, ptr, rust_vec_len, data_len),
+63 => wire__crate__api__wechat__wechat_account_statuses_impl(port, ptr, rust_vec_len, data_len),
+64 => wire__crate__api__wechat__wechat_add_manual_directory_impl(port, ptr, rust_vec_len, data_len),
+65 => wire__crate__api__wechat__wechat_clear_note_impl(port, ptr, rust_vec_len, data_len),
+66 => wire__crate__api__wechat__wechat_database_snapshots_impl(port, ptr, rust_vec_len, data_len),
+67 => wire__crate__api__wechat__wechat_list_accounts_impl(port, ptr, rust_vec_len, data_len),
+68 => wire__crate__api__wechat__wechat_manual_directories_impl(port, ptr, rust_vec_len, data_len),
+69 => wire__crate__api__wechat__wechat_preflight_impl(port, ptr, rust_vec_len, data_len),
+70 => wire__crate__api__wechat__wechat_remove_manual_directory_impl(port, ptr, rust_vec_len, data_len),
+71 => wire__crate__api__wechat__wechat_restore_categories_impl(port, ptr, rust_vec_len, data_len),
+72 => wire__crate__api__wechat__wechat_set_categories_impl(port, ptr, rust_vec_len, data_len),
+73 => wire__crate__api__wechat__wechat_set_note_impl(port, ptr, rust_vec_len, data_len),
+74 => wire__crate__api__wechat__wechat_snapshot_now_impl(port, ptr, rust_vec_len, data_len),
+75 => wire__crate__api__wechat__wechat_start_restore_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
@@ -1564,7 +1976,8 @@ self.folder_id.into_into_dart().into_dart(),
 self.relative_path.into_into_dart().into_dart(),
 self.kind.into_into_dart().into_dart(),
 self.occurred_at.into_into_dart().into_dart(),
-self.message.into_into_dart().into_dart()
+self.message.into_into_dart().into_dart(),
+self.wechat.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -1674,7 +2087,8 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::types::BackupFolderDto> for c
                     self.folder_id.into_into_dart().into_dart(),
 self.status.into_into_dart().into_dart(),
 self.pause_reason.into_into_dart().into_dart(),
-self.last_backup_at.into_into_dart().into_dart()
+self.last_backup_at.into_into_dart().into_dart(),
+self.wechat.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -1711,6 +2125,7 @@ Self::Uploading => 2.into_dart(),
 Self::Paused => 3.into_dart(),
 Self::Error => 4.into_dart(),
 Self::NeedsUnlock => 5.into_dart(),
+Self::WaitingForWechatExit => 6.into_dart(),
                     _ => unreachable!(),
                 }
                 }
@@ -1806,7 +2221,8 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::types::BackupRunReportDto> fo
                     [
                     self.include_hidden.into_into_dart().into_dart(),
 self.upload_limit_bytes_per_second.into_into_dart().into_dart(),
-self.paused.into_into_dart().into_dart()
+self.paused.into_into_dart().into_dart(),
+self.wechat_snapshot_retention.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -2248,7 +2664,8 @@ self.error.into_into_dart().into_dart(),
 self.upload.into_into_dart().into_dart(),
 self.download.into_into_dart().into_dart(),
 self.folder_upload.into_into_dart().into_dart(),
-self.folder_download.into_into_dart().into_dart()
+self.folder_download.into_into_dart().into_dart(),
+self.wechat_restore.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -2349,6 +2766,316 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::types::VersionDto> for crate:
                 self
             }
         }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatAccountBackupStatusDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.data_root.into_into_dart().into_dart(),
+self.account_name.into_into_dart().into_dart(),
+self.version.into_into_dart().into_dart(),
+self.categories.into_into_dart().into_dart(),
+self.last_backup_at.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatAccountBackupStatusDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatAccountBackupStatusDto> for crate::api::types::WechatAccountBackupStatusDto {
+            fn into_into_dart(self) -> crate::api::types::WechatAccountBackupStatusDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatAccountDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.account_name.into_into_dart().into_dart(),
+self.version.into_into_dart().into_dart(),
+self.data_root.into_into_dart().into_dart(),
+self.account_dir.into_into_dart().into_dart(),
+self.source.into_into_dart().into_dart(),
+self.categories.into_into_dart().into_dart(),
+self.total_size_bytes.into_into_dart().into_dart(),
+self.total_file_count.into_into_dart().into_dart(),
+self.last_modified_ns.into_into_dart().into_dart(),
+self.is_current_login_candidate.into_into_dart().into_dart(),
+self.has_phone_migration_backup.into_into_dart().into_dart(),
+self.note.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatAccountDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatAccountDto> for crate::api::types::WechatAccountDto {
+            fn into_into_dart(self) -> crate::api::types::WechatAccountDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatAccountRefDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.data_root.into_into_dart().into_dart(),
+self.account_name.into_into_dart().into_dart(),
+self.version.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatAccountRefDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatAccountRefDto> for crate::api::types::WechatAccountRefDto {
+            fn into_into_dart(self) -> crate::api::types::WechatAccountRefDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatBackupPreflightDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.file_count.into_into_dart().into_dart(),
+self.total_bytes.into_into_dart().into_dart(),
+self.upload_bytes.into_into_dart().into_dart(),
+self.upload_bytes_without_images_and_videos.into_into_dart().into_dart(),
+self.database_bytes.into_into_dart().into_dart(),
+self.excluded_count.into_into_dart().into_dart(),
+self.unreadable_count.into_into_dart().into_dart(),
+self.remaining_quota_bytes.into_into_dart().into_dart(),
+self.over_quota.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatBackupPreflightDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatBackupPreflightDto> for crate::api::types::WechatBackupPreflightDto {
+            fn into_into_dart(self) -> crate::api::types::WechatBackupPreflightDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatCategoryBackupStatusDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.category.into_into_dart().into_dart(),
+self.selected.into_into_dart().into_dart(),
+self.status.into_into_dart().into_dart(),
+self.pause_reason.into_into_dart().into_dart(),
+self.last_backup_at.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatCategoryBackupStatusDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatCategoryBackupStatusDto> for crate::api::types::WechatCategoryBackupStatusDto {
+            fn into_into_dart(self) -> crate::api::types::WechatCategoryBackupStatusDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatCategoryDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    match self {
+                    Self::ChatFiles => 0.into_dart(),
+Self::ImagesAndVideos => 1.into_dart(),
+Self::Databases => 2.into_dart(),
+Self::PhoneMigration => 3.into_dart(),
+                    _ => unreachable!(),
+                }
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatCategoryDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatCategoryDto> for crate::api::types::WechatCategoryDto {
+            fn into_into_dart(self) -> crate::api::types::WechatCategoryDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatCategoryInfoDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.category.into_into_dart().into_dart(),
+self.size_bytes.into_into_dart().into_dart(),
+self.file_count.into_into_dart().into_dart(),
+self.last_modified_ns.into_into_dart().into_dart(),
+self.exists.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatCategoryInfoDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatCategoryInfoDto> for crate::api::types::WechatCategoryInfoDto {
+            fn into_into_dart(self) -> crate::api::types::WechatCategoryInfoDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatDatabaseSnapshotDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.device_name.into_into_dart().into_dart(),
+self.timestamp.into_into_dart().into_dart(),
+self.snapshot_at.into_into_dart().into_dart(),
+self.total_bytes.into_into_dart().into_dart(),
+self.file_count.into_into_dart().into_dart(),
+self.complete.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatDatabaseSnapshotDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatDatabaseSnapshotDto> for crate::api::types::WechatDatabaseSnapshotDto {
+            fn into_into_dart(self) -> crate::api::types::WechatDatabaseSnapshotDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatEventSourceDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.account_name.into_into_dart().into_dart(),
+self.category.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatEventSourceDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatEventSourceDto> for crate::api::types::WechatEventSourceDto {
+            fn into_into_dart(self) -> crate::api::types::WechatEventSourceDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatRestoreCategoryDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.category.into_into_dart().into_dart(),
+self.file_count.into_into_dart().into_dart(),
+self.total_bytes.into_into_dart().into_dart(),
+self.available.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatRestoreCategoryDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatRestoreCategoryDto> for crate::api::types::WechatRestoreCategoryDto {
+            fn into_into_dart(self) -> crate::api::types::WechatRestoreCategoryDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatRestoreOutcomeDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.transfer_id.into_into_dart().into_dart(),
+self.restored_files.into_into_dart().into_dart(),
+self.restored_bytes.into_into_dart().into_dart(),
+self.skipped_files.into_into_dart().into_dart(),
+self.database_restored.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatRestoreOutcomeDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatRestoreOutcomeDto> for crate::api::types::WechatRestoreOutcomeDto {
+            fn into_into_dart(self) -> crate::api::types::WechatRestoreOutcomeDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatRestoreRequestDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.data_root.into_into_dart().into_dart(),
+self.account_name.into_into_dart().into_dart(),
+self.version.into_into_dart().into_dart(),
+self.categories.into_into_dart().into_dart(),
+self.restore_database.into_into_dart().into_dart(),
+self.snapshot.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatRestoreRequestDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatRestoreRequestDto> for crate::api::types::WechatRestoreRequestDto {
+            fn into_into_dart(self) -> crate::api::types::WechatRestoreRequestDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatSnapshotOutcomeDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    match self {
+                    Self::Completed => 0.into_dart(),
+Self::Unchanged => 1.into_dart(),
+Self::WaitingForWechatExit => 2.into_dart(),
+Self::Aborted => 3.into_dart(),
+Self::Paused => 4.into_dart(),
+Self::NeedsUnlock => 5.into_dart(),
+                    _ => unreachable!(),
+                }
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatSnapshotOutcomeDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatSnapshotOutcomeDto> for crate::api::types::WechatSnapshotOutcomeDto {
+            fn into_into_dart(self) -> crate::api::types::WechatSnapshotOutcomeDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatSnapshotReportDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.outcome.into_into_dart().into_dart(),
+self.snapshot_at.into_into_dart().into_dart(),
+self.total_files.into_into_dart().into_dart(),
+self.uploaded_files.into_into_dart().into_dart(),
+self.uploaded_bytes.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatSnapshotReportDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatSnapshotReportDto> for crate::api::types::WechatSnapshotReportDto {
+            fn into_into_dart(self) -> crate::api::types::WechatSnapshotReportDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatSnapshotSelectionDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.device_name.into_into_dart().into_dart(),
+self.timestamp.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatSnapshotSelectionDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatSnapshotSelectionDto> for crate::api::types::WechatSnapshotSelectionDto {
+            fn into_into_dart(self) -> crate::api::types::WechatSnapshotSelectionDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatSourceDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    match self {
+                    Self::Manual => 0.into_dart(),
+Self::Registry => 1.into_dart(),
+Self::ConfigFile => 2.into_dart(),
+Self::DefaultLocation => 3.into_dart(),
+                    _ => unreachable!(),
+                }
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatSourceDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatSourceDto> for crate::api::types::WechatSourceDto {
+            fn into_into_dart(self) -> crate::api::types::WechatSourceDto {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::api::types::WechatVersionDto {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    match self {
+                    Self::Wechat3 => 0.into_dart(),
+Self::Wechat4 => 1.into_dart(),
+                    _ => unreachable!(),
+                }
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::WechatVersionDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::WechatVersionDto> for crate::api::types::WechatVersionDto {
+            fn into_into_dart(self) -> crate::api::types::WechatVersionDto {
+                self
+            }
+        }
 
                 impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
                     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -2405,7 +3132,8 @@ crate::api::types::AccountStatusDto::Unknown => { 4 }
 <String>::sse_encode(self.relative_path, serializer);
 <crate::api::types::BackupActivityKindDto>::sse_encode(self.kind, serializer);
 <i64>::sse_encode(self.occurred_at, serializer);
-<Option<String>>::sse_encode(self.message, serializer);}
+<Option<String>>::sse_encode(self.message, serializer);
+<Option<crate::api::types::WechatEventSourceDto>>::sse_encode(self.wechat, serializer);}
                 }
                 
                 impl SseEncode for crate::api::types::BackupActivityKindDto {
@@ -2461,7 +3189,8 @@ crate::api::types::BackupEventKindDto::Summary => { 2 }
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.folder_id, serializer);
 <crate::api::types::BackupFolderStatusDto>::sse_encode(self.status, serializer);
 <Option<crate::api::types::BackupPauseReasonDto>>::sse_encode(self.pause_reason, serializer);
-<Option<i64>>::sse_encode(self.last_backup_at, serializer);}
+<Option<i64>>::sse_encode(self.last_backup_at, serializer);
+<Option<crate::api::types::WechatEventSourceDto>>::sse_encode(self.wechat, serializer);}
                 }
                 
                 impl SseEncode for crate::api::types::BackupFolderStatusDto {
@@ -2480,6 +3209,7 @@ crate::api::types::BackupFolderStatusKindDto::Uploading => { 2 }
 crate::api::types::BackupFolderStatusKindDto::Paused => { 3 }
 crate::api::types::BackupFolderStatusKindDto::Error => { 4 }
 crate::api::types::BackupFolderStatusKindDto::NeedsUnlock => { 5 }
+crate::api::types::BackupFolderStatusKindDto::WaitingForWechatExit => { 6 }
  _ => { unimplemented!(""); }}, serializer);}
                 }
                 
@@ -2530,7 +3260,8 @@ crate::api::types::BackupPauseReasonDto::Network => { 2 }
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<bool>::sse_encode(self.include_hidden, serializer);
 <Option<i64>>::sse_encode(self.upload_limit_bytes_per_second, serializer);
-<bool>::sse_encode(self.paused, serializer);}
+<bool>::sse_encode(self.paused, serializer);
+<i64>::sse_encode(self.wechat_snapshot_retention, serializer);}
                 }
                 
                 impl SseEncode for crate::api::types::BackupSummaryDto {
@@ -2722,6 +3453,48 @@ crate::api::types::FolderJobStatusDto::Failed => { 5 }
         for item in self { <crate::api::types::VersionDto>::sse_encode(item, serializer); }}
                 }
                 
+                impl SseEncode for Vec<crate::api::types::WechatAccountBackupStatusDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(self.len() as _, serializer);
+        for item in self { <crate::api::types::WechatAccountBackupStatusDto>::sse_encode(item, serializer); }}
+                }
+                
+                impl SseEncode for Vec<crate::api::types::WechatAccountDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(self.len() as _, serializer);
+        for item in self { <crate::api::types::WechatAccountDto>::sse_encode(item, serializer); }}
+                }
+                
+                impl SseEncode for Vec<crate::api::types::WechatCategoryBackupStatusDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(self.len() as _, serializer);
+        for item in self { <crate::api::types::WechatCategoryBackupStatusDto>::sse_encode(item, serializer); }}
+                }
+                
+                impl SseEncode for Vec<crate::api::types::WechatCategoryDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(self.len() as _, serializer);
+        for item in self { <crate::api::types::WechatCategoryDto>::sse_encode(item, serializer); }}
+                }
+                
+                impl SseEncode for Vec<crate::api::types::WechatCategoryInfoDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(self.len() as _, serializer);
+        for item in self { <crate::api::types::WechatCategoryInfoDto>::sse_encode(item, serializer); }}
+                }
+                
+                impl SseEncode for Vec<crate::api::types::WechatDatabaseSnapshotDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(self.len() as _, serializer);
+        for item in self { <crate::api::types::WechatDatabaseSnapshotDto>::sse_encode(item, serializer); }}
+                }
+                
+                impl SseEncode for Vec<crate::api::types::WechatRestoreCategoryDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(self.len() as _, serializer);
+        for item in self { <crate::api::types::WechatRestoreCategoryDto>::sse_encode(item, serializer); }}
+                }
+                
                 impl SseEncode for crate::api::types::NodeDto {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.id, serializer);
@@ -2797,6 +3570,14 @@ crate::api::types::NodeSortFieldDto::Size => { 2 }
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<bool>::sse_encode(self.is_some(), serializer);
                 if let Some(value) = self {
                     <crate::api::types::BackupFolderStateDto>::sse_encode(value, serializer);
+                }}
+                }
+                
+                impl SseEncode for Option<crate::api::types::BackupFolderStatusDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<bool>::sse_encode(self.is_some(), serializer);
+                if let Some(value) = self {
+                    <crate::api::types::BackupFolderStatusDto>::sse_encode(value, serializer);
                 }}
                 }
                 
@@ -2877,6 +3658,30 @@ crate::api::types::NodeSortFieldDto::Size => { 2 }
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<bool>::sse_encode(self.is_some(), serializer);
                 if let Some(value) = self {
                     <crate::api::types::UploadOutcomeDto>::sse_encode(value, serializer);
+                }}
+                }
+                
+                impl SseEncode for Option<crate::api::types::WechatEventSourceDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<bool>::sse_encode(self.is_some(), serializer);
+                if let Some(value) = self {
+                    <crate::api::types::WechatEventSourceDto>::sse_encode(value, serializer);
+                }}
+                }
+                
+                impl SseEncode for Option<crate::api::types::WechatRestoreOutcomeDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<bool>::sse_encode(self.is_some(), serializer);
+                if let Some(value) = self {
+                    <crate::api::types::WechatRestoreOutcomeDto>::sse_encode(value, serializer);
+                }}
+                }
+                
+                impl SseEncode for Option<crate::api::types::WechatSnapshotSelectionDto> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<bool>::sse_encode(self.is_some(), serializer);
+                if let Some(value) = self {
+                    <crate::api::types::WechatSnapshotSelectionDto>::sse_encode(value, serializer);
                 }}
                 }
                 
@@ -2965,7 +3770,8 @@ crate::api::types::TransferDirectionDto::Download => { 1 }
 <Option<crate::api::types::UploadOutcomeDto>>::sse_encode(self.upload, serializer);
 <Option<crate::api::types::DownloadOutcomeDto>>::sse_encode(self.download, serializer);
 <Option<crate::api::types::FolderUploadOutcomeDto>>::sse_encode(self.folder_upload, serializer);
-<Option<crate::api::types::FolderDownloadOutcomeDto>>::sse_encode(self.folder_download, serializer);}
+<Option<crate::api::types::FolderDownloadOutcomeDto>>::sse_encode(self.folder_download, serializer);
+<Option<crate::api::types::WechatRestoreOutcomeDto>>::sse_encode(self.wechat_restore, serializer);}
                 }
                 
                 impl SseEncode for crate::api::types::TransferStatusDto {
@@ -3022,6 +3828,163 @@ crate::api::types::TransferStatusDto::Cancelled => { 7 }
 <String>::sse_encode(self.mime, serializer);
 <bool>::sse_encode(self.is_current, serializer);
 <String>::sse_encode(self.created_at, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatAccountBackupStatusDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.data_root, serializer);
+<String>::sse_encode(self.account_name, serializer);
+<crate::api::types::WechatVersionDto>::sse_encode(self.version, serializer);
+<Vec<crate::api::types::WechatCategoryBackupStatusDto>>::sse_encode(self.categories, serializer);
+<Option<i64>>::sse_encode(self.last_backup_at, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatAccountDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.account_name, serializer);
+<crate::api::types::WechatVersionDto>::sse_encode(self.version, serializer);
+<String>::sse_encode(self.data_root, serializer);
+<String>::sse_encode(self.account_dir, serializer);
+<crate::api::types::WechatSourceDto>::sse_encode(self.source, serializer);
+<Vec<crate::api::types::WechatCategoryInfoDto>>::sse_encode(self.categories, serializer);
+<i64>::sse_encode(self.total_size_bytes, serializer);
+<i64>::sse_encode(self.total_file_count, serializer);
+<Option<i64>>::sse_encode(self.last_modified_ns, serializer);
+<bool>::sse_encode(self.is_current_login_candidate, serializer);
+<bool>::sse_encode(self.has_phone_migration_backup, serializer);
+<Option<String>>::sse_encode(self.note, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatAccountRefDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.data_root, serializer);
+<String>::sse_encode(self.account_name, serializer);
+<crate::api::types::WechatVersionDto>::sse_encode(self.version, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatBackupPreflightDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i64>::sse_encode(self.file_count, serializer);
+<i64>::sse_encode(self.total_bytes, serializer);
+<i64>::sse_encode(self.upload_bytes, serializer);
+<i64>::sse_encode(self.upload_bytes_without_images_and_videos, serializer);
+<i64>::sse_encode(self.database_bytes, serializer);
+<i64>::sse_encode(self.excluded_count, serializer);
+<i64>::sse_encode(self.unreadable_count, serializer);
+<Option<i64>>::sse_encode(self.remaining_quota_bytes, serializer);
+<bool>::sse_encode(self.over_quota, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatCategoryBackupStatusDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<crate::api::types::WechatCategoryDto>::sse_encode(self.category, serializer);
+<bool>::sse_encode(self.selected, serializer);
+<Option<crate::api::types::BackupFolderStatusDto>>::sse_encode(self.status, serializer);
+<Option<crate::api::types::BackupPauseReasonDto>>::sse_encode(self.pause_reason, serializer);
+<Option<i64>>::sse_encode(self.last_backup_at, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatCategoryDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(match self {crate::api::types::WechatCategoryDto::ChatFiles => { 0 }
+crate::api::types::WechatCategoryDto::ImagesAndVideos => { 1 }
+crate::api::types::WechatCategoryDto::Databases => { 2 }
+crate::api::types::WechatCategoryDto::PhoneMigration => { 3 }
+ _ => { unimplemented!(""); }}, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatCategoryInfoDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<crate::api::types::WechatCategoryDto>::sse_encode(self.category, serializer);
+<i64>::sse_encode(self.size_bytes, serializer);
+<i64>::sse_encode(self.file_count, serializer);
+<Option<i64>>::sse_encode(self.last_modified_ns, serializer);
+<bool>::sse_encode(self.exists, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatDatabaseSnapshotDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.device_name, serializer);
+<String>::sse_encode(self.timestamp, serializer);
+<i64>::sse_encode(self.snapshot_at, serializer);
+<i64>::sse_encode(self.total_bytes, serializer);
+<i64>::sse_encode(self.file_count, serializer);
+<bool>::sse_encode(self.complete, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatEventSourceDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.account_name, serializer);
+<crate::api::types::WechatCategoryDto>::sse_encode(self.category, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatRestoreCategoryDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<crate::api::types::WechatCategoryDto>::sse_encode(self.category, serializer);
+<i64>::sse_encode(self.file_count, serializer);
+<i64>::sse_encode(self.total_bytes, serializer);
+<bool>::sse_encode(self.available, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatRestoreOutcomeDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.transfer_id, serializer);
+<i64>::sse_encode(self.restored_files, serializer);
+<i64>::sse_encode(self.restored_bytes, serializer);
+<i64>::sse_encode(self.skipped_files, serializer);
+<bool>::sse_encode(self.database_restored, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatRestoreRequestDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.data_root, serializer);
+<String>::sse_encode(self.account_name, serializer);
+<crate::api::types::WechatVersionDto>::sse_encode(self.version, serializer);
+<Vec<crate::api::types::WechatCategoryDto>>::sse_encode(self.categories, serializer);
+<bool>::sse_encode(self.restore_database, serializer);
+<Option<crate::api::types::WechatSnapshotSelectionDto>>::sse_encode(self.snapshot, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatSnapshotOutcomeDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(match self {crate::api::types::WechatSnapshotOutcomeDto::Completed => { 0 }
+crate::api::types::WechatSnapshotOutcomeDto::Unchanged => { 1 }
+crate::api::types::WechatSnapshotOutcomeDto::WaitingForWechatExit => { 2 }
+crate::api::types::WechatSnapshotOutcomeDto::Aborted => { 3 }
+crate::api::types::WechatSnapshotOutcomeDto::Paused => { 4 }
+crate::api::types::WechatSnapshotOutcomeDto::NeedsUnlock => { 5 }
+ _ => { unimplemented!(""); }}, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatSnapshotReportDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<crate::api::types::WechatSnapshotOutcomeDto>::sse_encode(self.outcome, serializer);
+<Option<i64>>::sse_encode(self.snapshot_at, serializer);
+<i64>::sse_encode(self.total_files, serializer);
+<i64>::sse_encode(self.uploaded_files, serializer);
+<i64>::sse_encode(self.uploaded_bytes, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatSnapshotSelectionDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.device_name, serializer);
+<String>::sse_encode(self.timestamp, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatSourceDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(match self {crate::api::types::WechatSourceDto::Manual => { 0 }
+crate::api::types::WechatSourceDto::Registry => { 1 }
+crate::api::types::WechatSourceDto::ConfigFile => { 2 }
+crate::api::types::WechatSourceDto::DefaultLocation => { 3 }
+ _ => { unimplemented!(""); }}, serializer);}
+                }
+                
+                impl SseEncode for crate::api::types::WechatVersionDto {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(match self {crate::api::types::WechatVersionDto::Wechat3 => { 0 }
+crate::api::types::WechatVersionDto::Wechat4 => { 1 }
+ _ => { unimplemented!(""); }}, serializer);}
                 }
                 
 

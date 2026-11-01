@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
-use client_core::desktop::{BackupEngine, BackupEvent};
+use client_core::desktop::{BackupEngine, BackupEvent, WechatRestoreTask};
 use client_core::{
     Client, DownloadTask, FolderDownloadTask, FolderJobStatus, FolderProgress, FolderUploadTask,
     TransferProgress, TransferStatus, UploadTask,
@@ -17,7 +17,7 @@ use tokio::sync::broadcast;
 use crate::api::error::BridgeError;
 use crate::api::types::{
     BackupEventDto, FolderProgressDto, TransferFailureDto, TransferProgressDto, TransferResultDto,
-    TransferStatusDto,
+    TransferStatusDto, WechatRestoreOutcomeDto,
 };
 use crate::frb_generated::StreamSink;
 
@@ -87,6 +87,7 @@ pub(crate) enum TransferTask {
     Download(DownloadTask),
     FolderUpload(FolderUploadTask),
     FolderDownload(FolderDownloadTask),
+    WechatRestore(WechatRestoreTask),
 }
 
 impl TransferTask {
@@ -96,6 +97,7 @@ impl TransferTask {
             Self::Download(task) => task.id().to_string(),
             Self::FolderUpload(task) => task.id().to_string(),
             Self::FolderDownload(task) => task.id().to_string(),
+            Self::WechatRestore(task) => task.id().to_string(),
         }
     }
 
@@ -105,6 +107,7 @@ impl TransferTask {
             Self::Download(task) => task.pause(),
             Self::FolderUpload(task) => task.pause(),
             Self::FolderDownload(task) => task.pause(),
+            Self::WechatRestore(task) => task.pause(),
         }
     }
 
@@ -114,6 +117,7 @@ impl TransferTask {
             Self::Download(task) => task.resume(),
             Self::FolderUpload(task) => task.resume(),
             Self::FolderDownload(task) => task.resume(),
+            Self::WechatRestore(task) => task.resume(),
         }
     }
 
@@ -123,54 +127,88 @@ impl TransferTask {
             Self::Download(task) => task.cancel(),
             Self::FolderUpload(task) => task.cancel(),
             Self::FolderDownload(task) => task.cancel(),
+            Self::WechatRestore(task) => task.cancel(),
         }
     }
 
     /// 执行任务并转换成终态 DTO；错误统一为 `Failed` / `Cancelled` 结果。
     pub(crate) async fn run(self) -> TransferResultDto {
         let transfer_id = self.id();
-        let outcome = match self {
-            Self::Upload(task) => task.run().await.map(|outcome| TransferResultDto {
-                transfer_id: transfer_id.clone(),
-                status: TransferStatusDto::Completed,
-                error: None,
-                upload: Some((&outcome).into()),
-                download: None,
-                folder_upload: None,
-                folder_download: None,
-            }),
-            Self::Download(task) => task.run().await.map(|outcome| TransferResultDto {
-                transfer_id: transfer_id.clone(),
-                status: TransferStatusDto::Completed,
-                error: None,
-                upload: None,
-                download: Some((&outcome).into()),
-                folder_upload: None,
-                folder_download: None,
-            }),
-            Self::FolderUpload(task) => task.run().await.map(|outcome| TransferResultDto {
-                transfer_id: transfer_id.clone(),
-                status: TransferStatusDto::Completed,
-                error: None,
-                upload: None,
-                download: None,
-                folder_upload: Some((&outcome).into()),
-                folder_download: None,
-            }),
-            Self::FolderDownload(task) => task.run().await.map(|outcome| TransferResultDto {
-                transfer_id: transfer_id.clone(),
-                status: TransferStatusDto::Completed,
-                error: None,
-                upload: None,
-                download: None,
-                folder_upload: None,
-                folder_download: Some((&outcome).into()),
-            }),
+        let outcome: Result<TransferResultDto, BridgeError> = match self {
+            Self::Upload(task) => task
+                .run()
+                .await
+                .map(|outcome| TransferResultDto {
+                    transfer_id: transfer_id.clone(),
+                    status: TransferStatusDto::Completed,
+                    error: None,
+                    upload: Some((&outcome).into()),
+                    download: None,
+                    folder_upload: None,
+                    folder_download: None,
+                    wechat_restore: None,
+                })
+                .map_err(BridgeError::from),
+            Self::Download(task) => task
+                .run()
+                .await
+                .map(|outcome| TransferResultDto {
+                    transfer_id: transfer_id.clone(),
+                    status: TransferStatusDto::Completed,
+                    error: None,
+                    upload: None,
+                    download: Some((&outcome).into()),
+                    folder_upload: None,
+                    folder_download: None,
+                    wechat_restore: None,
+                })
+                .map_err(BridgeError::from),
+            Self::FolderUpload(task) => task
+                .run()
+                .await
+                .map(|outcome| TransferResultDto {
+                    transfer_id: transfer_id.clone(),
+                    status: TransferStatusDto::Completed,
+                    error: None,
+                    upload: None,
+                    download: None,
+                    folder_upload: Some((&outcome).into()),
+                    folder_download: None,
+                    wechat_restore: None,
+                })
+                .map_err(BridgeError::from),
+            Self::FolderDownload(task) => task
+                .run()
+                .await
+                .map(|outcome| TransferResultDto {
+                    transfer_id: transfer_id.clone(),
+                    status: TransferStatusDto::Completed,
+                    error: None,
+                    upload: None,
+                    download: None,
+                    folder_upload: None,
+                    folder_download: Some((&outcome).into()),
+                    wechat_restore: None,
+                })
+                .map_err(BridgeError::from),
+            Self::WechatRestore(task) => task
+                .run()
+                .await
+                .map(|outcome| TransferResultDto {
+                    transfer_id: transfer_id.clone(),
+                    status: TransferStatusDto::Completed,
+                    error: None,
+                    upload: None,
+                    download: None,
+                    folder_upload: None,
+                    folder_download: None,
+                    wechat_restore: Some(WechatRestoreOutcomeDto::from(&outcome)),
+                })
+                .map_err(BridgeError::from),
         };
         match outcome {
             Ok(result) => result,
             Err(error) => {
-                let error = BridgeError::from(error);
                 let status = if error.code == "cancelled" {
                     TransferStatusDto::Cancelled
                 } else {
@@ -187,6 +225,7 @@ impl TransferTask {
                     download: None,
                     folder_upload: None,
                     folder_download: None,
+                    wechat_restore: None,
                 }
             }
         }
@@ -336,6 +375,7 @@ fn failed_result(transfer_id: String, message: &str) -> TransferResultDto {
         download: None,
         folder_upload: None,
         folder_download: None,
+        wechat_restore: None,
     }
 }
 

@@ -5,6 +5,7 @@
 //! 包裹密钥或服务端请求体；错误码供界面做重试/跳转判断。
 
 use client_core::desktop::BackupError;
+use client_core::desktop::wechat::WechatError;
 use client_core::{ApiErrorCode, ClientError};
 
 /// 桥接 API 的错误 DTO（Dart 侧实现 `FrbException`）。
@@ -86,6 +87,28 @@ impl From<BackupError> for BridgeError {
                 Self::new("watch_unavailable", "文件监听不可用，已降级为定时全量核对")
             }
             BackupError::AlreadyRunning => Self::new("already_running", "备份引擎已在运行"),
+            BackupError::WechatRunning => Self::new(
+                "wechat_running",
+                "微信正在运行，请先完全退出微信（包括托盘图标）后再恢复",
+            ),
+            BackupError::SnapshotIncomplete => {
+                Self::new("snapshot_incomplete", "所选数据库快照不完整，不能用于恢复")
+            }
+            BackupError::SnapshotCorrupted => Self::new(
+                "snapshot_corrupted",
+                "快照内容与清单不一致，恢复失败，原数据库已保留",
+            ),
+            BackupError::SnapshotNotFound => {
+                Self::new("snapshot_not_found", "找不到所选的数据库快照")
+            }
+            BackupError::Wechat(error) => match error {
+                WechatError::InvalidNote(message) => {
+                    Self::new("invalid_note", format!("账号备注名无效：{message}"))
+                }
+                WechatError::InvalidAccount => Self::new("invalid_account", "微信账号目录名无效"),
+                WechatError::State(_) => Self::new("state_error", "本地状态库操作失败"),
+                _ => Self::new("wechat_error", error.to_string()),
+            },
         }
     }
 }

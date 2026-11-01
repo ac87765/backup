@@ -203,6 +203,9 @@ fn resubscribe(app: &std::sync::Arc<AppState>, task: &TransferTask) {
         TransferTask::FolderDownload(task) => {
             state::forward_folder_progress(app.clone(), task.subscribe());
         }
+        TransferTask::WechatRestore(task) => {
+            state::forward_transfer_progress(app.clone(), task.subscribe());
+        }
     }
 }
 

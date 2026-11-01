@@ -277,6 +277,8 @@ pub struct TransferResultDto {
     pub download: Option<DownloadOutcomeDto>,
     pub folder_upload: Option<FolderUploadOutcomeDto>,
     pub folder_download: Option<FolderDownloadOutcomeDto>,
+    /// 微信恢复任务的结果。
+    pub wechat_restore: Option<WechatRestoreOutcomeDto>,
 }
 
 /// 未完成上传的本地状态。
@@ -312,6 +314,8 @@ pub enum BackupFolderStatusKindDto {
     Paused,
     Error,
     NeedsUnlock,
+    /// 聊天记录数据库：等微信退出后再快照（design D3）。
+    WaitingForWechatExit,
 }
 
 /// 备份文件夹状态；`done` / `total` 仅在 `Uploading` 有意义。
@@ -338,6 +342,8 @@ pub struct BackupFolderStateDto {
     pub status: BackupFolderStatusDto,
     pub pause_reason: Option<BackupPauseReasonDto>,
     pub last_backup_at: Option<i64>,
+    /// 微信来源的账号 + 类别；普通备份文件夹为 `None`。
+    pub wechat: Option<WechatEventSourceDto>,
 }
 
 /// 全局汇总状态类别。
@@ -381,6 +387,8 @@ pub struct BackupActivityDto {
     pub kind: BackupActivityKindDto,
     pub occurred_at: i64,
     pub message: Option<String>,
+    /// 微信来源的账号 + 类别；普通备份文件夹为 `None`。
+    pub wechat: Option<WechatEventSourceDto>,
 }
 
 /// 备份事件类别。
@@ -472,4 +480,181 @@ pub struct BackupSettingsDto {
     pub include_hidden: bool,
     pub upload_limit_bytes_per_second: Option<i64>,
     pub paused: bool,
+    /// 每个微信账号保留的完整数据库快照份数（1–10，默认 3）。
+    pub wechat_snapshot_retention: i64,
+}
+
+// ---------------------------------------------------------------------------
+// 微信备份（add-wechat-backup）
+// ---------------------------------------------------------------------------
+
+/// 微信版本。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WechatVersionDto {
+    Wechat3,
+    Wechat4,
+}
+
+/// 微信备份类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WechatCategoryDto {
+    ChatFiles,
+    ImagesAndVideos,
+    Databases,
+    PhoneMigration,
+}
+
+/// 账号目录来源。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WechatSourceDto {
+    Manual,
+    Registry,
+    ConfigFile,
+    DefaultLocation,
+}
+
+/// 事件流里的微信来源标识（账号 + 类别）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatEventSourceDto {
+    pub account_name: String,
+    pub category: WechatCategoryDto,
+}
+
+/// 一个类别的发现结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatCategoryInfoDto {
+    pub category: WechatCategoryDto,
+    pub size_bytes: i64,
+    pub file_count: i64,
+    pub last_modified_ns: Option<i64>,
+    pub exists: bool,
+}
+
+/// 发现到的微信账号（展示字段 + 本地备注名）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatAccountDto {
+    pub account_name: String,
+    pub version: WechatVersionDto,
+    pub data_root: String,
+    pub account_dir: String,
+    pub source: WechatSourceDto,
+    pub categories: Vec<WechatCategoryInfoDto>,
+    pub total_size_bytes: i64,
+    pub total_file_count: i64,
+    pub last_modified_ns: Option<i64>,
+    pub is_current_login_candidate: bool,
+    pub has_phone_migration_backup: bool,
+    /// 仅保存在本地的备注名。
+    pub note: Option<String>,
+}
+
+/// 只带定位字段的账号引用（设置类别 / 预检 / 立即快照 / 恢复时使用）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatAccountRefDto {
+    pub data_root: String,
+    pub account_name: String,
+    pub version: WechatVersionDto,
+}
+
+/// 一个账号内某个类别的备份状态。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatCategoryBackupStatusDto {
+    pub category: WechatCategoryDto,
+    pub selected: bool,
+    pub status: Option<BackupFolderStatusDto>,
+    pub pause_reason: Option<BackupPauseReasonDto>,
+    pub last_backup_at: Option<i64>,
+}
+
+/// 一个微信账号的备份状态。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatAccountBackupStatusDto {
+    pub data_root: String,
+    pub account_name: String,
+    pub version: WechatVersionDto,
+    pub categories: Vec<WechatCategoryBackupStatusDto>,
+    pub last_backup_at: Option<i64>,
+}
+
+/// 微信备份首次上传预检。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WechatBackupPreflightDto {
+    pub file_count: i64,
+    pub total_bytes: i64,
+    pub upload_bytes: i64,
+    pub upload_bytes_without_images_and_videos: i64,
+    pub database_bytes: i64,
+    pub excluded_count: i64,
+    pub unreadable_count: i64,
+    pub remaining_quota_bytes: Option<i64>,
+    pub over_quota: bool,
+}
+
+/// 一次数据库快照尝试的结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WechatSnapshotOutcomeDto {
+    Completed,
+    Unchanged,
+    WaitingForWechatExit,
+    Aborted,
+    Paused,
+    NeedsUnlock,
+}
+
+/// 一次数据库快照尝试的统计。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WechatSnapshotReportDto {
+    pub outcome: WechatSnapshotOutcomeDto,
+    pub snapshot_at: Option<i64>,
+    pub total_files: i64,
+    pub uploaded_files: i64,
+    pub uploaded_bytes: i64,
+}
+
+/// 一份可恢复的数据库快照。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatDatabaseSnapshotDto {
+    pub device_name: String,
+    pub timestamp: String,
+    pub snapshot_at: i64,
+    pub total_bytes: i64,
+    pub file_count: i64,
+    pub complete: bool,
+}
+
+/// 恢复时选择的快照。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatSnapshotSelectionDto {
+    pub device_name: String,
+    pub timestamp: String,
+}
+
+/// 云端可恢复的文件类别。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatRestoreCategoryDto {
+    pub category: WechatCategoryDto,
+    pub file_count: i64,
+    pub total_bytes: i64,
+    pub available: bool,
+}
+
+/// 开始恢复的请求。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatRestoreRequestDto {
+    pub data_root: String,
+    pub account_name: String,
+    pub version: WechatVersionDto,
+    pub categories: Vec<WechatCategoryDto>,
+    pub restore_database: bool,
+    pub snapshot: Option<WechatSnapshotSelectionDto>,
+}
+
+/// 一次恢复的结果统计。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WechatRestoreOutcomeDto {
+    pub transfer_id: String,
+    pub restored_files: i64,
+    pub restored_bytes: i64,
+    pub skipped_files: i64,
+    pub database_restored: bool,
 }

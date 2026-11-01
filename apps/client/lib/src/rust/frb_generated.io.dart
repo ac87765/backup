@@ -10,6 +10,7 @@ import 'api/files.dart';
 import 'api/init.dart';
 import 'api/transfer.dart';
 import 'api/types.dart';
+import 'api/wechat.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
@@ -87,6 +88,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected BackupFolderStateDto dco_decode_box_autoadd_backup_folder_state_dto(dynamic raw);
 
+@protected BackupFolderStatusDto dco_decode_box_autoadd_backup_folder_status_dto(dynamic raw);
+
 @protected BackupFolderUpdateDto dco_decode_box_autoadd_backup_folder_update_dto(dynamic raw);
 
 @protected BackupPauseReasonDto dco_decode_box_autoadd_backup_pause_reason_dto(dynamic raw);
@@ -112,6 +115,16 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected TransferResultDto dco_decode_box_autoadd_transfer_result_dto(dynamic raw);
 
 @protected UploadOutcomeDto dco_decode_box_autoadd_upload_outcome_dto(dynamic raw);
+
+@protected WechatAccountRefDto dco_decode_box_autoadd_wechat_account_ref_dto(dynamic raw);
+
+@protected WechatEventSourceDto dco_decode_box_autoadd_wechat_event_source_dto(dynamic raw);
+
+@protected WechatRestoreOutcomeDto dco_decode_box_autoadd_wechat_restore_outcome_dto(dynamic raw);
+
+@protected WechatRestoreRequestDto dco_decode_box_autoadd_wechat_restore_request_dto(dynamic raw);
+
+@protected WechatSnapshotSelectionDto dco_decode_box_autoadd_wechat_snapshot_selection_dto(dynamic raw);
 
 @protected BridgeError dco_decode_bridge_error(dynamic raw);
 
@@ -157,6 +170,20 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected List<VersionDto> dco_decode_list_version_dto(dynamic raw);
 
+@protected List<WechatAccountBackupStatusDto> dco_decode_list_wechat_account_backup_status_dto(dynamic raw);
+
+@protected List<WechatAccountDto> dco_decode_list_wechat_account_dto(dynamic raw);
+
+@protected List<WechatCategoryBackupStatusDto> dco_decode_list_wechat_category_backup_status_dto(dynamic raw);
+
+@protected List<WechatCategoryDto> dco_decode_list_wechat_category_dto(dynamic raw);
+
+@protected List<WechatCategoryInfoDto> dco_decode_list_wechat_category_info_dto(dynamic raw);
+
+@protected List<WechatDatabaseSnapshotDto> dco_decode_list_wechat_database_snapshot_dto(dynamic raw);
+
+@protected List<WechatRestoreCategoryDto> dco_decode_list_wechat_restore_category_dto(dynamic raw);
+
 @protected NodeDto dco_decode_node_dto(dynamic raw);
 
 @protected NodeKindDto dco_decode_node_kind_dto(dynamic raw);
@@ -174,6 +201,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected BackupActivityDto? dco_decode_opt_box_autoadd_backup_activity_dto(dynamic raw);
 
 @protected BackupFolderStateDto? dco_decode_opt_box_autoadd_backup_folder_state_dto(dynamic raw);
+
+@protected BackupFolderStatusDto? dco_decode_opt_box_autoadd_backup_folder_status_dto(dynamic raw);
 
 @protected BackupPauseReasonDto? dco_decode_opt_box_autoadd_backup_pause_reason_dto(dynamic raw);
 
@@ -194,6 +223,12 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected TransferResultDto? dco_decode_opt_box_autoadd_transfer_result_dto(dynamic raw);
 
 @protected UploadOutcomeDto? dco_decode_opt_box_autoadd_upload_outcome_dto(dynamic raw);
+
+@protected WechatEventSourceDto? dco_decode_opt_box_autoadd_wechat_event_source_dto(dynamic raw);
+
+@protected WechatRestoreOutcomeDto? dco_decode_opt_box_autoadd_wechat_restore_outcome_dto(dynamic raw);
+
+@protected WechatSnapshotSelectionDto? dco_decode_opt_box_autoadd_wechat_snapshot_selection_dto(dynamic raw);
 
 @protected List<String>? dco_decode_opt_list_String(dynamic raw);
 
@@ -228,6 +263,40 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected UsageDto dco_decode_usage_dto(dynamic raw);
 
 @protected VersionDto dco_decode_version_dto(dynamic raw);
+
+@protected WechatAccountBackupStatusDto dco_decode_wechat_account_backup_status_dto(dynamic raw);
+
+@protected WechatAccountDto dco_decode_wechat_account_dto(dynamic raw);
+
+@protected WechatAccountRefDto dco_decode_wechat_account_ref_dto(dynamic raw);
+
+@protected WechatBackupPreflightDto dco_decode_wechat_backup_preflight_dto(dynamic raw);
+
+@protected WechatCategoryBackupStatusDto dco_decode_wechat_category_backup_status_dto(dynamic raw);
+
+@protected WechatCategoryDto dco_decode_wechat_category_dto(dynamic raw);
+
+@protected WechatCategoryInfoDto dco_decode_wechat_category_info_dto(dynamic raw);
+
+@protected WechatDatabaseSnapshotDto dco_decode_wechat_database_snapshot_dto(dynamic raw);
+
+@protected WechatEventSourceDto dco_decode_wechat_event_source_dto(dynamic raw);
+
+@protected WechatRestoreCategoryDto dco_decode_wechat_restore_category_dto(dynamic raw);
+
+@protected WechatRestoreOutcomeDto dco_decode_wechat_restore_outcome_dto(dynamic raw);
+
+@protected WechatRestoreRequestDto dco_decode_wechat_restore_request_dto(dynamic raw);
+
+@protected WechatSnapshotOutcomeDto dco_decode_wechat_snapshot_outcome_dto(dynamic raw);
+
+@protected WechatSnapshotReportDto dco_decode_wechat_snapshot_report_dto(dynamic raw);
+
+@protected WechatSnapshotSelectionDto dco_decode_wechat_snapshot_selection_dto(dynamic raw);
+
+@protected WechatSourceDto dco_decode_wechat_source_dto(dynamic raw);
+
+@protected WechatVersionDto dco_decode_wechat_version_dto(dynamic raw);
 
 @protected AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
@@ -287,6 +356,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected BackupFolderStateDto sse_decode_box_autoadd_backup_folder_state_dto(SseDeserializer deserializer);
 
+@protected BackupFolderStatusDto sse_decode_box_autoadd_backup_folder_status_dto(SseDeserializer deserializer);
+
 @protected BackupFolderUpdateDto sse_decode_box_autoadd_backup_folder_update_dto(SseDeserializer deserializer);
 
 @protected BackupPauseReasonDto sse_decode_box_autoadd_backup_pause_reason_dto(SseDeserializer deserializer);
@@ -312,6 +383,16 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected TransferResultDto sse_decode_box_autoadd_transfer_result_dto(SseDeserializer deserializer);
 
 @protected UploadOutcomeDto sse_decode_box_autoadd_upload_outcome_dto(SseDeserializer deserializer);
+
+@protected WechatAccountRefDto sse_decode_box_autoadd_wechat_account_ref_dto(SseDeserializer deserializer);
+
+@protected WechatEventSourceDto sse_decode_box_autoadd_wechat_event_source_dto(SseDeserializer deserializer);
+
+@protected WechatRestoreOutcomeDto sse_decode_box_autoadd_wechat_restore_outcome_dto(SseDeserializer deserializer);
+
+@protected WechatRestoreRequestDto sse_decode_box_autoadd_wechat_restore_request_dto(SseDeserializer deserializer);
+
+@protected WechatSnapshotSelectionDto sse_decode_box_autoadd_wechat_snapshot_selection_dto(SseDeserializer deserializer);
 
 @protected BridgeError sse_decode_bridge_error(SseDeserializer deserializer);
 
@@ -357,6 +438,20 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected List<VersionDto> sse_decode_list_version_dto(SseDeserializer deserializer);
 
+@protected List<WechatAccountBackupStatusDto> sse_decode_list_wechat_account_backup_status_dto(SseDeserializer deserializer);
+
+@protected List<WechatAccountDto> sse_decode_list_wechat_account_dto(SseDeserializer deserializer);
+
+@protected List<WechatCategoryBackupStatusDto> sse_decode_list_wechat_category_backup_status_dto(SseDeserializer deserializer);
+
+@protected List<WechatCategoryDto> sse_decode_list_wechat_category_dto(SseDeserializer deserializer);
+
+@protected List<WechatCategoryInfoDto> sse_decode_list_wechat_category_info_dto(SseDeserializer deserializer);
+
+@protected List<WechatDatabaseSnapshotDto> sse_decode_list_wechat_database_snapshot_dto(SseDeserializer deserializer);
+
+@protected List<WechatRestoreCategoryDto> sse_decode_list_wechat_restore_category_dto(SseDeserializer deserializer);
+
 @protected NodeDto sse_decode_node_dto(SseDeserializer deserializer);
 
 @protected NodeKindDto sse_decode_node_kind_dto(SseDeserializer deserializer);
@@ -374,6 +469,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected BackupActivityDto? sse_decode_opt_box_autoadd_backup_activity_dto(SseDeserializer deserializer);
 
 @protected BackupFolderStateDto? sse_decode_opt_box_autoadd_backup_folder_state_dto(SseDeserializer deserializer);
+
+@protected BackupFolderStatusDto? sse_decode_opt_box_autoadd_backup_folder_status_dto(SseDeserializer deserializer);
 
 @protected BackupPauseReasonDto? sse_decode_opt_box_autoadd_backup_pause_reason_dto(SseDeserializer deserializer);
 
@@ -394,6 +491,12 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected TransferResultDto? sse_decode_opt_box_autoadd_transfer_result_dto(SseDeserializer deserializer);
 
 @protected UploadOutcomeDto? sse_decode_opt_box_autoadd_upload_outcome_dto(SseDeserializer deserializer);
+
+@protected WechatEventSourceDto? sse_decode_opt_box_autoadd_wechat_event_source_dto(SseDeserializer deserializer);
+
+@protected WechatRestoreOutcomeDto? sse_decode_opt_box_autoadd_wechat_restore_outcome_dto(SseDeserializer deserializer);
+
+@protected WechatSnapshotSelectionDto? sse_decode_opt_box_autoadd_wechat_snapshot_selection_dto(SseDeserializer deserializer);
 
 @protected List<String>? sse_decode_opt_list_String(SseDeserializer deserializer);
 
@@ -428,6 +531,40 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected UsageDto sse_decode_usage_dto(SseDeserializer deserializer);
 
 @protected VersionDto sse_decode_version_dto(SseDeserializer deserializer);
+
+@protected WechatAccountBackupStatusDto sse_decode_wechat_account_backup_status_dto(SseDeserializer deserializer);
+
+@protected WechatAccountDto sse_decode_wechat_account_dto(SseDeserializer deserializer);
+
+@protected WechatAccountRefDto sse_decode_wechat_account_ref_dto(SseDeserializer deserializer);
+
+@protected WechatBackupPreflightDto sse_decode_wechat_backup_preflight_dto(SseDeserializer deserializer);
+
+@protected WechatCategoryBackupStatusDto sse_decode_wechat_category_backup_status_dto(SseDeserializer deserializer);
+
+@protected WechatCategoryDto sse_decode_wechat_category_dto(SseDeserializer deserializer);
+
+@protected WechatCategoryInfoDto sse_decode_wechat_category_info_dto(SseDeserializer deserializer);
+
+@protected WechatDatabaseSnapshotDto sse_decode_wechat_database_snapshot_dto(SseDeserializer deserializer);
+
+@protected WechatEventSourceDto sse_decode_wechat_event_source_dto(SseDeserializer deserializer);
+
+@protected WechatRestoreCategoryDto sse_decode_wechat_restore_category_dto(SseDeserializer deserializer);
+
+@protected WechatRestoreOutcomeDto sse_decode_wechat_restore_outcome_dto(SseDeserializer deserializer);
+
+@protected WechatRestoreRequestDto sse_decode_wechat_restore_request_dto(SseDeserializer deserializer);
+
+@protected WechatSnapshotOutcomeDto sse_decode_wechat_snapshot_outcome_dto(SseDeserializer deserializer);
+
+@protected WechatSnapshotReportDto sse_decode_wechat_snapshot_report_dto(SseDeserializer deserializer);
+
+@protected WechatSnapshotSelectionDto sse_decode_wechat_snapshot_selection_dto(SseDeserializer deserializer);
+
+@protected WechatSourceDto sse_decode_wechat_source_dto(SseDeserializer deserializer);
+
+@protected WechatVersionDto sse_decode_wechat_version_dto(SseDeserializer deserializer);
 
 @protected void sse_encode_AnyhowException(AnyhowException self, SseSerializer serializer);
 
@@ -487,6 +624,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected void sse_encode_box_autoadd_backup_folder_state_dto(BackupFolderStateDto self, SseSerializer serializer);
 
+@protected void sse_encode_box_autoadd_backup_folder_status_dto(BackupFolderStatusDto self, SseSerializer serializer);
+
 @protected void sse_encode_box_autoadd_backup_folder_update_dto(BackupFolderUpdateDto self, SseSerializer serializer);
 
 @protected void sse_encode_box_autoadd_backup_pause_reason_dto(BackupPauseReasonDto self, SseSerializer serializer);
@@ -512,6 +651,16 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected void sse_encode_box_autoadd_transfer_result_dto(TransferResultDto self, SseSerializer serializer);
 
 @protected void sse_encode_box_autoadd_upload_outcome_dto(UploadOutcomeDto self, SseSerializer serializer);
+
+@protected void sse_encode_box_autoadd_wechat_account_ref_dto(WechatAccountRefDto self, SseSerializer serializer);
+
+@protected void sse_encode_box_autoadd_wechat_event_source_dto(WechatEventSourceDto self, SseSerializer serializer);
+
+@protected void sse_encode_box_autoadd_wechat_restore_outcome_dto(WechatRestoreOutcomeDto self, SseSerializer serializer);
+
+@protected void sse_encode_box_autoadd_wechat_restore_request_dto(WechatRestoreRequestDto self, SseSerializer serializer);
+
+@protected void sse_encode_box_autoadd_wechat_snapshot_selection_dto(WechatSnapshotSelectionDto self, SseSerializer serializer);
 
 @protected void sse_encode_bridge_error(BridgeError self, SseSerializer serializer);
 
@@ -557,6 +706,20 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 @protected void sse_encode_list_version_dto(List<VersionDto> self, SseSerializer serializer);
 
+@protected void sse_encode_list_wechat_account_backup_status_dto(List<WechatAccountBackupStatusDto> self, SseSerializer serializer);
+
+@protected void sse_encode_list_wechat_account_dto(List<WechatAccountDto> self, SseSerializer serializer);
+
+@protected void sse_encode_list_wechat_category_backup_status_dto(List<WechatCategoryBackupStatusDto> self, SseSerializer serializer);
+
+@protected void sse_encode_list_wechat_category_dto(List<WechatCategoryDto> self, SseSerializer serializer);
+
+@protected void sse_encode_list_wechat_category_info_dto(List<WechatCategoryInfoDto> self, SseSerializer serializer);
+
+@protected void sse_encode_list_wechat_database_snapshot_dto(List<WechatDatabaseSnapshotDto> self, SseSerializer serializer);
+
+@protected void sse_encode_list_wechat_restore_category_dto(List<WechatRestoreCategoryDto> self, SseSerializer serializer);
+
 @protected void sse_encode_node_dto(NodeDto self, SseSerializer serializer);
 
 @protected void sse_encode_node_kind_dto(NodeKindDto self, SseSerializer serializer);
@@ -574,6 +737,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected void sse_encode_opt_box_autoadd_backup_activity_dto(BackupActivityDto? self, SseSerializer serializer);
 
 @protected void sse_encode_opt_box_autoadd_backup_folder_state_dto(BackupFolderStateDto? self, SseSerializer serializer);
+
+@protected void sse_encode_opt_box_autoadd_backup_folder_status_dto(BackupFolderStatusDto? self, SseSerializer serializer);
 
 @protected void sse_encode_opt_box_autoadd_backup_pause_reason_dto(BackupPauseReasonDto? self, SseSerializer serializer);
 
@@ -594,6 +759,12 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected void sse_encode_opt_box_autoadd_transfer_result_dto(TransferResultDto? self, SseSerializer serializer);
 
 @protected void sse_encode_opt_box_autoadd_upload_outcome_dto(UploadOutcomeDto? self, SseSerializer serializer);
+
+@protected void sse_encode_opt_box_autoadd_wechat_event_source_dto(WechatEventSourceDto? self, SseSerializer serializer);
+
+@protected void sse_encode_opt_box_autoadd_wechat_restore_outcome_dto(WechatRestoreOutcomeDto? self, SseSerializer serializer);
+
+@protected void sse_encode_opt_box_autoadd_wechat_snapshot_selection_dto(WechatSnapshotSelectionDto? self, SseSerializer serializer);
 
 @protected void sse_encode_opt_list_String(List<String>? self, SseSerializer serializer);
 
@@ -628,6 +799,40 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 @protected void sse_encode_usage_dto(UsageDto self, SseSerializer serializer);
 
 @protected void sse_encode_version_dto(VersionDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_account_backup_status_dto(WechatAccountBackupStatusDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_account_dto(WechatAccountDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_account_ref_dto(WechatAccountRefDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_backup_preflight_dto(WechatBackupPreflightDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_category_backup_status_dto(WechatCategoryBackupStatusDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_category_dto(WechatCategoryDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_category_info_dto(WechatCategoryInfoDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_database_snapshot_dto(WechatDatabaseSnapshotDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_event_source_dto(WechatEventSourceDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_restore_category_dto(WechatRestoreCategoryDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_restore_outcome_dto(WechatRestoreOutcomeDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_restore_request_dto(WechatRestoreRequestDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_snapshot_outcome_dto(WechatSnapshotOutcomeDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_snapshot_report_dto(WechatSnapshotReportDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_snapshot_selection_dto(WechatSnapshotSelectionDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_source_dto(WechatSourceDto self, SseSerializer serializer);
+
+@protected void sse_encode_wechat_version_dto(WechatVersionDto self, SseSerializer serializer);
                 }
                 
 

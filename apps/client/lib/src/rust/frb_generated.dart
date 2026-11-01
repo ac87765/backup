@@ -10,6 +10,7 @@ import 'api/files.dart';
 import 'api/init.dart';
 import 'api/transfer.dart';
 import 'api/types.dart';
+import 'api/wechat.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
@@ -75,7 +76,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
                   String get codegenVersion => '2.13.0';
 
                   @override
-                  int get rustContentHash => -66783865;
+                  int get rustContentHash => 412370426;
 
                   static const kDefaultExternalLibraryLoaderConfig = ExternalLibraryLoaderConfig(
                     stem: 'rust_lib_client',
@@ -210,6 +211,32 @@ Future<TransferResultDto?> crateApiTransferTransferResult({required String trans
 Future<AccountDto> crateApiAuthUnlock({required String password });
 
 Future<AccountDto?> crateApiAuthUnlockWithStoredMasterKey();
+
+Future<List<WechatAccountBackupStatusDto>> crateApiWechatWechatAccountStatuses();
+
+Future<List<WechatAccountDto>> crateApiWechatWechatAddManualDirectory({required String path });
+
+Future<void> crateApiWechatWechatClearNote({required WechatAccountRefDto account });
+
+Future<List<WechatDatabaseSnapshotDto>> crateApiWechatWechatDatabaseSnapshots({required WechatAccountRefDto account });
+
+Future<List<WechatAccountDto>> crateApiWechatWechatListAccounts();
+
+Future<List<String>> crateApiWechatWechatManualDirectories();
+
+Future<WechatBackupPreflightDto> crateApiWechatWechatPreflight({required WechatAccountRefDto account , required List<WechatCategoryDto> categories });
+
+Future<List<WechatAccountDto>> crateApiWechatWechatRemoveManualDirectory({required String path });
+
+Future<List<WechatRestoreCategoryDto>> crateApiWechatWechatRestoreCategories({required WechatAccountRefDto account });
+
+Future<void> crateApiWechatWechatSetCategories({required WechatAccountRefDto account , required List<WechatCategoryDto> categories });
+
+Future<void> crateApiWechatWechatSetNote({required WechatAccountRefDto account , required String note });
+
+Future<WechatSnapshotReportDto> crateApiWechatWechatSnapshotNow({required WechatAccountRefDto account });
+
+Future<String> crateApiWechatWechatStartRestore({required WechatRestoreRequestDto request });
 
 
                 }
@@ -1810,6 +1837,334 @@ sse_encode_String(localPath, serializer);
         );
         
 
+@override Future<List<WechatAccountBackupStatusDto>> crateApiWechatWechatAccountStatuses()  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_list_wechat_account_backup_status_dto,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatAccountStatusesConstMeta,
+            argValues: [],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatAccountStatusesConstMeta => const TaskConstMeta(
+            debugName: "wechat_account_statuses",
+            argNames: [],
+        );
+        
+
+@override Future<List<WechatAccountDto>> crateApiWechatWechatAddManualDirectory({required String path })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(path, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_list_wechat_account_dto,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatAddManualDirectoryConstMeta,
+            argValues: [path],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatAddManualDirectoryConstMeta => const TaskConstMeta(
+            debugName: "wechat_add_manual_directory",
+            argNames: ["path"],
+        );
+        
+
+@override Future<void> crateApiWechatWechatClearNote({required WechatAccountRefDto account })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatClearNoteConstMeta,
+            argValues: [account],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatClearNoteConstMeta => const TaskConstMeta(
+            debugName: "wechat_clear_note",
+            argNames: ["account"],
+        );
+        
+
+@override Future<List<WechatDatabaseSnapshotDto>> crateApiWechatWechatDatabaseSnapshots({required WechatAccountRefDto account })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_list_wechat_database_snapshot_dto,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatDatabaseSnapshotsConstMeta,
+            argValues: [account],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatDatabaseSnapshotsConstMeta => const TaskConstMeta(
+            debugName: "wechat_database_snapshots",
+            argNames: ["account"],
+        );
+        
+
+@override Future<List<WechatAccountDto>> crateApiWechatWechatListAccounts()  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_list_wechat_account_dto,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatListAccountsConstMeta,
+            argValues: [],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatListAccountsConstMeta => const TaskConstMeta(
+            debugName: "wechat_list_accounts",
+            argNames: [],
+        );
+        
+
+@override Future<List<String>> crateApiWechatWechatManualDirectories()  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatManualDirectoriesConstMeta,
+            argValues: [],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatManualDirectoriesConstMeta => const TaskConstMeta(
+            debugName: "wechat_manual_directories",
+            argNames: [],
+        );
+        
+
+@override Future<WechatBackupPreflightDto> crateApiWechatWechatPreflight({required WechatAccountRefDto account , required List<WechatCategoryDto> categories })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
+sse_encode_list_wechat_category_dto(categories, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_wechat_backup_preflight_dto,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatPreflightConstMeta,
+            argValues: [account, categories],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatPreflightConstMeta => const TaskConstMeta(
+            debugName: "wechat_preflight",
+            argNames: ["account", "categories"],
+        );
+        
+
+@override Future<List<WechatAccountDto>> crateApiWechatWechatRemoveManualDirectory({required String path })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_String(path, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_list_wechat_account_dto,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatRemoveManualDirectoryConstMeta,
+            argValues: [path],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatRemoveManualDirectoryConstMeta => const TaskConstMeta(
+            debugName: "wechat_remove_manual_directory",
+            argNames: ["path"],
+        );
+        
+
+@override Future<List<WechatRestoreCategoryDto>> crateApiWechatWechatRestoreCategories({required WechatAccountRefDto account })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_list_wechat_restore_category_dto,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatRestoreCategoriesConstMeta,
+            argValues: [account],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatRestoreCategoriesConstMeta => const TaskConstMeta(
+            debugName: "wechat_restore_categories",
+            argNames: ["account"],
+        );
+        
+
+@override Future<void> crateApiWechatWechatSetCategories({required WechatAccountRefDto account , required List<WechatCategoryDto> categories })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
+sse_encode_list_wechat_category_dto(categories, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatSetCategoriesConstMeta,
+            argValues: [account, categories],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatSetCategoriesConstMeta => const TaskConstMeta(
+            debugName: "wechat_set_categories",
+            argNames: ["account", "categories"],
+        );
+        
+
+@override Future<void> crateApiWechatWechatSetNote({required WechatAccountRefDto account , required String note })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
+sse_encode_String(note, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatSetNoteConstMeta,
+            argValues: [account, note],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatSetNoteConstMeta => const TaskConstMeta(
+            debugName: "wechat_set_note",
+            argNames: ["account", "note"],
+        );
+        
+
+@override Future<WechatSnapshotReportDto> crateApiWechatWechatSnapshotNow({required WechatAccountRefDto account })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_account_ref_dto(account, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 74, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_wechat_snapshot_report_dto,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatSnapshotNowConstMeta,
+            argValues: [account],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatSnapshotNowConstMeta => const TaskConstMeta(
+            debugName: "wechat_snapshot_now",
+            argNames: ["account"],
+        );
+        
+
+@override Future<String> crateApiWechatWechatStartRestore({required WechatRestoreRequestDto request })  { return handler.executeNormal(NormalTask(
+            callFfi: (port_) {
+              
+            final serializer = SseSerializer(generalizedFrbRustBinding);sse_encode_box_autoadd_wechat_restore_request_dto(request, serializer);
+            pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 75, port: port_);
+            
+            },
+            codec: 
+        SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
+        )
+        ,
+            constMeta: kCrateApiWechatWechatStartRestoreConstMeta,
+            argValues: [request],
+            apiImpl: this,
+        )); }
+
+
+        TaskConstMeta get kCrateApiWechatWechatStartRestoreConstMeta => const TaskConstMeta(
+            debugName: "wechat_start_restore",
+            argNames: ["request"],
+        );
+        
+
 
 
                   @protected AnyhowException dco_decode_AnyhowException(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -1848,13 +2203,14 @@ return AccountStatusDto.values[raw as int]; }
 
 @protected BackupActivityDto dco_decode_backup_activity_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 final arr = raw as List<dynamic>;
-                if (arr.length != 6) throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+                if (arr.length != 7) throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
                 return BackupActivityDto(id: dco_decode_CastedPrimitive_i_64(arr[0]),
 folderId: dco_decode_String(arr[1]),
 relativePath: dco_decode_String(arr[2]),
 kind: dco_decode_backup_activity_kind_dto(arr[3]),
 occurredAt: dco_decode_CastedPrimitive_i_64(arr[4]),
-message: dco_decode_opt_String(arr[5]),); }
+message: dco_decode_opt_String(arr[5]),
+wechat: dco_decode_opt_box_autoadd_wechat_event_source_dto(arr[6]),); }
 
 @protected BackupActivityKindDto dco_decode_backup_activity_kind_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return BackupActivityKindDto.values[raw as int]; }
@@ -1894,11 +2250,12 @@ lastBackupAt: dco_decode_opt_CastedPrimitive_i_64(arr[9]),); }
 
 @protected BackupFolderStateDto dco_decode_backup_folder_state_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 final arr = raw as List<dynamic>;
-                if (arr.length != 4) throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+                if (arr.length != 5) throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
                 return BackupFolderStateDto(folderId: dco_decode_String(arr[0]),
 status: dco_decode_backup_folder_status_dto(arr[1]),
 pauseReason: dco_decode_opt_box_autoadd_backup_pause_reason_dto(arr[2]),
-lastBackupAt: dco_decode_opt_CastedPrimitive_i_64(arr[3]),); }
+lastBackupAt: dco_decode_opt_CastedPrimitive_i_64(arr[3]),
+wechat: dco_decode_opt_box_autoadd_wechat_event_source_dto(arr[4]),); }
 
 @protected BackupFolderStatusDto dco_decode_backup_folder_status_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 final arr = raw as List<dynamic>;
@@ -1951,10 +2308,11 @@ skippedExcluded: dco_decode_CastedPrimitive_i_64(arr[10]),); }
 
 @protected BackupSettingsDto dco_decode_backup_settings_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 final arr = raw as List<dynamic>;
-                if (arr.length != 3) throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+                if (arr.length != 4) throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
                 return BackupSettingsDto(includeHidden: dco_decode_bool(arr[0]),
 uploadLimitBytesPerSecond: dco_decode_opt_CastedPrimitive_i_64(arr[1]),
-paused: dco_decode_bool(arr[2]),); }
+paused: dco_decode_bool(arr[2]),
+wechatSnapshotRetention: dco_decode_CastedPrimitive_i_64(arr[3]),); }
 
 @protected BackupSummaryDto dco_decode_backup_summary_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 final arr = raw as List<dynamic>;
@@ -1983,6 +2341,9 @@ return dco_decode_backup_folder_draft_dto(raw); }
 
 @protected BackupFolderStateDto dco_decode_box_autoadd_backup_folder_state_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return dco_decode_backup_folder_state_dto(raw); }
+
+@protected BackupFolderStatusDto dco_decode_box_autoadd_backup_folder_status_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return dco_decode_backup_folder_status_dto(raw); }
 
 @protected BackupFolderUpdateDto dco_decode_box_autoadd_backup_folder_update_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return dco_decode_backup_folder_update_dto(raw); }
@@ -2022,6 +2383,21 @@ return dco_decode_transfer_result_dto(raw); }
 
 @protected UploadOutcomeDto dco_decode_box_autoadd_upload_outcome_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return dco_decode_upload_outcome_dto(raw); }
+
+@protected WechatAccountRefDto dco_decode_box_autoadd_wechat_account_ref_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return dco_decode_wechat_account_ref_dto(raw); }
+
+@protected WechatEventSourceDto dco_decode_box_autoadd_wechat_event_source_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return dco_decode_wechat_event_source_dto(raw); }
+
+@protected WechatRestoreOutcomeDto dco_decode_box_autoadd_wechat_restore_outcome_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return dco_decode_wechat_restore_outcome_dto(raw); }
+
+@protected WechatRestoreRequestDto dco_decode_box_autoadd_wechat_restore_request_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return dco_decode_wechat_restore_request_dto(raw); }
+
+@protected WechatSnapshotSelectionDto dco_decode_box_autoadd_wechat_snapshot_selection_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return dco_decode_wechat_snapshot_selection_dto(raw); }
 
 @protected BridgeError dco_decode_bridge_error(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 final arr = raw as List<dynamic>;
@@ -2137,6 +2513,27 @@ return (raw as List<dynamic>).map(dco_decode_trash_item_dto).toList(); }
 @protected List<VersionDto> dco_decode_list_version_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return (raw as List<dynamic>).map(dco_decode_version_dto).toList(); }
 
+@protected List<WechatAccountBackupStatusDto> dco_decode_list_wechat_account_backup_status_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return (raw as List<dynamic>).map(dco_decode_wechat_account_backup_status_dto).toList(); }
+
+@protected List<WechatAccountDto> dco_decode_list_wechat_account_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return (raw as List<dynamic>).map(dco_decode_wechat_account_dto).toList(); }
+
+@protected List<WechatCategoryBackupStatusDto> dco_decode_list_wechat_category_backup_status_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return (raw as List<dynamic>).map(dco_decode_wechat_category_backup_status_dto).toList(); }
+
+@protected List<WechatCategoryDto> dco_decode_list_wechat_category_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return (raw as List<dynamic>).map(dco_decode_wechat_category_dto).toList(); }
+
+@protected List<WechatCategoryInfoDto> dco_decode_list_wechat_category_info_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return (raw as List<dynamic>).map(dco_decode_wechat_category_info_dto).toList(); }
+
+@protected List<WechatDatabaseSnapshotDto> dco_decode_list_wechat_database_snapshot_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return (raw as List<dynamic>).map(dco_decode_wechat_database_snapshot_dto).toList(); }
+
+@protected List<WechatRestoreCategoryDto> dco_decode_list_wechat_restore_category_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return (raw as List<dynamic>).map(dco_decode_wechat_restore_category_dto).toList(); }
+
 @protected NodeDto dco_decode_node_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 final arr = raw as List<dynamic>;
                 if (arr.length != 13) throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
@@ -2181,6 +2578,9 @@ return raw == null ? null : dco_decode_box_autoadd_backup_activity_dto(raw); }
 @protected BackupFolderStateDto? dco_decode_opt_box_autoadd_backup_folder_state_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return raw == null ? null : dco_decode_box_autoadd_backup_folder_state_dto(raw); }
 
+@protected BackupFolderStatusDto? dco_decode_opt_box_autoadd_backup_folder_status_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return raw == null ? null : dco_decode_box_autoadd_backup_folder_status_dto(raw); }
+
 @protected BackupPauseReasonDto? dco_decode_opt_box_autoadd_backup_pause_reason_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return raw == null ? null : dco_decode_box_autoadd_backup_pause_reason_dto(raw); }
 
@@ -2210,6 +2610,15 @@ return raw == null ? null : dco_decode_box_autoadd_transfer_result_dto(raw); }
 
 @protected UploadOutcomeDto? dco_decode_opt_box_autoadd_upload_outcome_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return raw == null ? null : dco_decode_box_autoadd_upload_outcome_dto(raw); }
+
+@protected WechatEventSourceDto? dco_decode_opt_box_autoadd_wechat_event_source_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return raw == null ? null : dco_decode_box_autoadd_wechat_event_source_dto(raw); }
+
+@protected WechatRestoreOutcomeDto? dco_decode_opt_box_autoadd_wechat_restore_outcome_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return raw == null ? null : dco_decode_box_autoadd_wechat_restore_outcome_dto(raw); }
+
+@protected WechatSnapshotSelectionDto? dco_decode_opt_box_autoadd_wechat_snapshot_selection_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return raw == null ? null : dco_decode_box_autoadd_wechat_snapshot_selection_dto(raw); }
 
 @protected List<String>? dco_decode_opt_list_String(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return raw == null ? null : dco_decode_list_String(raw); }
@@ -2276,14 +2685,15 @@ error: dco_decode_opt_box_autoadd_transfer_failure_dto(arr[7]),); }
 
 @protected TransferResultDto dco_decode_transfer_result_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 final arr = raw as List<dynamic>;
-                if (arr.length != 7) throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+                if (arr.length != 8) throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
                 return TransferResultDto(transferId: dco_decode_String(arr[0]),
 status: dco_decode_transfer_status_dto(arr[1]),
 error: dco_decode_opt_box_autoadd_transfer_failure_dto(arr[2]),
 upload: dco_decode_opt_box_autoadd_upload_outcome_dto(arr[3]),
 download: dco_decode_opt_box_autoadd_download_outcome_dto(arr[4]),
 folderUpload: dco_decode_opt_box_autoadd_folder_upload_outcome_dto(arr[5]),
-folderDownload: dco_decode_opt_box_autoadd_folder_download_outcome_dto(arr[6]),); }
+folderDownload: dco_decode_opt_box_autoadd_folder_download_outcome_dto(arr[6]),
+wechatRestore: dco_decode_opt_box_autoadd_wechat_restore_outcome_dto(arr[7]),); }
 
 @protected TransferStatusDto dco_decode_transfer_status_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
 return TransferStatusDto.values[raw as int]; }
@@ -2326,6 +2736,139 @@ mtime: dco_decode_CastedPrimitive_i_64(arr[3]),
 mime: dco_decode_String(arr[4]),
 isCurrent: dco_decode_bool(arr[5]),
 createdAt: dco_decode_String(arr[6]),); }
+
+@protected WechatAccountBackupStatusDto dco_decode_wechat_account_backup_status_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 5) throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+                return WechatAccountBackupStatusDto(dataRoot: dco_decode_String(arr[0]),
+accountName: dco_decode_String(arr[1]),
+version: dco_decode_wechat_version_dto(arr[2]),
+categories: dco_decode_list_wechat_category_backup_status_dto(arr[3]),
+lastBackupAt: dco_decode_opt_CastedPrimitive_i_64(arr[4]),); }
+
+@protected WechatAccountDto dco_decode_wechat_account_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 12) throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+                return WechatAccountDto(accountName: dco_decode_String(arr[0]),
+version: dco_decode_wechat_version_dto(arr[1]),
+dataRoot: dco_decode_String(arr[2]),
+accountDir: dco_decode_String(arr[3]),
+source: dco_decode_wechat_source_dto(arr[4]),
+categories: dco_decode_list_wechat_category_info_dto(arr[5]),
+totalSizeBytes: dco_decode_CastedPrimitive_i_64(arr[6]),
+totalFileCount: dco_decode_CastedPrimitive_i_64(arr[7]),
+lastModifiedNs: dco_decode_opt_CastedPrimitive_i_64(arr[8]),
+isCurrentLoginCandidate: dco_decode_bool(arr[9]),
+hasPhoneMigrationBackup: dco_decode_bool(arr[10]),
+note: dco_decode_opt_String(arr[11]),); }
+
+@protected WechatAccountRefDto dco_decode_wechat_account_ref_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 3) throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+                return WechatAccountRefDto(dataRoot: dco_decode_String(arr[0]),
+accountName: dco_decode_String(arr[1]),
+version: dco_decode_wechat_version_dto(arr[2]),); }
+
+@protected WechatBackupPreflightDto dco_decode_wechat_backup_preflight_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 9) throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+                return WechatBackupPreflightDto(fileCount: dco_decode_CastedPrimitive_i_64(arr[0]),
+totalBytes: dco_decode_CastedPrimitive_i_64(arr[1]),
+uploadBytes: dco_decode_CastedPrimitive_i_64(arr[2]),
+uploadBytesWithoutImagesAndVideos: dco_decode_CastedPrimitive_i_64(arr[3]),
+databaseBytes: dco_decode_CastedPrimitive_i_64(arr[4]),
+excludedCount: dco_decode_CastedPrimitive_i_64(arr[5]),
+unreadableCount: dco_decode_CastedPrimitive_i_64(arr[6]),
+remainingQuotaBytes: dco_decode_opt_CastedPrimitive_i_64(arr[7]),
+overQuota: dco_decode_bool(arr[8]),); }
+
+@protected WechatCategoryBackupStatusDto dco_decode_wechat_category_backup_status_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 5) throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+                return WechatCategoryBackupStatusDto(category: dco_decode_wechat_category_dto(arr[0]),
+selected: dco_decode_bool(arr[1]),
+status: dco_decode_opt_box_autoadd_backup_folder_status_dto(arr[2]),
+pauseReason: dco_decode_opt_box_autoadd_backup_pause_reason_dto(arr[3]),
+lastBackupAt: dco_decode_opt_CastedPrimitive_i_64(arr[4]),); }
+
+@protected WechatCategoryDto dco_decode_wechat_category_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return WechatCategoryDto.values[raw as int]; }
+
+@protected WechatCategoryInfoDto dco_decode_wechat_category_info_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 5) throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+                return WechatCategoryInfoDto(category: dco_decode_wechat_category_dto(arr[0]),
+sizeBytes: dco_decode_CastedPrimitive_i_64(arr[1]),
+fileCount: dco_decode_CastedPrimitive_i_64(arr[2]),
+lastModifiedNs: dco_decode_opt_CastedPrimitive_i_64(arr[3]),
+exists: dco_decode_bool(arr[4]),); }
+
+@protected WechatDatabaseSnapshotDto dco_decode_wechat_database_snapshot_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 6) throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+                return WechatDatabaseSnapshotDto(deviceName: dco_decode_String(arr[0]),
+timestamp: dco_decode_String(arr[1]),
+snapshotAt: dco_decode_CastedPrimitive_i_64(arr[2]),
+totalBytes: dco_decode_CastedPrimitive_i_64(arr[3]),
+fileCount: dco_decode_CastedPrimitive_i_64(arr[4]),
+complete: dco_decode_bool(arr[5]),); }
+
+@protected WechatEventSourceDto dco_decode_wechat_event_source_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 2) throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+                return WechatEventSourceDto(accountName: dco_decode_String(arr[0]),
+category: dco_decode_wechat_category_dto(arr[1]),); }
+
+@protected WechatRestoreCategoryDto dco_decode_wechat_restore_category_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 4) throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+                return WechatRestoreCategoryDto(category: dco_decode_wechat_category_dto(arr[0]),
+fileCount: dco_decode_CastedPrimitive_i_64(arr[1]),
+totalBytes: dco_decode_CastedPrimitive_i_64(arr[2]),
+available: dco_decode_bool(arr[3]),); }
+
+@protected WechatRestoreOutcomeDto dco_decode_wechat_restore_outcome_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 5) throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+                return WechatRestoreOutcomeDto(transferId: dco_decode_String(arr[0]),
+restoredFiles: dco_decode_CastedPrimitive_i_64(arr[1]),
+restoredBytes: dco_decode_CastedPrimitive_i_64(arr[2]),
+skippedFiles: dco_decode_CastedPrimitive_i_64(arr[3]),
+databaseRestored: dco_decode_bool(arr[4]),); }
+
+@protected WechatRestoreRequestDto dco_decode_wechat_restore_request_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 6) throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+                return WechatRestoreRequestDto(dataRoot: dco_decode_String(arr[0]),
+accountName: dco_decode_String(arr[1]),
+version: dco_decode_wechat_version_dto(arr[2]),
+categories: dco_decode_list_wechat_category_dto(arr[3]),
+restoreDatabase: dco_decode_bool(arr[4]),
+snapshot: dco_decode_opt_box_autoadd_wechat_snapshot_selection_dto(arr[5]),); }
+
+@protected WechatSnapshotOutcomeDto dco_decode_wechat_snapshot_outcome_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return WechatSnapshotOutcomeDto.values[raw as int]; }
+
+@protected WechatSnapshotReportDto dco_decode_wechat_snapshot_report_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 5) throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+                return WechatSnapshotReportDto(outcome: dco_decode_wechat_snapshot_outcome_dto(arr[0]),
+snapshotAt: dco_decode_opt_CastedPrimitive_i_64(arr[1]),
+totalFiles: dco_decode_CastedPrimitive_i_64(arr[2]),
+uploadedFiles: dco_decode_CastedPrimitive_i_64(arr[3]),
+uploadedBytes: dco_decode_CastedPrimitive_i_64(arr[4]),); }
+
+@protected WechatSnapshotSelectionDto dco_decode_wechat_snapshot_selection_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+final arr = raw as List<dynamic>;
+                if (arr.length != 2) throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+                return WechatSnapshotSelectionDto(deviceName: dco_decode_String(arr[0]),
+timestamp: dco_decode_String(arr[1]),); }
+
+@protected WechatSourceDto dco_decode_wechat_source_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return WechatSourceDto.values[raw as int]; }
+
+@protected WechatVersionDto dco_decode_wechat_version_dto(dynamic raw){ // Codec=Dco (DartCObject based), see doc to use other codecs
+return WechatVersionDto.values[raw as int]; }
 
 @protected AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 var inner = sse_decode_String(deserializer);
@@ -2371,7 +2914,8 @@ var var_relativePath = sse_decode_String(deserializer);
 var var_kind = sse_decode_backup_activity_kind_dto(deserializer);
 var var_occurredAt = sse_decode_CastedPrimitive_i_64(deserializer);
 var var_message = sse_decode_opt_String(deserializer);
-return BackupActivityDto(id: var_id, folderId: var_folderId, relativePath: var_relativePath, kind: var_kind, occurredAt: var_occurredAt, message: var_message); }
+var var_wechat = sse_decode_opt_box_autoadd_wechat_event_source_dto(deserializer);
+return BackupActivityDto(id: var_id, folderId: var_folderId, relativePath: var_relativePath, kind: var_kind, occurredAt: var_occurredAt, message: var_message, wechat: var_wechat); }
 
 @protected BackupActivityKindDto sse_decode_backup_activity_kind_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 var inner = sse_decode_i_32(deserializer);
@@ -2413,7 +2957,8 @@ var var_folderId = sse_decode_String(deserializer);
 var var_status = sse_decode_backup_folder_status_dto(deserializer);
 var var_pauseReason = sse_decode_opt_box_autoadd_backup_pause_reason_dto(deserializer);
 var var_lastBackupAt = sse_decode_opt_CastedPrimitive_i_64(deserializer);
-return BackupFolderStateDto(folderId: var_folderId, status: var_status, pauseReason: var_pauseReason, lastBackupAt: var_lastBackupAt); }
+var var_wechat = sse_decode_opt_box_autoadd_wechat_event_source_dto(deserializer);
+return BackupFolderStateDto(folderId: var_folderId, status: var_status, pauseReason: var_pauseReason, lastBackupAt: var_lastBackupAt, wechat: var_wechat); }
 
 @protected BackupFolderStatusDto sse_decode_backup_folder_status_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 var var_kind = sse_decode_backup_folder_status_kind_dto(deserializer);
@@ -2466,7 +3011,8 @@ return BackupRunReportDto(folderId: var_folderId, status: var_status, scannedFil
 var var_includeHidden = sse_decode_bool(deserializer);
 var var_uploadLimitBytesPerSecond = sse_decode_opt_CastedPrimitive_i_64(deserializer);
 var var_paused = sse_decode_bool(deserializer);
-return BackupSettingsDto(includeHidden: var_includeHidden, uploadLimitBytesPerSecond: var_uploadLimitBytesPerSecond, paused: var_paused); }
+var var_wechatSnapshotRetention = sse_decode_CastedPrimitive_i_64(deserializer);
+return BackupSettingsDto(includeHidden: var_includeHidden, uploadLimitBytesPerSecond: var_uploadLimitBytesPerSecond, paused: var_paused, wechatSnapshotRetention: var_wechatSnapshotRetention); }
 
 @protected BackupSummaryDto sse_decode_backup_summary_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 var var_kind = sse_decode_backup_summary_status_kind_dto(deserializer);
@@ -2495,6 +3041,9 @@ return (sse_decode_backup_folder_draft_dto(deserializer)); }
 
 @protected BackupFolderStateDto sse_decode_box_autoadd_backup_folder_state_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 return (sse_decode_backup_folder_state_dto(deserializer)); }
+
+@protected BackupFolderStatusDto sse_decode_box_autoadd_backup_folder_status_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+return (sse_decode_backup_folder_status_dto(deserializer)); }
 
 @protected BackupFolderUpdateDto sse_decode_box_autoadd_backup_folder_update_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 return (sse_decode_backup_folder_update_dto(deserializer)); }
@@ -2534,6 +3083,21 @@ return (sse_decode_transfer_result_dto(deserializer)); }
 
 @protected UploadOutcomeDto sse_decode_box_autoadd_upload_outcome_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 return (sse_decode_upload_outcome_dto(deserializer)); }
+
+@protected WechatAccountRefDto sse_decode_box_autoadd_wechat_account_ref_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+return (sse_decode_wechat_account_ref_dto(deserializer)); }
+
+@protected WechatEventSourceDto sse_decode_box_autoadd_wechat_event_source_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+return (sse_decode_wechat_event_source_dto(deserializer)); }
+
+@protected WechatRestoreOutcomeDto sse_decode_box_autoadd_wechat_restore_outcome_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+return (sse_decode_wechat_restore_outcome_dto(deserializer)); }
+
+@protected WechatRestoreRequestDto sse_decode_box_autoadd_wechat_restore_request_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+return (sse_decode_wechat_restore_request_dto(deserializer)); }
+
+@protected WechatSnapshotSelectionDto sse_decode_box_autoadd_wechat_snapshot_selection_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+return (sse_decode_wechat_snapshot_selection_dto(deserializer)); }
 
 @protected BridgeError sse_decode_bridge_error(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 var var_code = sse_decode_String(deserializer);
@@ -2695,6 +3259,62 @@ var len_ = sse_decode_i_32(deserializer);
         return ans_;
          }
 
+@protected List<WechatAccountBackupStatusDto> sse_decode_list_wechat_account_backup_status_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+        var len_ = sse_decode_i_32(deserializer);
+        var ans_ = <WechatAccountBackupStatusDto>[];
+        for (var idx_ = 0; idx_ < len_; ++idx_) { ans_.add(sse_decode_wechat_account_backup_status_dto(deserializer)); }
+        return ans_;
+         }
+
+@protected List<WechatAccountDto> sse_decode_list_wechat_account_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+        var len_ = sse_decode_i_32(deserializer);
+        var ans_ = <WechatAccountDto>[];
+        for (var idx_ = 0; idx_ < len_; ++idx_) { ans_.add(sse_decode_wechat_account_dto(deserializer)); }
+        return ans_;
+         }
+
+@protected List<WechatCategoryBackupStatusDto> sse_decode_list_wechat_category_backup_status_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+        var len_ = sse_decode_i_32(deserializer);
+        var ans_ = <WechatCategoryBackupStatusDto>[];
+        for (var idx_ = 0; idx_ < len_; ++idx_) { ans_.add(sse_decode_wechat_category_backup_status_dto(deserializer)); }
+        return ans_;
+         }
+
+@protected List<WechatCategoryDto> sse_decode_list_wechat_category_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+        var len_ = sse_decode_i_32(deserializer);
+        var ans_ = <WechatCategoryDto>[];
+        for (var idx_ = 0; idx_ < len_; ++idx_) { ans_.add(sse_decode_wechat_category_dto(deserializer)); }
+        return ans_;
+         }
+
+@protected List<WechatCategoryInfoDto> sse_decode_list_wechat_category_info_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+        var len_ = sse_decode_i_32(deserializer);
+        var ans_ = <WechatCategoryInfoDto>[];
+        for (var idx_ = 0; idx_ < len_; ++idx_) { ans_.add(sse_decode_wechat_category_info_dto(deserializer)); }
+        return ans_;
+         }
+
+@protected List<WechatDatabaseSnapshotDto> sse_decode_list_wechat_database_snapshot_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+        var len_ = sse_decode_i_32(deserializer);
+        var ans_ = <WechatDatabaseSnapshotDto>[];
+        for (var idx_ = 0; idx_ < len_; ++idx_) { ans_.add(sse_decode_wechat_database_snapshot_dto(deserializer)); }
+        return ans_;
+         }
+
+@protected List<WechatRestoreCategoryDto> sse_decode_list_wechat_restore_category_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+        var len_ = sse_decode_i_32(deserializer);
+        var ans_ = <WechatRestoreCategoryDto>[];
+        for (var idx_ = 0; idx_ < len_; ++idx_) { ans_.add(sse_decode_wechat_restore_category_dto(deserializer)); }
+        return ans_;
+         }
+
 @protected NodeDto sse_decode_node_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 var var_id = sse_decode_String(deserializer);
 var var_parentId = sse_decode_opt_String(deserializer);
@@ -2764,6 +3384,15 @@ var inner = sse_decode_i_32(deserializer);
 
             if (sse_decode_bool(deserializer)) {
                 return (sse_decode_box_autoadd_backup_folder_state_dto(deserializer));
+            } else {
+                return null;
+            }
+             }
+
+@protected BackupFolderStatusDto? sse_decode_opt_box_autoadd_backup_folder_status_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+            if (sse_decode_bool(deserializer)) {
+                return (sse_decode_box_autoadd_backup_folder_status_dto(deserializer));
             } else {
                 return null;
             }
@@ -2859,6 +3488,33 @@ var inner = sse_decode_i_32(deserializer);
             }
              }
 
+@protected WechatEventSourceDto? sse_decode_opt_box_autoadd_wechat_event_source_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+            if (sse_decode_bool(deserializer)) {
+                return (sse_decode_box_autoadd_wechat_event_source_dto(deserializer));
+            } else {
+                return null;
+            }
+             }
+
+@protected WechatRestoreOutcomeDto? sse_decode_opt_box_autoadd_wechat_restore_outcome_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+            if (sse_decode_bool(deserializer)) {
+                return (sse_decode_box_autoadd_wechat_restore_outcome_dto(deserializer));
+            } else {
+                return null;
+            }
+             }
+
+@protected WechatSnapshotSelectionDto? sse_decode_opt_box_autoadd_wechat_snapshot_selection_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+            if (sse_decode_bool(deserializer)) {
+                return (sse_decode_box_autoadd_wechat_snapshot_selection_dto(deserializer));
+            } else {
+                return null;
+            }
+             }
+
 @protected List<String>? sse_decode_opt_list_String(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 
             if (sse_decode_bool(deserializer)) {
@@ -2932,7 +3588,8 @@ var var_upload = sse_decode_opt_box_autoadd_upload_outcome_dto(deserializer);
 var var_download = sse_decode_opt_box_autoadd_download_outcome_dto(deserializer);
 var var_folderUpload = sse_decode_opt_box_autoadd_folder_upload_outcome_dto(deserializer);
 var var_folderDownload = sse_decode_opt_box_autoadd_folder_download_outcome_dto(deserializer);
-return TransferResultDto(transferId: var_transferId, status: var_status, error: var_error, upload: var_upload, download: var_download, folderUpload: var_folderUpload, folderDownload: var_folderDownload); }
+var var_wechatRestore = sse_decode_opt_box_autoadd_wechat_restore_outcome_dto(deserializer);
+return TransferResultDto(transferId: var_transferId, status: var_status, error: var_error, upload: var_upload, download: var_download, folderUpload: var_folderUpload, folderDownload: var_folderDownload, wechatRestore: var_wechatRestore); }
 
 @protected TransferStatusDto sse_decode_transfer_status_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 var inner = sse_decode_i_32(deserializer);
@@ -2972,6 +3629,130 @@ var var_mime = sse_decode_String(deserializer);
 var var_isCurrent = sse_decode_bool(deserializer);
 var var_createdAt = sse_decode_String(deserializer);
 return VersionDto(id: var_id, contentId: var_contentId, size: var_size, mtime: var_mtime, mime: var_mime, isCurrent: var_isCurrent, createdAt: var_createdAt); }
+
+@protected WechatAccountBackupStatusDto sse_decode_wechat_account_backup_status_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_dataRoot = sse_decode_String(deserializer);
+var var_accountName = sse_decode_String(deserializer);
+var var_version = sse_decode_wechat_version_dto(deserializer);
+var var_categories = sse_decode_list_wechat_category_backup_status_dto(deserializer);
+var var_lastBackupAt = sse_decode_opt_CastedPrimitive_i_64(deserializer);
+return WechatAccountBackupStatusDto(dataRoot: var_dataRoot, accountName: var_accountName, version: var_version, categories: var_categories, lastBackupAt: var_lastBackupAt); }
+
+@protected WechatAccountDto sse_decode_wechat_account_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_accountName = sse_decode_String(deserializer);
+var var_version = sse_decode_wechat_version_dto(deserializer);
+var var_dataRoot = sse_decode_String(deserializer);
+var var_accountDir = sse_decode_String(deserializer);
+var var_source = sse_decode_wechat_source_dto(deserializer);
+var var_categories = sse_decode_list_wechat_category_info_dto(deserializer);
+var var_totalSizeBytes = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_totalFileCount = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_lastModifiedNs = sse_decode_opt_CastedPrimitive_i_64(deserializer);
+var var_isCurrentLoginCandidate = sse_decode_bool(deserializer);
+var var_hasPhoneMigrationBackup = sse_decode_bool(deserializer);
+var var_note = sse_decode_opt_String(deserializer);
+return WechatAccountDto(accountName: var_accountName, version: var_version, dataRoot: var_dataRoot, accountDir: var_accountDir, source: var_source, categories: var_categories, totalSizeBytes: var_totalSizeBytes, totalFileCount: var_totalFileCount, lastModifiedNs: var_lastModifiedNs, isCurrentLoginCandidate: var_isCurrentLoginCandidate, hasPhoneMigrationBackup: var_hasPhoneMigrationBackup, note: var_note); }
+
+@protected WechatAccountRefDto sse_decode_wechat_account_ref_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_dataRoot = sse_decode_String(deserializer);
+var var_accountName = sse_decode_String(deserializer);
+var var_version = sse_decode_wechat_version_dto(deserializer);
+return WechatAccountRefDto(dataRoot: var_dataRoot, accountName: var_accountName, version: var_version); }
+
+@protected WechatBackupPreflightDto sse_decode_wechat_backup_preflight_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_fileCount = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_totalBytes = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_uploadBytes = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_uploadBytesWithoutImagesAndVideos = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_databaseBytes = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_excludedCount = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_unreadableCount = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_remainingQuotaBytes = sse_decode_opt_CastedPrimitive_i_64(deserializer);
+var var_overQuota = sse_decode_bool(deserializer);
+return WechatBackupPreflightDto(fileCount: var_fileCount, totalBytes: var_totalBytes, uploadBytes: var_uploadBytes, uploadBytesWithoutImagesAndVideos: var_uploadBytesWithoutImagesAndVideos, databaseBytes: var_databaseBytes, excludedCount: var_excludedCount, unreadableCount: var_unreadableCount, remainingQuotaBytes: var_remainingQuotaBytes, overQuota: var_overQuota); }
+
+@protected WechatCategoryBackupStatusDto sse_decode_wechat_category_backup_status_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_category = sse_decode_wechat_category_dto(deserializer);
+var var_selected = sse_decode_bool(deserializer);
+var var_status = sse_decode_opt_box_autoadd_backup_folder_status_dto(deserializer);
+var var_pauseReason = sse_decode_opt_box_autoadd_backup_pause_reason_dto(deserializer);
+var var_lastBackupAt = sse_decode_opt_CastedPrimitive_i_64(deserializer);
+return WechatCategoryBackupStatusDto(category: var_category, selected: var_selected, status: var_status, pauseReason: var_pauseReason, lastBackupAt: var_lastBackupAt); }
+
+@protected WechatCategoryDto sse_decode_wechat_category_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var inner = sse_decode_i_32(deserializer);
+        return WechatCategoryDto.values[inner]; }
+
+@protected WechatCategoryInfoDto sse_decode_wechat_category_info_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_category = sse_decode_wechat_category_dto(deserializer);
+var var_sizeBytes = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_fileCount = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_lastModifiedNs = sse_decode_opt_CastedPrimitive_i_64(deserializer);
+var var_exists = sse_decode_bool(deserializer);
+return WechatCategoryInfoDto(category: var_category, sizeBytes: var_sizeBytes, fileCount: var_fileCount, lastModifiedNs: var_lastModifiedNs, exists: var_exists); }
+
+@protected WechatDatabaseSnapshotDto sse_decode_wechat_database_snapshot_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_deviceName = sse_decode_String(deserializer);
+var var_timestamp = sse_decode_String(deserializer);
+var var_snapshotAt = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_totalBytes = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_fileCount = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_complete = sse_decode_bool(deserializer);
+return WechatDatabaseSnapshotDto(deviceName: var_deviceName, timestamp: var_timestamp, snapshotAt: var_snapshotAt, totalBytes: var_totalBytes, fileCount: var_fileCount, complete: var_complete); }
+
+@protected WechatEventSourceDto sse_decode_wechat_event_source_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_accountName = sse_decode_String(deserializer);
+var var_category = sse_decode_wechat_category_dto(deserializer);
+return WechatEventSourceDto(accountName: var_accountName, category: var_category); }
+
+@protected WechatRestoreCategoryDto sse_decode_wechat_restore_category_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_category = sse_decode_wechat_category_dto(deserializer);
+var var_fileCount = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_totalBytes = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_available = sse_decode_bool(deserializer);
+return WechatRestoreCategoryDto(category: var_category, fileCount: var_fileCount, totalBytes: var_totalBytes, available: var_available); }
+
+@protected WechatRestoreOutcomeDto sse_decode_wechat_restore_outcome_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_transferId = sse_decode_String(deserializer);
+var var_restoredFiles = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_restoredBytes = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_skippedFiles = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_databaseRestored = sse_decode_bool(deserializer);
+return WechatRestoreOutcomeDto(transferId: var_transferId, restoredFiles: var_restoredFiles, restoredBytes: var_restoredBytes, skippedFiles: var_skippedFiles, databaseRestored: var_databaseRestored); }
+
+@protected WechatRestoreRequestDto sse_decode_wechat_restore_request_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_dataRoot = sse_decode_String(deserializer);
+var var_accountName = sse_decode_String(deserializer);
+var var_version = sse_decode_wechat_version_dto(deserializer);
+var var_categories = sse_decode_list_wechat_category_dto(deserializer);
+var var_restoreDatabase = sse_decode_bool(deserializer);
+var var_snapshot = sse_decode_opt_box_autoadd_wechat_snapshot_selection_dto(deserializer);
+return WechatRestoreRequestDto(dataRoot: var_dataRoot, accountName: var_accountName, version: var_version, categories: var_categories, restoreDatabase: var_restoreDatabase, snapshot: var_snapshot); }
+
+@protected WechatSnapshotOutcomeDto sse_decode_wechat_snapshot_outcome_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var inner = sse_decode_i_32(deserializer);
+        return WechatSnapshotOutcomeDto.values[inner]; }
+
+@protected WechatSnapshotReportDto sse_decode_wechat_snapshot_report_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_outcome = sse_decode_wechat_snapshot_outcome_dto(deserializer);
+var var_snapshotAt = sse_decode_opt_CastedPrimitive_i_64(deserializer);
+var var_totalFiles = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_uploadedFiles = sse_decode_CastedPrimitive_i_64(deserializer);
+var var_uploadedBytes = sse_decode_CastedPrimitive_i_64(deserializer);
+return WechatSnapshotReportDto(outcome: var_outcome, snapshotAt: var_snapshotAt, totalFiles: var_totalFiles, uploadedFiles: var_uploadedFiles, uploadedBytes: var_uploadedBytes); }
+
+@protected WechatSnapshotSelectionDto sse_decode_wechat_snapshot_selection_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var var_deviceName = sse_decode_String(deserializer);
+var var_timestamp = sse_decode_String(deserializer);
+return WechatSnapshotSelectionDto(deviceName: var_deviceName, timestamp: var_timestamp); }
+
+@protected WechatSourceDto sse_decode_wechat_source_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var inner = sse_decode_i_32(deserializer);
+        return WechatSourceDto.values[inner]; }
+
+@protected WechatVersionDto sse_decode_wechat_version_dto(SseDeserializer deserializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+var inner = sse_decode_i_32(deserializer);
+        return WechatVersionDto.values[inner]; }
 
 @protected void sse_encode_AnyhowException(AnyhowException self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 sse_encode_String(self.message, serializer); }
@@ -3022,6 +3803,7 @@ sse_encode_String(self.relativePath, serializer);
 sse_encode_backup_activity_kind_dto(self.kind, serializer);
 sse_encode_CastedPrimitive_i_64(self.occurredAt, serializer);
 sse_encode_opt_String(self.message, serializer);
+sse_encode_opt_box_autoadd_wechat_event_source_dto(self.wechat, serializer);
  }
 
 @protected void sse_encode_backup_activity_kind_dto(BackupActivityKindDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
@@ -3062,6 +3844,7 @@ sse_encode_String(self.folderId, serializer);
 sse_encode_backup_folder_status_dto(self.status, serializer);
 sse_encode_opt_box_autoadd_backup_pause_reason_dto(self.pauseReason, serializer);
 sse_encode_opt_CastedPrimitive_i_64(self.lastBackupAt, serializer);
+sse_encode_opt_box_autoadd_wechat_event_source_dto(self.wechat, serializer);
  }
 
 @protected void sse_encode_backup_folder_status_dto(BackupFolderStatusDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
@@ -3113,6 +3896,7 @@ sse_encode_CastedPrimitive_i_64(self.skippedExcluded, serializer);
 sse_encode_bool(self.includeHidden, serializer);
 sse_encode_opt_CastedPrimitive_i_64(self.uploadLimitBytesPerSecond, serializer);
 sse_encode_bool(self.paused, serializer);
+sse_encode_CastedPrimitive_i_64(self.wechatSnapshotRetention, serializer);
  }
 
 @protected void sse_encode_backup_summary_dto(BackupSummaryDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
@@ -3141,6 +3925,9 @@ sse_encode_backup_folder_draft_dto(self, serializer); }
 
 @protected void sse_encode_box_autoadd_backup_folder_state_dto(BackupFolderStateDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 sse_encode_backup_folder_state_dto(self, serializer); }
+
+@protected void sse_encode_box_autoadd_backup_folder_status_dto(BackupFolderStatusDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_backup_folder_status_dto(self, serializer); }
 
 @protected void sse_encode_box_autoadd_backup_folder_update_dto(BackupFolderUpdateDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 sse_encode_backup_folder_update_dto(self, serializer); }
@@ -3180,6 +3967,21 @@ sse_encode_transfer_result_dto(self, serializer); }
 
 @protected void sse_encode_box_autoadd_upload_outcome_dto(UploadOutcomeDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 sse_encode_upload_outcome_dto(self, serializer); }
+
+@protected void sse_encode_box_autoadd_wechat_account_ref_dto(WechatAccountRefDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_wechat_account_ref_dto(self, serializer); }
+
+@protected void sse_encode_box_autoadd_wechat_event_source_dto(WechatEventSourceDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_wechat_event_source_dto(self, serializer); }
+
+@protected void sse_encode_box_autoadd_wechat_restore_outcome_dto(WechatRestoreOutcomeDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_wechat_restore_outcome_dto(self, serializer); }
+
+@protected void sse_encode_box_autoadd_wechat_restore_request_dto(WechatRestoreRequestDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_wechat_restore_request_dto(self, serializer); }
+
+@protected void sse_encode_box_autoadd_wechat_snapshot_selection_dto(WechatSnapshotSelectionDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_wechat_snapshot_selection_dto(self, serializer); }
 
 @protected void sse_encode_bridge_error(BridgeError self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 sse_encode_String(self.code, serializer);
@@ -3299,6 +4101,34 @@ sse_encode_i_32(self.length, serializer);
 sse_encode_i_32(self.length, serializer);
         for (final item in self) { sse_encode_version_dto(item, serializer); } }
 
+@protected void sse_encode_list_wechat_account_backup_status_dto(List<WechatAccountBackupStatusDto> self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.length, serializer);
+        for (final item in self) { sse_encode_wechat_account_backup_status_dto(item, serializer); } }
+
+@protected void sse_encode_list_wechat_account_dto(List<WechatAccountDto> self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.length, serializer);
+        for (final item in self) { sse_encode_wechat_account_dto(item, serializer); } }
+
+@protected void sse_encode_list_wechat_category_backup_status_dto(List<WechatCategoryBackupStatusDto> self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.length, serializer);
+        for (final item in self) { sse_encode_wechat_category_backup_status_dto(item, serializer); } }
+
+@protected void sse_encode_list_wechat_category_dto(List<WechatCategoryDto> self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.length, serializer);
+        for (final item in self) { sse_encode_wechat_category_dto(item, serializer); } }
+
+@protected void sse_encode_list_wechat_category_info_dto(List<WechatCategoryInfoDto> self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.length, serializer);
+        for (final item in self) { sse_encode_wechat_category_info_dto(item, serializer); } }
+
+@protected void sse_encode_list_wechat_database_snapshot_dto(List<WechatDatabaseSnapshotDto> self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.length, serializer);
+        for (final item in self) { sse_encode_wechat_database_snapshot_dto(item, serializer); } }
+
+@protected void sse_encode_list_wechat_restore_category_dto(List<WechatRestoreCategoryDto> self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.length, serializer);
+        for (final item in self) { sse_encode_wechat_restore_category_dto(item, serializer); } }
+
 @protected void sse_encode_node_dto(NodeDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 sse_encode_String(self.id, serializer);
 sse_encode_opt_String(self.parentId, serializer);
@@ -3363,6 +4193,14 @@ sse_encode_i_32(self.index, serializer); }
                 sse_encode_bool(self != null, serializer);
                 if (self != null) {
                     sse_encode_box_autoadd_backup_folder_state_dto(self, serializer);
+                }
+                 }
+
+@protected void sse_encode_opt_box_autoadd_backup_folder_status_dto(BackupFolderStatusDto? self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+                sse_encode_bool(self != null, serializer);
+                if (self != null) {
+                    sse_encode_box_autoadd_backup_folder_status_dto(self, serializer);
                 }
                  }
 
@@ -3446,6 +4284,30 @@ sse_encode_i_32(self.index, serializer); }
                 }
                  }
 
+@protected void sse_encode_opt_box_autoadd_wechat_event_source_dto(WechatEventSourceDto? self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+                sse_encode_bool(self != null, serializer);
+                if (self != null) {
+                    sse_encode_box_autoadd_wechat_event_source_dto(self, serializer);
+                }
+                 }
+
+@protected void sse_encode_opt_box_autoadd_wechat_restore_outcome_dto(WechatRestoreOutcomeDto? self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+                sse_encode_bool(self != null, serializer);
+                if (self != null) {
+                    sse_encode_box_autoadd_wechat_restore_outcome_dto(self, serializer);
+                }
+                 }
+
+@protected void sse_encode_opt_box_autoadd_wechat_snapshot_selection_dto(WechatSnapshotSelectionDto? self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+
+                sse_encode_bool(self != null, serializer);
+                if (self != null) {
+                    sse_encode_box_autoadd_wechat_snapshot_selection_dto(self, serializer);
+                }
+                 }
+
 @protected void sse_encode_opt_list_String(List<String>? self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
 
                 sse_encode_bool(self != null, serializer);
@@ -3516,6 +4378,7 @@ sse_encode_opt_box_autoadd_upload_outcome_dto(self.upload, serializer);
 sse_encode_opt_box_autoadd_download_outcome_dto(self.download, serializer);
 sse_encode_opt_box_autoadd_folder_upload_outcome_dto(self.folderUpload, serializer);
 sse_encode_opt_box_autoadd_folder_download_outcome_dto(self.folderDownload, serializer);
+sse_encode_opt_box_autoadd_wechat_restore_outcome_dto(self.wechatRestore, serializer);
  }
 
 @protected void sse_encode_transfer_status_dto(TransferStatusDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
@@ -3555,5 +4418,125 @@ sse_encode_String(self.mime, serializer);
 sse_encode_bool(self.isCurrent, serializer);
 sse_encode_String(self.createdAt, serializer);
  }
+
+@protected void sse_encode_wechat_account_backup_status_dto(WechatAccountBackupStatusDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_String(self.dataRoot, serializer);
+sse_encode_String(self.accountName, serializer);
+sse_encode_wechat_version_dto(self.version, serializer);
+sse_encode_list_wechat_category_backup_status_dto(self.categories, serializer);
+sse_encode_opt_CastedPrimitive_i_64(self.lastBackupAt, serializer);
+ }
+
+@protected void sse_encode_wechat_account_dto(WechatAccountDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_String(self.accountName, serializer);
+sse_encode_wechat_version_dto(self.version, serializer);
+sse_encode_String(self.dataRoot, serializer);
+sse_encode_String(self.accountDir, serializer);
+sse_encode_wechat_source_dto(self.source, serializer);
+sse_encode_list_wechat_category_info_dto(self.categories, serializer);
+sse_encode_CastedPrimitive_i_64(self.totalSizeBytes, serializer);
+sse_encode_CastedPrimitive_i_64(self.totalFileCount, serializer);
+sse_encode_opt_CastedPrimitive_i_64(self.lastModifiedNs, serializer);
+sse_encode_bool(self.isCurrentLoginCandidate, serializer);
+sse_encode_bool(self.hasPhoneMigrationBackup, serializer);
+sse_encode_opt_String(self.note, serializer);
+ }
+
+@protected void sse_encode_wechat_account_ref_dto(WechatAccountRefDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_String(self.dataRoot, serializer);
+sse_encode_String(self.accountName, serializer);
+sse_encode_wechat_version_dto(self.version, serializer);
+ }
+
+@protected void sse_encode_wechat_backup_preflight_dto(WechatBackupPreflightDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_CastedPrimitive_i_64(self.fileCount, serializer);
+sse_encode_CastedPrimitive_i_64(self.totalBytes, serializer);
+sse_encode_CastedPrimitive_i_64(self.uploadBytes, serializer);
+sse_encode_CastedPrimitive_i_64(self.uploadBytesWithoutImagesAndVideos, serializer);
+sse_encode_CastedPrimitive_i_64(self.databaseBytes, serializer);
+sse_encode_CastedPrimitive_i_64(self.excludedCount, serializer);
+sse_encode_CastedPrimitive_i_64(self.unreadableCount, serializer);
+sse_encode_opt_CastedPrimitive_i_64(self.remainingQuotaBytes, serializer);
+sse_encode_bool(self.overQuota, serializer);
+ }
+
+@protected void sse_encode_wechat_category_backup_status_dto(WechatCategoryBackupStatusDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_wechat_category_dto(self.category, serializer);
+sse_encode_bool(self.selected, serializer);
+sse_encode_opt_box_autoadd_backup_folder_status_dto(self.status, serializer);
+sse_encode_opt_box_autoadd_backup_pause_reason_dto(self.pauseReason, serializer);
+sse_encode_opt_CastedPrimitive_i_64(self.lastBackupAt, serializer);
+ }
+
+@protected void sse_encode_wechat_category_dto(WechatCategoryDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.index, serializer); }
+
+@protected void sse_encode_wechat_category_info_dto(WechatCategoryInfoDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_wechat_category_dto(self.category, serializer);
+sse_encode_CastedPrimitive_i_64(self.sizeBytes, serializer);
+sse_encode_CastedPrimitive_i_64(self.fileCount, serializer);
+sse_encode_opt_CastedPrimitive_i_64(self.lastModifiedNs, serializer);
+sse_encode_bool(self.exists, serializer);
+ }
+
+@protected void sse_encode_wechat_database_snapshot_dto(WechatDatabaseSnapshotDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_String(self.deviceName, serializer);
+sse_encode_String(self.timestamp, serializer);
+sse_encode_CastedPrimitive_i_64(self.snapshotAt, serializer);
+sse_encode_CastedPrimitive_i_64(self.totalBytes, serializer);
+sse_encode_CastedPrimitive_i_64(self.fileCount, serializer);
+sse_encode_bool(self.complete, serializer);
+ }
+
+@protected void sse_encode_wechat_event_source_dto(WechatEventSourceDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_String(self.accountName, serializer);
+sse_encode_wechat_category_dto(self.category, serializer);
+ }
+
+@protected void sse_encode_wechat_restore_category_dto(WechatRestoreCategoryDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_wechat_category_dto(self.category, serializer);
+sse_encode_CastedPrimitive_i_64(self.fileCount, serializer);
+sse_encode_CastedPrimitive_i_64(self.totalBytes, serializer);
+sse_encode_bool(self.available, serializer);
+ }
+
+@protected void sse_encode_wechat_restore_outcome_dto(WechatRestoreOutcomeDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_String(self.transferId, serializer);
+sse_encode_CastedPrimitive_i_64(self.restoredFiles, serializer);
+sse_encode_CastedPrimitive_i_64(self.restoredBytes, serializer);
+sse_encode_CastedPrimitive_i_64(self.skippedFiles, serializer);
+sse_encode_bool(self.databaseRestored, serializer);
+ }
+
+@protected void sse_encode_wechat_restore_request_dto(WechatRestoreRequestDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_String(self.dataRoot, serializer);
+sse_encode_String(self.accountName, serializer);
+sse_encode_wechat_version_dto(self.version, serializer);
+sse_encode_list_wechat_category_dto(self.categories, serializer);
+sse_encode_bool(self.restoreDatabase, serializer);
+sse_encode_opt_box_autoadd_wechat_snapshot_selection_dto(self.snapshot, serializer);
+ }
+
+@protected void sse_encode_wechat_snapshot_outcome_dto(WechatSnapshotOutcomeDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.index, serializer); }
+
+@protected void sse_encode_wechat_snapshot_report_dto(WechatSnapshotReportDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_wechat_snapshot_outcome_dto(self.outcome, serializer);
+sse_encode_opt_CastedPrimitive_i_64(self.snapshotAt, serializer);
+sse_encode_CastedPrimitive_i_64(self.totalFiles, serializer);
+sse_encode_CastedPrimitive_i_64(self.uploadedFiles, serializer);
+sse_encode_CastedPrimitive_i_64(self.uploadedBytes, serializer);
+ }
+
+@protected void sse_encode_wechat_snapshot_selection_dto(WechatSnapshotSelectionDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_String(self.deviceName, serializer);
+sse_encode_String(self.timestamp, serializer);
+ }
+
+@protected void sse_encode_wechat_source_dto(WechatSourceDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.index, serializer); }
+
+@protected void sse_encode_wechat_version_dto(WechatVersionDto self, SseSerializer serializer){ // Codec=Sse (Serialization based), see doc to use other codecs
+sse_encode_i_32(self.index, serializer); }
                 }
                 

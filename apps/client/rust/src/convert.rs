@@ -5,10 +5,15 @@
 
 use std::path::Path;
 
+use client_core::desktop::wechat::{WechatAccount, WechatCategory, WechatSource, WechatVersion};
 use client_core::desktop::{
     BackupActivity, BackupActivityKind, BackupEvent, BackupFolder, BackupFolderDraft,
     BackupFolderState, BackupFolderStatus, BackupFolderUpdate, BackupPauseReason, BackupPreflight,
     BackupRunReport, BackupSettings, BackupSummary, BackupSummaryStatus,
+    WECHAT_SNAPSHOT_RETENTION_MAX, WECHAT_SNAPSHOT_RETENTION_MIN, WechatAccountBackupStatus,
+    WechatBackupPreflight, WechatCategoryBackupStatus, WechatDatabaseSnapshot,
+    WechatDiscoveredAccount, WechatEventSource, WechatRestoreCategoryInfo, WechatRestoreReport,
+    WechatRestoreRequest, WechatSnapshotOutcome, WechatSnapshotReport, WechatSnapshotSelection,
 };
 use client_core::{
     Account, AccountStatus, ConflictPolicy, DownloadOutcome, FolderCounts, FolderDownloadOutcome,
@@ -29,7 +34,11 @@ use crate::api::types::{
     KdfParamsDto, NodeDto, NodeKindDto, NodeSortDto, NodeSortFieldDto, PendingUploadDto,
     PendingUploadStatusDto, PermanentDeleteOutcomeDto, RestoreTargetDto, SkippedItemDto,
     TransferDirectionDto, TransferFailureDto, TransferProgressDto, TransferStatusDto, TrashItemDto,
-    UploadOutcomeDto, UsageDto, VersionDto,
+    UploadOutcomeDto, UsageDto, VersionDto, WechatAccountBackupStatusDto, WechatAccountDto,
+    WechatAccountRefDto, WechatBackupPreflightDto, WechatCategoryBackupStatusDto,
+    WechatCategoryDto, WechatCategoryInfoDto, WechatDatabaseSnapshotDto, WechatEventSourceDto,
+    WechatRestoreCategoryDto, WechatRestoreOutcomeDto, WechatRestoreRequestDto,
+    WechatSnapshotOutcomeDto, WechatSnapshotReportDto, WechatSourceDto, WechatVersionDto,
 };
 
 /// 本地路径转展示字符串；路径来自用户选择，可出现在界面返回值里，但不写日志。
@@ -415,9 +424,10 @@ impl From<BackupFolderStatus> for BackupFolderStatusDto {
             BackupFolderStatus::Paused => Self::paused(),
             BackupFolderStatus::Error { unreadable_count } => Self::error(unreadable_count),
             BackupFolderStatus::NeedsUnlock => Self::needs_unlock(),
-            // 第 4 组再为“等微信退出后备份”增加桥接枚举与界面文案；
-            // 这里先映射为暂停，保证非桌面端桥接层可编译。
-            BackupFolderStatus::WaitingForWechatExit => Self::paused(),
+            BackupFolderStatus::WaitingForWechatExit => Self {
+                kind: BackupFolderStatusKindDto::WaitingForWechatExit,
+                ..Self::idle_ok()
+            },
         }
     }
 }
@@ -489,6 +499,7 @@ impl From<&BackupFolderState> for BackupFolderStateDto {
             status: state.status.into(),
             pause_reason: state.pause_reason.map(BackupPauseReasonDto::from),
             last_backup_at: state.last_backup_at,
+            wechat: state.wechat.as_ref().map(WechatEventSourceDto::from),
         }
     }
 }
@@ -544,6 +555,7 @@ impl From<&BackupActivity> for BackupActivityDto {
             kind: activity.kind.into(),
             occurred_at: activity.occurred_at,
             message: activity.message.clone(),
+            wechat: activity.wechat.as_ref().map(WechatEventSourceDto::from),
         }
     }
 }
@@ -651,11 +663,18 @@ impl From<&BackupSettings> for BackupSettingsDto {
             include_hidden: settings.include_hidden,
             upload_limit_bytes_per_second: settings.upload_limit_bytes_per_second.map(i64_from_u64),
             paused: settings.paused,
+            wechat_snapshot_retention: i64::from(settings.normalized_wechat_snapshot_retention()),
         }
     }
 }
 
 pub(crate) fn backup_settings(settings: BackupSettingsDto) -> Result<BackupSettings, BridgeError> {
+    let retention = u8::try_from(settings.wechat_snapshot_retention)
+        .ok()
+        .filter(|value| {
+            (WECHAT_SNAPSHOT_RETENTION_MIN..=WECHAT_SNAPSHOT_RETENTION_MAX).contains(value)
+        })
+        .ok_or_else(|| BridgeError::invalid_number("微信快照保留份数"))?;
     Ok(BackupSettings {
         include_hidden: settings.include_hidden,
         upload_limit_bytes_per_second: settings
@@ -663,8 +682,229 @@ pub(crate) fn backup_settings(settings: BackupSettingsDto) -> Result<BackupSetti
             .map(|value| u64_from_i64(value, "上传限速"))
             .transpose()?,
         paused: settings.paused,
-        // 保留份数的桥接字段与界面在第 4 组加入；在那之前保持默认值，
-        // 核心引擎的默认值仍是 3，设置变化时由核心归一化到 1–10。
-        wechat_snapshot_retention: client_core::desktop::DEFAULT_WECHAT_SNAPSHOT_RETENTION,
+        wechat_snapshot_retention: retention,
     })
+}
+
+// ---------------------------------------------------------------------------
+// 微信备份
+// ---------------------------------------------------------------------------
+
+impl From<WechatVersion> for WechatVersionDto {
+    fn from(version: WechatVersion) -> Self {
+        match version {
+            WechatVersion::Wechat3 => Self::Wechat3,
+            WechatVersion::Wechat4 => Self::Wechat4,
+        }
+    }
+}
+
+pub(crate) fn wechat_version(version: WechatVersionDto) -> WechatVersion {
+    match version {
+        WechatVersionDto::Wechat3 => WechatVersion::Wechat3,
+        WechatVersionDto::Wechat4 => WechatVersion::Wechat4,
+    }
+}
+
+impl From<WechatCategory> for WechatCategoryDto {
+    fn from(category: WechatCategory) -> Self {
+        match category {
+            WechatCategory::ChatFiles => Self::ChatFiles,
+            WechatCategory::ImagesAndVideos => Self::ImagesAndVideos,
+            WechatCategory::Databases => Self::Databases,
+            WechatCategory::PhoneMigration => Self::PhoneMigration,
+        }
+    }
+}
+
+pub(crate) fn wechat_category(category: WechatCategoryDto) -> WechatCategory {
+    match category {
+        WechatCategoryDto::ChatFiles => WechatCategory::ChatFiles,
+        WechatCategoryDto::ImagesAndVideos => WechatCategory::ImagesAndVideos,
+        WechatCategoryDto::Databases => WechatCategory::Databases,
+        WechatCategoryDto::PhoneMigration => WechatCategory::PhoneMigration,
+    }
+}
+
+pub(crate) fn wechat_categories(categories: Vec<WechatCategoryDto>) -> Vec<WechatCategory> {
+    categories.into_iter().map(wechat_category).collect()
+}
+
+impl From<WechatSource> for WechatSourceDto {
+    fn from(source: WechatSource) -> Self {
+        match source {
+            WechatSource::Manual => Self::Manual,
+            WechatSource::Registry => Self::Registry,
+            WechatSource::ConfigFile => Self::ConfigFile,
+            WechatSource::DefaultLocation => Self::DefaultLocation,
+        }
+    }
+}
+
+impl From<&WechatEventSource> for WechatEventSourceDto {
+    fn from(source: &WechatEventSource) -> Self {
+        Self {
+            account_name: source.account_name.clone(),
+            category: source.category.into(),
+        }
+    }
+}
+
+impl From<&client_core::desktop::wechat::WechatCategoryInfo> for WechatCategoryInfoDto {
+    fn from(info: &client_core::desktop::wechat::WechatCategoryInfo) -> Self {
+        Self {
+            category: info.category.into(),
+            size_bytes: i64_from_u64(info.size_bytes),
+            file_count: i64_from_u64(info.file_count),
+            last_modified_ns: info.last_modified_ns,
+            exists: info.exists,
+        }
+    }
+}
+
+pub(crate) fn wechat_account_dto(discovered: &WechatDiscoveredAccount) -> WechatAccountDto {
+    let account = &discovered.account;
+    WechatAccountDto {
+        account_name: account.account_name.clone(),
+        version: account.version.into(),
+        data_root: path_display(&account.data_root),
+        account_dir: path_display(&account.account_dir),
+        source: account.source.into(),
+        categories: account.categories.iter().map(Into::into).collect(),
+        total_size_bytes: i64_from_u64(account.total_size_bytes),
+        total_file_count: i64_from_u64(account.total_file_count),
+        last_modified_ns: account.last_modified_ns,
+        is_current_login_candidate: account.is_current_login_candidate,
+        has_phone_migration_backup: account.has_phone_migration_backup,
+        note: discovered.note.clone(),
+    }
+}
+
+/// 界面传入的账号定位字段 → `client-core` 的账号引用。
+pub(crate) fn wechat_account(account: WechatAccountRefDto) -> WechatAccount {
+    WechatAccount::reference(
+        account.data_root,
+        account.account_name,
+        wechat_version(account.version),
+    )
+}
+
+impl From<&WechatCategoryBackupStatus> for WechatCategoryBackupStatusDto {
+    fn from(status: &WechatCategoryBackupStatus) -> Self {
+        Self {
+            category: status.category.into(),
+            selected: status.selected,
+            status: status.status.map(BackupFolderStatusDto::from),
+            pause_reason: status.pause_reason.map(BackupPauseReasonDto::from),
+            last_backup_at: status.last_backup_at,
+        }
+    }
+}
+
+impl From<&WechatAccountBackupStatus> for WechatAccountBackupStatusDto {
+    fn from(status: &WechatAccountBackupStatus) -> Self {
+        Self {
+            data_root: path_display(&status.data_root),
+            account_name: status.account_name.clone(),
+            version: status.version.into(),
+            categories: status.categories.iter().map(Into::into).collect(),
+            last_backup_at: status.last_backup_at,
+        }
+    }
+}
+
+impl From<&WechatBackupPreflight> for WechatBackupPreflightDto {
+    fn from(preflight: &WechatBackupPreflight) -> Self {
+        Self {
+            file_count: i64_from_u64(preflight.file_count),
+            total_bytes: i64_from_u64(preflight.total_bytes),
+            upload_bytes: i64_from_u64(preflight.upload_bytes),
+            upload_bytes_without_images_and_videos: i64_from_u64(
+                preflight.upload_bytes_without_images_and_videos,
+            ),
+            database_bytes: i64_from_u64(preflight.database_bytes),
+            excluded_count: i64_from_u64(preflight.excluded_count),
+            unreadable_count: i64_from_u64(preflight.unreadable_count),
+            remaining_quota_bytes: preflight.remaining_quota_bytes.map(i64_from_u64),
+            over_quota: preflight.over_quota,
+        }
+    }
+}
+
+impl From<WechatSnapshotOutcome> for WechatSnapshotOutcomeDto {
+    fn from(outcome: WechatSnapshotOutcome) -> Self {
+        match outcome {
+            WechatSnapshotOutcome::Completed => Self::Completed,
+            WechatSnapshotOutcome::Unchanged => Self::Unchanged,
+            WechatSnapshotOutcome::WaitingForWechatExit => Self::WaitingForWechatExit,
+            WechatSnapshotOutcome::Aborted => Self::Aborted,
+            WechatSnapshotOutcome::Paused => Self::Paused,
+            WechatSnapshotOutcome::NeedsUnlock => Self::NeedsUnlock,
+        }
+    }
+}
+
+impl From<&WechatSnapshotReport> for WechatSnapshotReportDto {
+    fn from(report: &WechatSnapshotReport) -> Self {
+        Self {
+            outcome: report.outcome.into(),
+            snapshot_at: report.snapshot_at,
+            total_files: i64_from_u64(report.total_files),
+            uploaded_files: i64_from_u64(report.uploaded_files),
+            uploaded_bytes: i64_from_u64(report.uploaded_bytes),
+        }
+    }
+}
+
+impl From<&WechatDatabaseSnapshot> for WechatDatabaseSnapshotDto {
+    fn from(snapshot: &WechatDatabaseSnapshot) -> Self {
+        Self {
+            device_name: snapshot.device_name.clone(),
+            timestamp: snapshot.timestamp.clone(),
+            snapshot_at: snapshot.snapshot_at,
+            total_bytes: i64_from_u64(snapshot.total_bytes),
+            file_count: i64_from_u64(snapshot.file_count),
+            complete: snapshot.complete,
+        }
+    }
+}
+
+impl From<&WechatRestoreCategoryInfo> for WechatRestoreCategoryDto {
+    fn from(info: &WechatRestoreCategoryInfo) -> Self {
+        Self {
+            category: info.category.into(),
+            file_count: i64_from_u64(info.file_count),
+            total_bytes: i64_from_u64(info.total_bytes),
+            available: info.available,
+        }
+    }
+}
+
+pub(crate) fn wechat_restore_request(
+    request: WechatRestoreRequestDto,
+) -> Result<WechatRestoreRequest, BridgeError> {
+    let snapshot = request.snapshot.map(|snapshot| WechatSnapshotSelection {
+        device_name: snapshot.device_name,
+        timestamp: snapshot.timestamp,
+    });
+    Ok(WechatRestoreRequest {
+        data_root: request.data_root.into(),
+        account_name: request.account_name,
+        version: wechat_version(request.version),
+        categories: wechat_categories(request.categories),
+        restore_database: request.restore_database,
+        snapshot,
+    })
+}
+
+impl From<&WechatRestoreReport> for WechatRestoreOutcomeDto {
+    fn from(report: &WechatRestoreReport) -> Self {
+        Self {
+            transfer_id: report.transfer_id.to_string(),
+            restored_files: i64_from_u64(report.restored_files),
+            restored_bytes: i64_from_u64(report.restored_bytes),
+            skipped_files: i64_from_u64(report.skipped_files),
+            database_restored: report.database_restored,
+        }
+    }
 }

@@ -271,6 +271,7 @@ class _GeneralPanelState extends ConsumerState<_GeneralPanel> {
         includeHidden: settings.includeHidden,
         uploadLimitBytesPerSecond: bytesPerSecond,
         paused: settings.paused,
+        wechatSnapshotRetention: settings.wechatSnapshotRetention,
       ),
     );
   }
@@ -285,6 +286,7 @@ class _GeneralPanelState extends ConsumerState<_GeneralPanel> {
         includeHidden: includeHidden,
         uploadLimitBytesPerSecond: settings.uploadLimitBytesPerSecond,
         paused: settings.paused,
+        wechatSnapshotRetention: settings.wechatSnapshotRetention,
       ),
     );
   }

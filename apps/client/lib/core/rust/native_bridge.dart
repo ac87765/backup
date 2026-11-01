@@ -4,6 +4,7 @@ import '../../src/rust/api/backup.dart' as backup;
 import '../../src/rust/api/files.dart' as files;
 import '../../src/rust/api/init.dart' as init;
 import '../../src/rust/api/transfer.dart' as transfer;
+import '../../src/rust/api/wechat.dart' as wechat;
 import 'models.dart';
 
 /// 桥接 API 的薄封装：界面与 provider 只依赖这个类，不直接散落调用生成函数。
@@ -245,4 +246,74 @@ class NativeBridge {
       backup.backupScanAllNow();
 
   Stream<BackupEventDto> backupEventsStream() => backup.backupEventsStream();
+
+  // ---- 微信备份 ----
+  /// 发现本机微信账号（展示字段 + 本地备注名）。
+  Future<List<WechatAccountDto>> wechatListAccounts() =>
+      wechat.wechatListAccounts();
+
+  /// 手动添加微信数据目录；返回重新发现后的账号列表。
+  Future<List<WechatAccountDto>> wechatAddManualDirectory(String path) =>
+      wechat.wechatAddManualDirectory(path: path);
+
+  /// 移除手动添加的微信数据目录；返回重新发现后的账号列表。
+  Future<List<WechatAccountDto>> wechatRemoveManualDirectory(String path) =>
+      wechat.wechatRemoveManualDirectory(path: path);
+
+  /// 当前手动添加的微信数据目录。
+  Future<List<String>> wechatManualDirectories() =>
+      wechat.wechatManualDirectories();
+
+  /// 设置账号备注名（只存本地）。
+  Future<void> wechatSetNote(WechatAccountRefDto account, String note) =>
+      wechat.wechatSetNote(account: account, note: note);
+
+  /// 清除账号备注名。
+  Future<void> wechatClearNote(WechatAccountRefDto account) =>
+      wechat.wechatClearNote(account: account);
+
+  /// 设置一个账号勾选的类别。
+  Future<void> wechatSetCategories(
+    WechatAccountRefDto account,
+    List<WechatCategoryDto> categories,
+  ) {
+    return wechat.wechatSetCategories(account: account, categories: categories);
+  }
+
+  /// 微信备份首次上传预检。
+  Future<WechatBackupPreflightDto> wechatPreflight(
+    WechatAccountRefDto account,
+    List<WechatCategoryDto> categories,
+  ) {
+    return wechat.wechatPreflight(account: account, categories: categories);
+  }
+
+  /// 每个微信账号每个类别的备份状态。
+  Future<List<WechatAccountBackupStatusDto>> wechatAccountStatuses() =>
+      wechat.wechatAccountStatuses();
+
+  /// 立即为一个账号做数据库快照。
+  Future<WechatSnapshotReportDto> wechatSnapshotNow(
+    WechatAccountRefDto account,
+  ) {
+    return wechat.wechatSnapshotNow(account: account);
+  }
+
+  /// 列出某账号可用的完整数据库快照。
+  Future<List<WechatDatabaseSnapshotDto>> wechatDatabaseSnapshots(
+    WechatAccountRefDto account,
+  ) {
+    return wechat.wechatDatabaseSnapshots(account: account);
+  }
+
+  /// 列出云端存在哪些文件类别可恢复。
+  Future<List<WechatRestoreCategoryDto>> wechatRestoreCategories(
+    WechatAccountRefDto account,
+  ) {
+    return wechat.wechatRestoreCategories(account: account);
+  }
+
+  /// 开始恢复；返回传输 ID，进度通过 [transferProgressStream] 推送。
+  Future<String> wechatStartRestore(WechatRestoreRequestDto request) =>
+      wechat.wechatStartRestore(request: request);
 }
