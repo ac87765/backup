@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -24,6 +26,23 @@ Future<void> openUpdateDownloadPage(BuildContext context, WidgetRef ref) async {
     if (context.mounted) {
       await showUpdateMessage(context, '暂时无法打开下载页面，请稍后重试');
     }
+  }
+}
+
+/// 打开本地诊断日志所在文件夹（应用数据目录下的 `logs`，与 Rust 侧
+/// `diagnostics::LOG_DIR_NAME` 一致）。文件夹由桥接层初始化时创建。
+Future<void> openLogFolder(BuildContext context, WidgetRef ref) async {
+  var opened = false;
+  try {
+    final config = await ref.read(appConfigProvider.future);
+    opened = await ref.read(localFolderOpenerProvider)(
+      '${config.appDataDir}${Platform.pathSeparator}logs',
+    );
+  } catch (_) {
+    opened = false;
+  }
+  if (!opened && context.mounted) {
+    await showUpdateMessage(context, '暂时无法打开日志文件夹，请稍后重试');
   }
 }
 

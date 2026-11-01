@@ -19,6 +19,7 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
+use client_core::desktop::diagnostics;
 use client_core::desktop::wechat::{
     WechatAccount, WechatCategory, WechatLocator, WechatProcessProbe, WechatSystemLocations,
     WechatVersion,
@@ -41,6 +42,7 @@ use uuid::Uuid;
 
 const PASSWORD: &str = "correct horse battery staple";
 const TOKEN: &str = "fake-session-token-0123456789abcdef";
+const FAKE_SIGNATURE: &str = "fake-presigned-signature-value";
 const CHUNK: i64 = crypto_core::MAX_CHUNK_CIPHERTEXT_SIZE as i64;
 
 struct NoWaitClock {
@@ -207,6 +209,7 @@ struct FakeState {
     objects: Mutex<HashMap<String, Vec<u8>>>,
     upload_sessions_created: Mutex<u64>,
     fail_upload_session_remaining: Mutex<u32>,
+    reject_puts_with_status: Mutex<Option<StatusCode>>,
     fail_create_folder_once: Mutex<bool>,
     mutate_path_on_first_put: Mutex<Option<PathBuf>>,
     lock_client_on_first_put: Mutex<Option<Client>>,
@@ -252,6 +255,7 @@ impl FakeState {
             objects: Mutex::new(HashMap::new()),
             upload_sessions_created: Mutex::new(0),
             fail_upload_session_remaining: Mutex::new(0),
+            reject_puts_with_status: Mutex::new(None),
             fail_create_folder_once: Mutex::new(false),
             mutate_path_on_first_put: Mutex::new(None),
             lock_client_on_first_put: Mutex::new(None),
@@ -648,7 +652,7 @@ async fn presign(
             json!({
                 "idx": idx,
                 "ok": true,
-                "url": format!("{base}/objects/{id}/{idx}"),
+                "url": format!("{base}/objects/{id}/{idx}?X-Amz-Signature={FAKE_SIGNATURE}"),
                 "method": "PUT",
                 "expires_at": "2099-01-01T00:00:00Z",
                 "expected_size": expected_size(session, idx),
@@ -665,6 +669,9 @@ async fn put_object(
     AxumPath((id, idx)): AxumPath<(Uuid, u32)>,
     body: Bytes,
 ) -> Response {
+    if let Some(status) = *state.reject_puts_with_status.lock().unwrap() {
+        return status.into_response();
+    }
     state
         .objects
         .lock()
@@ -2015,6 +2022,7 @@ async fn folder_path_conflicts_are_rejected() {
 // ---------------------------------------------------------------------------
 
 const WECHAT_ACCOUNT: &str = "wxid_test0001";
+const WECHAT_ACCOUNT_2: &str = "wxid_test0002";
 const WECHAT_ATTACH_HASH: &str = "0123456789abcdef0123456789abcdef";
 
 /// 构造一个微信 4.x 夹具（全部为虚构数据，不读取真实微信目录）。
@@ -3235,6 +3243,293 @@ async fn wechat_snapshot_network_error_waits_for_retry_interval() {
     let after = wait_for_requests_above(&h.state, baseline).await;
     assert!(after > baseline);
     wait_for_db_status(&h.engine, BackupFolderStatus::IdleOk).await;
+    h.engine.stop().await;
+}
+
+/// 再造一个能被发现的微信账号（同样是虚构数据）。
+fn add_second_snapshot_account(documents: &Path) {
+    let account = documents.join("xwechat_files").join(WECHAT_ACCOUNT_2);
+    for directory in ["msg/file/2026-10", "db_storage/message"] {
+        std::fs::create_dir_all(account.join(directory)).unwrap();
+    }
+    write(
+        &account.join("db_storage/message/message_0.db"),
+        b"second-account-database",
+    );
+}
+
+/// 让接下来的上传会话创建都返回 503；每次失败的快照恰好消耗一次。
+const FAILING_SESSIONS: u32 = 1_000;
+
+fn fail_snapshots(state: &FakeState) {
+    *state.fail_upload_session_remaining.lock().unwrap() = FAILING_SESSIONS;
+}
+
+fn failed_attempts(state: &FakeState) -> u32 {
+    FAILING_SESSIONS - *state.fail_upload_session_remaining.lock().unwrap()
+}
+
+async fn wait_for_failed_attempts(state: &Arc<FakeState>, expected: u32) {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while failed_attempts(state) < expected {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "等待失败次数 {expected} 超时（实际 {}）",
+            failed_attempts(state)
+        )
+    });
+    // 服务端拒绝后引擎还要把目录移入回收站并安排重试；等它做完再推进时钟，
+    // 否则退避会从推进后的时间算起。
+    tokio::time::sleep(Duration::from_millis(500)).await;
+}
+
+/// 两个账号持续失败：一次检查里两个账号各试一次（相隔的只是上一个账号的耗时），
+/// 之后每个账号的重试间隔翻倍。
+#[tokio::test]
+async fn wechat_snapshot_failures_back_off_per_account_and_reset_after_success() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    add_second_snapshot_account(&documents);
+    let h = harness_full_with(
+        false,
+        Duration::from_millis(50),
+        Duration::from_secs(10),
+        Some(documents.clone()),
+        Arc::new(FakeProbe::new(false)),
+        Duration::from_millis(50),
+    )
+    .await;
+    let locator = WechatLocator::with_system_locations(Arc::new(FakeWechatLocations {
+        documents: Some(documents.clone()),
+    }));
+    let accounts = locator.discover(&[]).await.unwrap();
+    assert_eq!(accounts.len(), 2, "夹具应有两个账号");
+    for account in &accounts {
+        h.engine
+            .set_wechat_categories(account, &[WechatCategory::Databases])
+            .await
+            .unwrap();
+    }
+    fail_snapshots(&h.state);
+    let settle = Duration::from_millis(400);
+
+    h.engine.start().await.unwrap();
+    wait_for_failed_attempts(&h.state, 2).await;
+
+    // 第一次失败后退避 10 秒。
+    h.clock.advance(Duration::from_secs(1));
+    tokio::time::sleep(settle).await;
+    assert_eq!(failed_attempts(&h.state), 2, "退避期内不得重试");
+    h.clock.advance(Duration::from_secs(10));
+    wait_for_failed_attempts(&h.state, 4).await;
+
+    // 第二次失败后退避 20 秒：固定间隔的实现在这里就会再试一次。
+    h.clock.advance(Duration::from_secs(11));
+    tokio::time::sleep(settle).await;
+    assert_eq!(failed_attempts(&h.state), 4, "退避时长应随连续失败翻倍");
+    h.clock.advance(Duration::from_secs(10));
+    wait_for_failed_attempts(&h.state, 6).await;
+
+    // 恢复后第三次退避（40 秒）结束时成功。
+    *h.state.fail_upload_session_remaining.lock().unwrap() = 0;
+    h.clock.advance(Duration::from_secs(41));
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let accounts = h.engine.list_wechat_accounts().await.unwrap();
+            let statuses: Vec<_> = accounts
+                .iter()
+                .flat_map(|account| account.categories.iter())
+                .filter(|category| category.category == WechatCategory::Databases)
+                .map(|category| category.status)
+                .collect();
+            if statuses.len() == 2
+                && statuses
+                    .iter()
+                    .all(|status| *status == Some(BackupFolderStatus::IdleOk))
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("两个账号都应恢复");
+
+    // 成功后退避归零：下一次失败重新从 10 秒开始。
+    fail_snapshots(&h.state);
+    write(&primary_database_file(&documents), b"changed-after-success");
+    wait_for_failed_attempts(&h.state, 1).await;
+    h.clock.advance(Duration::from_secs(11));
+    wait_for_failed_attempts(&h.state, 2).await;
+    h.engine.stop().await;
+}
+
+// ---------------------------------------------------------------------------
+// 本地诊断日志不含敏感信息
+// ---------------------------------------------------------------------------
+
+/// 与 `deploy/scan-logs.mjs` 同一思路：只返回类别，绝不回显匹配到的值。
+fn scan_log_text(content: &str, literals: &[String]) -> Vec<String> {
+    const FORBIDDEN: &[(&str, &str)] = &[
+        ("x-amz-", "预签名 URL 签名参数"),
+        ("signature", "预签名 URL 签名参数"),
+        ("ossaccesskeyid", "预签名 URL 签名参数"),
+        ("x-oss-", "预签名 URL 签名参数"),
+        ("auth_key", "密钥字段名"),
+        ("rk_auth", "密钥字段名"),
+        ("wrapped_mk", "密钥字段名"),
+        ("wrapped_key", "密钥字段名"),
+        ("recovery_key", "密钥字段名"),
+        ("encrypted_meta", "加密元数据字段名"),
+        ("__host-session", "会话 Cookie"),
+        ("xwechat_files", "微信目录"),
+        ("wechat files", "微信目录"),
+        ("db_storage", "微信目录"),
+        ("wxid_", "微信账号目录名"),
+        ("/objects/", "对象 URL"),
+        ("http://", "URL"),
+        ("https://", "URL"),
+    ];
+    let mut violations = Vec::new();
+    for (number, line) in content.lines().enumerate() {
+        let number = number + 1;
+        let lower = line.to_lowercase();
+        for (index, literal) in literals.iter().enumerate() {
+            if !literal.is_empty() && lower.contains(&literal.to_lowercase()) {
+                violations.push(format!("第 {number} 行：清单敏感值 #{index}"));
+            }
+        }
+        for (needle, name) in FORBIDDEN {
+            if lower.contains(needle) {
+                violations.push(format!("第 {number} 行：{name}"));
+            }
+        }
+        let bytes = line.as_bytes();
+        // Windows 盘符路径与 Unix 用户目录。
+        if bytes
+            .windows(3)
+            .any(|w| w[0].is_ascii_alphabetic() && w[1] == b':' && (w[2] == b'\\' || w[2] == b'/'))
+            || lower.contains("/users/")
+            || lower.contains("/home/")
+            || lower.contains("/tmp/")
+        {
+            violations.push(format!("第 {number} 行：本地路径"));
+        }
+        // 64 位十六进制令牌或密钥。
+        let longest_hex = line
+            .split(|c: char| !c.is_ascii_hexdigit())
+            .map(str::len)
+            .max()
+            .unwrap_or(0);
+        if longest_hex >= 64 {
+            violations.push(format!("第 {number} 行：64 位十六进制令牌或密钥"));
+        }
+    }
+    violations
+}
+
+#[test]
+fn log_scan_catches_planted_secrets() {
+    let literals = vec!["my-secret".to_owned()];
+    for line in [
+        "token=MY-SECRET",
+        "PUT https://oss.example/o?X-Amz-Signature=abc",
+        r"open C:\Users\someone\AppData\Roaming\x",
+        "/home/someone/data",
+        "account=wxid_abc",
+        "wrapped_mk=abc",
+        &"a".repeat(64),
+    ] {
+        assert!(
+            !scan_log_text(line, &literals).is_empty(),
+            "扫描应发现违规：{line}"
+        );
+    }
+    let clean = "2026-11-01T00:00:00Z WARN client_core::transfer::upload: 块上传被对象存储拒绝 \
+                 status=403 chunk=0";
+    assert_eq!(scan_log_text(clean, &literals), Vec::<String>::new());
+}
+
+/// 走真实的失败路径（登录 → 快照 → PUT 被拒 → 放弃 → 重试成功）：日志要能说明
+/// 失败原因，同时不得出现令牌、签名、路径、账号目录名或文件名。
+#[tokio::test]
+async fn diagnostic_log_explains_snapshot_failure_without_sensitive_data() {
+    // 用真实的全局安装函数：本测试进程内其他并行测试的事件也写进同一日志，一并
+    // 扫描（作用域订阅者在并行测试下会被 tracing 的调用点缓存漏掉事件）。
+    let app_data = tempfile::tempdir().unwrap();
+    diagnostics::install_file_logging(app_data.path()).unwrap();
+
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_full_with(
+        false,
+        Duration::from_millis(50),
+        Duration::from_secs(10),
+        Some(documents.clone()),
+        Arc::new(FakeProbe::new(false)),
+        Duration::from_millis(50),
+    )
+    .await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::Databases])
+        .await
+        .unwrap();
+
+    *h.state.reject_puts_with_status.lock().unwrap() = Some(StatusCode::FORBIDDEN);
+    assert!(
+        h.engine
+            .snapshot_wechat_databases_now(&account)
+            .await
+            .is_err()
+    );
+    *h.state.reject_puts_with_status.lock().unwrap() = None;
+    *h.state.fail_upload_session_remaining.lock().unwrap() = 1;
+    assert!(
+        h.engine
+            .snapshot_wechat_databases_now(&account)
+            .await
+            .is_err()
+    );
+    let report = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(report.outcome, WechatSnapshotOutcome::Completed);
+
+    let log_directory = app_data.path().join(diagnostics::LOG_DIR_NAME);
+    let mut content = String::new();
+    for entry in std::fs::read_dir(&log_directory).unwrap() {
+        content.push_str(&std::fs::read_to_string(entry.unwrap().path()).unwrap());
+    }
+    assert!(content.contains("status=403"), "应记录 PUT 状态码");
+    assert!(content.contains("transfer_error"), "应记录快照错误码");
+    assert!(content.contains("internal_error"), "应记录服务端错误码");
+    assert!(content.contains("retry_in_secs=20"), "应记录退避时长");
+
+    let mut literals: Vec<String> = [
+        TOKEN,
+        PASSWORD,
+        FAKE_SIGNATURE,
+        WECHAT_ACCOUNT,
+        "message_0.db",
+        "contact.kvdb",
+        "mmkv.bin",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    literals.push(h.state.email.clone());
+    literals.push(encode_hex(&h.state.wrapped_mk));
+    for path in [&documents, &fixture.path().to_path_buf()] {
+        literals.push(path.display().to_string());
+        literals.push(path.display().to_string().replace('\\', "/"));
+    }
+    assert_eq!(scan_log_text(&content, &literals), Vec::<String>::new());
     h.engine.stop().await;
 }
 

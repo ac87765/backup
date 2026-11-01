@@ -7,7 +7,7 @@
 use client_core::desktop::BackupError;
 use client_core::desktop::update::UpdateError;
 use client_core::desktop::wechat::WechatError;
-use client_core::{ApiErrorCode, ClientError, StateError};
+use client_core::{ClientError, StateError};
 
 /// 桥接 API 的错误 DTO（Dart 侧实现 `FrbException`）。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -43,32 +43,8 @@ impl BridgeError {
 
 impl From<ClientError> for BridgeError {
     fn from(error: ClientError) -> Self {
-        let code = match &error {
-            ClientError::Api(failure) => api_code(&failure.code),
-            ClientError::Network(_) => "network_error",
-            ClientError::Crypto(_) => "crypto_error",
-            ClientError::UnsupportedKdfAlgorithm => "unsupported_kdf_algorithm",
-            ClientError::InvalidKdfParams => "invalid_kdf_params",
-            ClientError::InvalidResponse(_) => "invalid_response",
-            ClientError::InvalidBaseUrl => "invalid_server_url",
-            ClientError::NoSession => "no_session",
-            ClientError::UnlockFailed => "unlock_failed",
-            ClientError::InvalidSession => "invalid_session",
-            ClientError::SecretStore(_) => "secret_store_error",
-            ClientError::State(_) => "state_error",
-            ClientError::Io(_) => "local_io_error",
-            ClientError::Locked => "locked",
-            ClientError::AccountNotWritable(_) => "account_not_writable",
-            ClientError::NodeKeyUnavailable => "node_key_unavailable",
-            ClientError::FileChanged => "file_changed",
-            ClientError::Transfer(transfer) => transfer.code.as_str(),
-            ClientError::Integrity(_) => "integrity_error",
-            ClientError::OperationNotAllowed => "operation_not_allowed",
-            ClientError::Cancelled => "cancelled",
-            ClientError::Internal(_) => "internal_error",
-        };
         Self {
-            code: code.to_owned(),
+            code: error.code().to_owned(),
             message: error.to_string(),
         }
     }
@@ -126,8 +102,4 @@ impl From<BackupError> for BridgeError {
             },
         }
     }
-}
-
-fn api_code(code: &ApiErrorCode) -> &str {
-    code.as_str()
 }

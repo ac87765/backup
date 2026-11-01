@@ -21,6 +21,8 @@ pub const DEFAULT_DEBOUNCE: Duration = Duration::from_secs(5);
 pub const DEFAULT_FULL_SCAN_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 /// 断网 / 服务器不可用后的重试间隔。
 pub const DEFAULT_RETRY_INTERVAL: Duration = Duration::from_secs(60);
+/// 数据库快照连续失败时的最长退避（一小时）。
+pub const SNAPSHOT_RETRY_MAX: Duration = Duration::from_secs(3600);
 /// 微信退出检测与数据库快照检查周期（design D3：每 10 秒）。
 pub const DEFAULT_WECHAT_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(10);
 /// 数据库快照默认保留份数（design D3：最近 3 份）。

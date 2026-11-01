@@ -53,3 +53,27 @@ pub enum BackupError {
     #[error("找不到所选的数据库快照")]
     SnapshotNotFound,
 }
+
+impl BackupError {
+    /// 稳定错误码；写日志时用它，不用可能含服务端文案的 Display。
+    #[must_use]
+    pub fn code(&self) -> &str {
+        match self {
+            Self::Client(error) => error.code(),
+            Self::State(_) => "state_error",
+            Self::Wechat(WechatError::InvalidNote(_)) => "invalid_note",
+            Self::Wechat(WechatError::InvalidAccount) => "invalid_account",
+            Self::Wechat(WechatError::State(_)) => "state_error",
+            Self::Wechat(_) => "wechat_error",
+            Self::InvalidConfig(_) => "invalid_config",
+            Self::NotSignedIn => "not_signed_in",
+            Self::FolderNotFound => "folder_not_found",
+            Self::WatchUnavailable => "watch_unavailable",
+            Self::AlreadyRunning => "already_running",
+            Self::WechatRunning => "wechat_running",
+            Self::SnapshotIncomplete => "snapshot_incomplete",
+            Self::SnapshotCorrupted => "snapshot_corrupted",
+            Self::SnapshotNotFound => "snapshot_not_found",
+        }
+    }
+}

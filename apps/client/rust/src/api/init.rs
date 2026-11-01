@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use client_core::Client;
 use client_core::StateStore;
+use client_core::desktop::diagnostics::install_file_logging;
 use client_core::desktop::update::{UpdateChecker, UpdateDownloader};
 use client_core::desktop::{BackupEngine, BackupEngineConfig};
 
@@ -26,6 +27,10 @@ pub async fn initialize(
     device_name: String,
     app_version: String,
 ) -> Result<(), BridgeError> {
+    // 诊断日志写不了（磁盘满、权限）不能阻止应用启动。
+    if install_file_logging(Path::new(&app_data_dir)).is_ok() {
+        tracing::info!(version = %app_version, "客户端初始化");
+    }
     // 状态库在 Client 与更新检查器之间共享：防回滚水位与横幅记录属于本机，
     // 在登录前也必须可读写。
     let state_store = Arc::new(StateStore::open(Path::new(&app_data_dir))?);

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:encrypted_backup_client/app.dart';
 import 'package:encrypted_backup_client/common/pages/settings_page.dart';
 import 'package:encrypted_backup_client/common/state/auth_controller.dart';
@@ -45,6 +47,19 @@ TestHarness _harness({FakeNativeBridge? bridge}) {
   );
 }
 
+/// 打开设置“关于”并点击“打开日志文件夹”。
+Future<void> _tapOpenLogs(WidgetTester tester, TestHarness harness) async {
+  setTestWindow(tester, const Size(760, 800));
+  await tester.pumpWidget(
+    harness.page(const SettingsPage(initialTab: SettingsTab.about)),
+  );
+  await tester.pumpAndSettle();
+  await tester.ensureVisible(find.byKey(const Key('about-open-logs')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('about-open-logs')));
+  await tester.pumpAndSettle();
+}
+
 UpdateController _controller(WidgetTester tester) {
   return ProviderScope.containerOf(
     tester.element(find.byType(EncryptedBackupApp)),
@@ -79,6 +94,22 @@ UpdateProgressDto _progress(
 }
 
 void main() {
+  testWidgets('关于页“打开日志文件夹”打开应用数据目录下的 logs', (tester) async {
+    final harness = _harness();
+    await _tapOpenLogs(tester, harness);
+    expect(harness.openedFolders, hasLength(1));
+    expect(
+      harness.openedFolders.single,
+      '${testConfig.appDataDir}${Platform.pathSeparator}logs',
+    );
+  });
+
+  testWidgets('打开日志文件夹失败时给出提示', (tester) async {
+    final harness = _harness()..openFolderResult = false;
+    await _tapOpenLogs(tester, harness);
+    expect(find.text('暂时无法打开日志文件夹，请稍后重试'), findsOneWidget);
+  });
+
   testWidgets('有新版本时显示横幅，关闭后同版本不再出现', (tester) async {
     setTestWindow(tester, const Size(1280, 800));
     final harness = _harness();

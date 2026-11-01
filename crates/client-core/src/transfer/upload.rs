@@ -850,6 +850,8 @@ async fn upload_one_chunk(
             Ok(response) => response,
             Err(_) => {
                 attempt += 1;
+                // reqwest 错误的 Display 含预签名 URL，这里不记录它。
+                tracing::warn!(chunk = idx, attempt, "块上传网络失败");
                 if attempt >= MAX_CHUNK_PUT_ATTEMPTS {
                     return Err(transfer_error(
                         TransferErrorCode::Network,
@@ -868,6 +870,12 @@ async fn upload_one_chunk(
                 sha256,
             });
         }
+        // 只记录状态码：URL 含预签名签名，响应体可能回显请求参数。
+        tracing::warn!(
+            status = status.as_u16(),
+            chunk = idx,
+            "块上传被对象存储拒绝"
+        );
         if status == reqwest::StatusCode::FORBIDDEN && resigns < MAX_RESIGN {
             resigns += 1;
             let fresh = presign_batch(client, session_id, &[idx]).await?;

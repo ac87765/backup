@@ -225,6 +225,8 @@ class TestHarness {
   final List<StandardFolder> standardFolders;
   final FakeClock clock = FakeClock();
   final List<Uri> openedUris = <Uri>[];
+  final List<String> openedFolders = <String>[];
+  bool openFolderResult = true;
   final Set<String> missingDirectories = <String>{};
   AppConfig config = testConfig;
 
@@ -257,6 +259,10 @@ class TestHarness {
     externalLinkOpenerProvider.overrideWithValue((uri) async {
       openedUris.add(uri);
       return true;
+    }),
+    localFolderOpenerProvider.overrideWithValue((path) async {
+      openedFolders.add(path);
+      return openFolderResult;
     }),
   ];
 

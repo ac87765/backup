@@ -37,10 +37,10 @@ use super::paths::{comparable_path, path_within};
 use super::types::{
     BackupActivity, BackupActivityKind, BackupEngineConfig, BackupFolder, BackupFolderDraft,
     BackupFolderState, BackupFolderStatus, BackupFolderUpdate, BackupPauseReason, BackupPreflight,
-    BackupRunReport, BackupSettings, BackupSummary, BackupSummaryStatus, WechatAccountBackupStatus,
-    WechatBackupPreflight, WechatBackupSource, WechatCategoryBackupStatus, WechatDatabaseSnapshot,
-    WechatDiscoveredAccount, WechatEventSource, WechatRestoreCategoryInfo, WechatRestoreRequest,
-    WechatSnapshotOutcome, WechatSnapshotReport,
+    BackupRunReport, BackupSettings, BackupSummary, BackupSummaryStatus, SNAPSHOT_RETRY_MAX,
+    WechatAccountBackupStatus, WechatBackupPreflight, WechatBackupSource,
+    WechatCategoryBackupStatus, WechatDatabaseSnapshot, WechatDiscoveredAccount, WechatEventSource,
+    WechatRestoreCategoryInfo, WechatRestoreRequest, WechatSnapshotOutcome, WechatSnapshotReport,
 };
 use super::watcher::{FolderWatcher, WatchSignal, watch_folder};
 use super::wechat::backup::{desired_sources, validate_account_name};
@@ -114,6 +114,8 @@ struct Runtime {
     snapshots: HashMap<SnapshotKey, SnapshotRuntime>,
     /// 每个微信账号下一次允许重试快照的时间（网络 / 服务端等可重试错误）。
     snapshot_retries: HashMap<SnapshotKey, SystemTime>,
+    /// 每个微信账号自上次成功以来连续失败的快照次数，决定下一次退避时长。
+    snapshot_failures: HashMap<SnapshotKey, u32>,
     /// 微信来源备份项的账号 + 类别（事件流与最近活动用）。
     wechat_sources: HashMap<Uuid, WechatEventSource>,
 }
@@ -838,6 +840,7 @@ impl BackupEngine {
         } else if let Ok(mut runtime) = self.inner.runtime.lock() {
             runtime.snapshots.remove(&key);
             runtime.snapshot_retries.remove(&key);
+            runtime.snapshot_failures.remove(&key);
         }
         self.reconcile_wechat_sources(user_id).await
     }
@@ -1315,8 +1318,29 @@ impl BackupEngine {
             .and_then(|runtime| runtime.snapshot_retries.get(key).copied())
     }
 
-    /// 可重试错误使用引擎统一的 `retry_interval` 退避；网络/服务端/限流与
-    /// 普通备份一致显示为“暂停（网络）”，配额/本地错误显示为错误。
+    /// 记一次失败并安排下一次自动重试，返回连续失败次数与退避时长。
+    fn schedule_snapshot_retry(&self, key: &SnapshotKey) -> (u32, Duration) {
+        let now = self.inner.clock.now();
+        let Ok(mut runtime) = self.inner.runtime.lock() else {
+            return (0, self.inner.config.retry_interval);
+        };
+        let failures = runtime.snapshot_failures.entry(key.clone()).or_insert(0);
+        *failures = failures.saturating_add(1);
+        let failures = *failures;
+        let delay = snapshot_retry_delay(self.inner.config.retry_interval, failures);
+        runtime.snapshot_retries.insert(key.clone(), now + delay);
+        (failures, delay)
+    }
+
+    fn clear_snapshot_failures(&self, key: &SnapshotKey) {
+        if let Ok(mut runtime) = self.inner.runtime.lock() {
+            runtime.snapshot_failures.remove(key);
+        }
+    }
+
+    /// 连续失败按 [`snapshot_retry_delay`] 指数退避（每次失败都在云端回收站留下
+    /// 一个时间戳目录）；网络/服务端/限流与普通备份一致显示为“暂停（网络）”，
+    /// 配额/本地错误显示为错误。
     fn handle_snapshot_error(&self, key: &SnapshotKey, error: &BackupError) {
         let network = matches!(
             error,
@@ -1333,8 +1357,14 @@ impl BackupEngine {
             )
         };
         self.set_snapshot_result(key, status, pause_reason, None);
-        let retry_at = self.inner.clock.now() + self.inner.config.retry_interval;
-        self.set_snapshot_retry(key, Some(retry_at));
+        let (failures, delay) = self.schedule_snapshot_retry(key);
+        // 只记错误码与退避；不含路径、账号目录名或文件名。
+        tracing::warn!(
+            code = error.code(),
+            failures,
+            retry_in_secs = delay.as_secs(),
+            "微信数据库快照失败"
+        );
     }
 
     fn snapshot_context(&self, settings: &BackupSettings) -> SnapshotContext {
@@ -1416,14 +1446,8 @@ impl BackupEngine {
             {
                 continue;
             }
-            if self
-                .run_database_snapshot(&account, &settings)
-                .await
-                .is_err()
-            {
-                // 状态与退避已在 run_database_snapshot 中设置；日志不含路径。
-                tracing::warn!("微信数据库快照失败，稍后重试");
-            }
+            // 状态、退避与日志已在 run_database_snapshot 中处理。
+            let _ = self.run_database_snapshot(&account, &settings).await;
         }
         true
     }
@@ -1478,6 +1502,21 @@ impl BackupEngine {
                 return Err(error);
             }
         };
+        match report.outcome {
+            WechatSnapshotOutcome::Completed | WechatSnapshotOutcome::Unchanged => {
+                self.clear_snapshot_failures(&key);
+            }
+            // 文件在上传中变化：本次目录已进回收站，也要退避，否则每次检查都留一个。
+            WechatSnapshotOutcome::Aborted => {
+                let (failures, delay) = self.schedule_snapshot_retry(&key);
+                tracing::info!(
+                    failures,
+                    retry_in_secs = delay.as_secs(),
+                    "微信数据库快照因文件变化放弃"
+                );
+            }
+            _ => {}
+        }
         let status = match report.outcome {
             WechatSnapshotOutcome::Completed | WechatSnapshotOutcome::Unchanged => {
                 BackupFolderStatus::IdleOk
@@ -3111,7 +3150,7 @@ async fn run_scheduler(
         } else if was_locked {
             was_locked = false;
             if let Err(error) = engine.scan_all_now().await {
-                tracing::warn!(error = %error, "解锁后继续备份失败");
+                tracing::warn!(code = error.code(), "解锁后继续备份失败");
             }
             let had_accounts = engine.check_wechat_snapshots(snapshot_cleanup_due).await;
             if had_accounts {
@@ -3133,7 +3172,7 @@ async fn run_scheduler(
             // 每次全量核对刷新一次微信数据根（不是每个文件都发现）。
             engine.refresh_wechat_data_roots().await;
             if let Err(error) = engine.scan_all_now().await {
-                tracing::warn!(error = %error, "定时全量核对失败");
+                tracing::warn!(code = error.code(), "定时全量核对失败");
             }
             // 全量核对时即使本地未变也做一次云端维护清理。
             let _ = engine.check_wechat_snapshots(true).await;
@@ -3152,7 +3191,7 @@ async fn run_scheduler(
                 runtime.retry_at = None;
             }
             if let Err(error) = engine.scan_all_now().await {
-                tracing::warn!(error = %error, "断网恢复后的重试失败");
+                tracing::warn!(code = error.code(), "断网恢复后的重试失败");
             }
         }
 
@@ -3164,7 +3203,7 @@ async fn run_scheduler(
                         if inner.client.is_unlocked()
                             && let Err(error) = engine.scan_all_now().await
                         {
-                            tracing::warn!(error = %error, "手动/启动核对失败");
+                            tracing::warn!(code = error.code(), "手动/启动核对失败");
                         }
                         if inner.client.is_unlocked() {
                             let had_accounts = engine
@@ -3199,12 +3238,12 @@ async fn run_scheduler(
                 }
                 if full_scan {
                     if let Err(error) = engine.scan_all_now().await {
-                        tracing::warn!(error = %error, "监听溢出后的全量核对失败");
+                        tracing::warn!(code = error.code(), "监听溢出后的全量核对失败");
                     }
                 } else {
                     for folder_id in folder_ids {
                         if let Err(error) = engine.scan_folder_now(folder_id).await {
-                            tracing::warn!(folder_id = %folder_id, error = %error, "文件变化触发的备份失败");
+                            tracing::warn!(folder_id = %folder_id, code = error.code(), "文件变化触发的备份失败");
                         }
                     }
                 }
@@ -3245,6 +3284,32 @@ fn empty_snapshot_report(outcome: WechatSnapshotOutcome) -> WechatSnapshotReport
         total_files: 0,
         uploaded_files: 0,
         uploaded_bytes: 0,
+    }
+}
+
+/// 第 `failures` 次连续失败后的等待时长：从 `base` 起每次翻倍，封顶
+/// [`SNAPSHOT_RETRY_MAX`]（`base` 本身更大时以 `base` 为准）。
+fn snapshot_retry_delay(base: Duration, failures: u32) -> Duration {
+    let doublings = failures.saturating_sub(1).min(16);
+    base.saturating_mul(1_u32 << doublings)
+        .min(SNAPSHOT_RETRY_MAX.max(base))
+}
+
+#[cfg(test)]
+mod snapshot_retry_tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_retry_delay_doubles_up_to_the_cap() {
+        let base = Duration::from_secs(60);
+        let delays: Vec<u64> = [1, 2, 3, 6, 7, 8, 1000]
+            .map(|failures| snapshot_retry_delay(base, failures).as_secs())
+            .to_vec();
+        assert_eq!(delays, [60, 120, 240, 1920, 3600, 3600, 3600]);
+        assert_eq!(
+            snapshot_retry_delay(Duration::from_secs(7200), 3),
+            Duration::from_secs(7200)
+        );
     }
 }
 

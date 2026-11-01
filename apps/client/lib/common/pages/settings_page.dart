@@ -758,6 +758,15 @@ class _AboutPanel extends ConsumerWidget {
               variant: TokensButtonVariant.ghost,
               onPressed: onOpenLicenses,
             ),
+            TokensButton(
+              key: const Key('about-open-logs'),
+              label: '打开日志文件夹',
+              icon: LucideIcons.folderOpen,
+              variant: TokensButtonVariant.ghost,
+              onPressed: config == null
+                  ? null
+                  : () => openLogFolder(context, ref),
+            ),
           ],
         ),
       ],

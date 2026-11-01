@@ -316,6 +316,35 @@ impl ClientError {
         )
     }
 
+    /// 稳定错误码（界面判断与日志用；不含路径、令牌或服务端文案）。
+    #[must_use]
+    pub fn code(&self) -> &str {
+        match self {
+            Self::Api(failure) => failure.code.as_str(),
+            Self::Network(_) => "network_error",
+            Self::Crypto(_) => "crypto_error",
+            Self::UnsupportedKdfAlgorithm => "unsupported_kdf_algorithm",
+            Self::InvalidKdfParams => "invalid_kdf_params",
+            Self::InvalidResponse(_) => "invalid_response",
+            Self::InvalidBaseUrl => "invalid_server_url",
+            Self::NoSession => "no_session",
+            Self::UnlockFailed => "unlock_failed",
+            Self::InvalidSession => "invalid_session",
+            Self::SecretStore(_) => "secret_store_error",
+            Self::State(_) => "state_error",
+            Self::Io(_) => "local_io_error",
+            Self::Locked => "locked",
+            Self::AccountNotWritable(_) => "account_not_writable",
+            Self::NodeKeyUnavailable => "node_key_unavailable",
+            Self::FileChanged => "file_changed",
+            Self::Transfer(transfer) => transfer.code.as_str(),
+            Self::Integrity(_) => "integrity_error",
+            Self::OperationNotAllowed => "operation_not_allowed",
+            Self::Cancelled => "cancelled",
+            Self::Internal(_) => "internal_error",
+        }
+    }
+
     /// 稳定传输错误码（用于进度事件与界面）。
     #[must_use]
     pub fn transfer_code(&self) -> TransferErrorCode {

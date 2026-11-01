@@ -18,11 +18,13 @@ crate-type = ["cdylib", "staticlib"]
 # - tokio：为长时间传输/进度转发提供独立运行时（rt/sync/time）。
 # - uuid：解析 Dart 传入的 ID；解析失败统一转成 BridgeError，不 panic。
 # - thiserror：BridgeError 的中文 Display。
+# - tracing：初始化时写一行版本号，确认本地诊断日志可用（只记版本，不记路径）。
 [dependencies]
 client-core = { version = "0.1.0", path = "../../../crates/client-core", features = ["desktop"] }
 flutter_rust_bridge = "=2.13.0"
 thiserror = "2"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
+tracing = "0.1"
 uuid = "1"
 
 [lints]

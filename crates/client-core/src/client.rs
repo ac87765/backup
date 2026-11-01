@@ -702,7 +702,7 @@ impl Client {
     /// 会话失效时清除凭据；清理失败只记日志，仍把 401 返回给调用方。
     fn clear_after_invalid_session(&self) {
         if let Err(error) = self.clear_local_credentials() {
-            tracing::warn!(error = %error, "会话失效后清除本地凭据失败");
+            tracing::warn!(code = error.code(), "会话失效后清除本地凭据失败");
         }
     }
 }
