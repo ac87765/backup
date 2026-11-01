@@ -102,6 +102,17 @@ void main() {
     expect(status.tone, FolderStatusTone.needsUnlock);
   });
 
+  test('整个文件夹位于微信数据目录内时由微信备份处理', () {
+    final status = folderStatusView(
+      _folder(),
+      _state(),
+      globalPaused: false,
+      managedByWechat: true,
+    );
+    expect(status.label, '由微信备份处理');
+    expect(status.tone, FolderStatusTone.wechat);
+  });
+
   test('文件夹被单独暂停时显示已暂停', () {
     final status = folderStatusView(
       _folder(enabled: false),

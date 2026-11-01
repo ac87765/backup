@@ -89,6 +89,24 @@ void main() {
     );
   });
 
+  testWidgets('聊天记录快照保留份数写入桥接设置', (tester) async {
+    setTestWindow(tester, const Size(1280, 800));
+    final harness = TestHarness(
+      bridge: FakeNativeBridge(account: testAccount(), storedSession: true),
+    );
+    await pumpApp(tester, harness);
+    await tester.tap(find.byKey(const Key('open-settings')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('wechat-retention-select')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('menu-item-5 份')));
+    await tester.pumpAndSettle();
+
+    expect(harness.bridge.backupSettingsValue.wechatSnapshotRetention, 5);
+    expect(find.text('5 份'), findsOneWidget);
+  });
+
   testWidgets('设置页退出登录回到登录页', (tester) async {
     setTestWindow(tester, const Size(1280, 800));
     final harness = TestHarness(

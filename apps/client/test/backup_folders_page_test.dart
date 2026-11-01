@@ -54,6 +54,31 @@ Future<void> _openBackupPage(WidgetTester tester, TestHarness harness) async {
   await tester.pumpAndSettle();
 }
 
+WechatAccountDto _wechatAccount(String dataRoot) {
+  return WechatAccountDto(
+    accountName: 'wxid_test',
+    version: WechatVersionDto.wechat4,
+    dataRoot: dataRoot,
+    accountDir: '$dataRoot\\wxid_test',
+    source: WechatSourceDto.defaultLocation,
+    categories: const <WechatCategoryInfoDto>[
+      WechatCategoryInfoDto(
+        category: WechatCategoryDto.chatFiles,
+        sizeBytes: 100,
+        fileCount: 1,
+        lastModifiedNs: null,
+        exists: true,
+      ),
+    ],
+    totalSizeBytes: 100,
+    totalFileCount: 1,
+    lastModifiedNs: null,
+    isCurrentLoginCandidate: true,
+    hasPhoneMigrationBackup: false,
+    note: null,
+  );
+}
+
 void main() {
   testWidgets('五种卡片状态与最近活动', (tester) async {
     setTestWindow(tester, const Size(1280, 800));
@@ -202,6 +227,8 @@ void main() {
       excludedCount: 0,
       unreadableCount: 0,
       remainingQuotaBytes: 37600000000,
+      excludedWechatFileCount: 0,
+      excludedWechatBytes: 0,
     );
     final harness = TestHarness(bridge: bridge);
     harness.filePicker.directoryToPick = r'D:\工作资料';
@@ -247,6 +274,100 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('*.psd'), findsOneWidget);
+  });
+
+  testWidgets('普通文件夹显示已跳过微信数据；整目录位于微信数据内时由微信备份处理', (tester) async {
+    setTestWindow(tester, const Size(1280, 800));
+    final bridge = FakeNativeBridge(
+      account: testAccount(),
+      storedSession: true,
+    );
+    const dataRoot = r'C:\Users\tlj\Documents\xwechat_files';
+    bridge.wechatAccounts = <WechatAccountDto>[_wechatAccount(dataRoot)];
+    bridge.backupFolders = <BackupFolderDto>[
+      _folder(id: 'f1', name: '文档', localPath: r'C:\Users\tlj\Documents'),
+      _folder(
+        id: 'f2',
+        name: '聊天文件',
+        localPath: '$dataRoot\\wxid_test\\msg\\file',
+      ),
+    ];
+    bridge.backupStates = <BackupFolderStateDto>[_state('f1'), _state('f2')];
+    bridge.preflightByPath[r'C:\Users\tlj\Documents'] =
+        const BackupPreflightDto(
+          fileCount: 100,
+          totalBytes: 2500000000,
+          uploadBytes: 2500000000,
+          excludedCount: 100,
+          unreadableCount: 0,
+          remainingQuotaBytes: 37600000000,
+          excludedWechatFileCount: 100,
+          excludedWechatBytes: 2500000000,
+        );
+    bridge.backupActivities = <BackupActivityDto>[
+      const BackupActivityDto(
+        id: 1,
+        folderId: 'f1',
+        relativePath: '合同.pdf',
+        kind: BackupActivityKindDto.added,
+        occurredAt: 1761900300,
+        wechat: null,
+      ),
+      const BackupActivityDto(
+        id: 2,
+        folderId: 'f2',
+        relativePath: '微信聊天文件.pdf',
+        kind: BackupActivityKindDto.added,
+        occurredAt: 1761900300,
+        wechat: WechatEventSourceDto(
+          accountName: 'wxid_test',
+          category: WechatCategoryDto.chatFiles,
+        ),
+      ),
+    ];
+    final harness = TestHarness(bridge: bridge);
+    await _openBackupPage(tester, harness);
+
+    expect(find.text('已跳过微信数据（约 2.5 GB），由“微信备份”单独处理'), findsOneWidget);
+    expect(find.text('由微信备份处理'), findsOneWidget);
+    expect(find.text('合同.pdf'), findsOneWidget);
+    expect(find.text('微信聊天文件.pdf'), findsNothing);
+  });
+
+  testWidgets('添加文件夹预检摘要下显示已跳过微信数据', (tester) async {
+    setTestWindow(tester, const Size(1280, 800));
+    final bridge = FakeNativeBridge(
+      account: testAccount(),
+      storedSession: true,
+    );
+    const dataRoot = r'C:\Users\tlj\Documents\xwechat_files';
+    bridge.wechatAccounts = <WechatAccountDto>[_wechatAccount(dataRoot)];
+    bridge.preflightByPath[r'C:\Users\tlj\Documents'] =
+        const BackupPreflightDto(
+          fileCount: 1284,
+          totalBytes: 3200000000,
+          uploadBytes: 3200000000,
+          excludedCount: 100,
+          unreadableCount: 0,
+          remainingQuotaBytes: 37600000000,
+          excludedWechatFileCount: 100,
+          excludedWechatBytes: 2500000000,
+        );
+    final harness = TestHarness(bridge: bridge);
+    harness.filePicker.directoryToPick = r'C:\Users\tlj\Documents';
+    await pumpApp(tester, harness);
+    await tester.tap(find.text('备份文件夹').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('backup-add-folder')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('backup-pick-folder')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('backup-wechat-excluded-note')),
+      findsOneWidget,
+    );
+    expect(find.text('已跳过微信数据（约 2.5 GB），由“微信备份”单独处理'), findsOneWidget);
   });
 
   testWidgets('移除前确认并说明云端文件保留', (tester) async {

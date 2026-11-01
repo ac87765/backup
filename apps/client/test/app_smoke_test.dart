@@ -16,7 +16,7 @@ void main() {
     );
     await pumpApp(tester, harness);
 
-    for (final label in const ['全部文件', '最近', '回收站', '安全与隐私']) {
+    for (final label in const ['全部文件', '最近', '微信备份', '回收站', '安全与隐私']) {
       expect(find.text(label), findsWidgets, reason: '侧栏缺少 $label');
     }
     expect(find.text('合同.pdf'), findsOneWidget);

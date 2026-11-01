@@ -458,6 +458,8 @@ void main() {
         excludedCount: 0,
         unreadableCount: 0,
         remainingQuotaBytes: 37600000000,
+        excludedWechatFileCount: 0,
+        excludedWechatBytes: 0,
       );
       harness.filePicker.directoryToPick = r'D:\工作资料';
       await _openAddFolder(tester, harness);
@@ -517,6 +519,80 @@ void main() {
   );
 
   testWidgets(
+    'wechat',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final harness = _wechatHarness();
+      await pumpApp(tester, harness);
+      await tester.tap(find.text('微信备份').first);
+      await tester.pumpAndSettle();
+      await capture(tester, 'wechat-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'wechat-off',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final harness = _wechatHarness(enabled: false);
+      await pumpApp(tester, harness);
+      await tester.tap(find.text('微信备份').first);
+      await tester.pumpAndSettle();
+      await capture(tester, 'wechat-off-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'wechat-quota',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final harness = _wechatHarness(enabled: false, quota: true);
+      await pumpApp(tester, harness);
+      await tester.tap(find.text('微信备份').first);
+      await tester.pumpAndSettle();
+      await capture(tester, 'wechat-quota-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'wechat-notfound',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final harness = TestHarness(
+        bridge: FakeNativeBridge(account: testAccount(), storedSession: true),
+      );
+      await pumpApp(tester, harness);
+      await tester.tap(find.text('微信备份').first);
+      await tester.pumpAndSettle();
+      await capture(tester, 'wechat-notfound-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
+    'wechat-restore',
+    (tester) async {
+      setTestWindow(tester, const Size(1280, 800));
+      final harness = _wechatHarness();
+      await pumpApp(tester, harness);
+      await tester.tap(find.text('微信备份').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('wechat-restore')));
+      await tester.pumpAndSettle();
+      await capture(tester, 'wechat-restore-win.png');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    skip: !_fontsExist,
+  );
+
+  testWidgets(
     'files-drop',
     (tester) async {
       setTestWindow(tester, const Size(1280, 800));
@@ -534,6 +610,217 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
     skip: !_fontsExist,
   );
+}
+
+WechatCategoryInfoDto _wechatInfo(
+  WechatCategoryDto category, {
+  int bytes = 0,
+  bool exists = true,
+}) {
+  return WechatCategoryInfoDto(
+    category: category,
+    sizeBytes: bytes,
+    fileCount: exists ? 10 : 0,
+    lastModifiedNs: exists ? 1761900000000000000 : null,
+    exists: exists,
+  );
+}
+
+WechatAccountDto _wechatAccount({
+  required String name,
+  required int totalBytes,
+  required List<WechatCategoryInfoDto> categories,
+  bool current = true,
+}) {
+  return WechatAccountDto(
+    accountName: name,
+    version: WechatVersionDto.wechat4,
+    dataRoot: r'C:\Users\tlj\Documents\xwechat_files',
+    accountDir: 'C:\\Users\\tlj\\Documents\\xwechat_files\\$name',
+    source: WechatSourceDto.defaultLocation,
+    categories: categories,
+    totalSizeBytes: totalBytes,
+    totalFileCount: 1000,
+    lastModifiedNs: 1761900000000000000,
+    isCurrentLoginCandidate: current,
+    hasPhoneMigrationBackup: false,
+    note: null,
+  );
+}
+
+WechatAccountBackupStatusDto _wechatStatus(
+  WechatAccountDto account, {
+  required Set<WechatCategoryDto> selected,
+  Map<WechatCategoryDto, BackupFolderStatusDto> statuses =
+      const <WechatCategoryDto, BackupFolderStatusDto>{},
+  Map<WechatCategoryDto, int> lastBackups = const <WechatCategoryDto, int>{},
+}) {
+  return WechatAccountBackupStatusDto(
+    dataRoot: account.dataRoot,
+    accountName: account.accountName,
+    version: account.version,
+    categories: <WechatCategoryBackupStatusDto>[
+      for (final category in WechatCategoryDto.values)
+        WechatCategoryBackupStatusDto(
+          category: category,
+          selected: selected.contains(category),
+          status: statuses[category],
+          pauseReason: null,
+          lastBackupAt: lastBackups[category],
+        ),
+    ],
+    lastBackupAt: lastBackups.values.isEmpty
+        ? null
+        : lastBackups.values.reduce(
+            (left, right) => left > right ? left : right,
+          ),
+  );
+}
+
+TestHarness _wechatHarness({bool enabled = true, bool quota = false}) {
+  const primaryName = 'wxid_k8f3abc27';
+  const secondaryName = 'wxid_q2m9def61';
+  final primary = _wechatAccount(
+    name: primaryName,
+    totalBytes: 3100000000,
+    categories: <WechatCategoryInfoDto>[
+      _wechatInfo(WechatCategoryDto.chatFiles, bytes: 205000000),
+      _wechatInfo(WechatCategoryDto.imagesAndVideos, bytes: 2400000000),
+      _wechatInfo(WechatCategoryDto.databases, bytes: 163000000),
+      _wechatInfo(WechatCategoryDto.phoneMigration, exists: false),
+    ],
+  );
+  final secondary = _wechatAccount(
+    name: secondaryName,
+    totalBytes: 88000000,
+    current: false,
+    categories: <WechatCategoryInfoDto>[
+      _wechatInfo(WechatCategoryDto.chatFiles, bytes: 400000),
+      _wechatInfo(WechatCategoryDto.imagesAndVideos, exists: false),
+      _wechatInfo(WechatCategoryDto.databases, exists: false),
+      _wechatInfo(WechatCategoryDto.phoneMigration, exists: false),
+    ],
+  );
+  final bridge = FakeNativeBridge(account: testAccount(), storedSession: true);
+  bridge.wechatAccounts = <WechatAccountDto>[primary, secondary];
+  bridge.wechatPreflightBuilder = (account, categories) {
+    final withImages = categories.contains(WechatCategoryDto.imagesAndVideos);
+    if (account.accountName == secondaryName) {
+      return const WechatBackupPreflightDto(
+        fileCount: 0,
+        totalBytes: 0,
+        uploadBytes: 0,
+        uploadBytesWithoutImagesAndVideos: 0,
+        databaseBytes: 0,
+        excludedCount: 0,
+        unreadableCount: 0,
+        remainingQuotaBytes: 37600000000,
+        overQuota: false,
+      );
+    }
+    return WechatBackupPreflightDto(
+      fileCount: withImages ? 1284 : 420,
+      totalBytes: withImages ? 2800000000 : 400000000,
+      uploadBytes: withImages ? 2800000000 : 400000000,
+      uploadBytesWithoutImagesAndVideos: 400000000,
+      databaseBytes: 163000000,
+      excludedCount: 0,
+      unreadableCount: 0,
+      remainingQuotaBytes: quota ? 1900000000 : 37600000000,
+      overQuota: quota && withImages,
+    );
+  };
+  if (enabled) {
+    bridge.wechatStatuses = <WechatAccountBackupStatusDto>[
+      _wechatStatus(
+        primary,
+        selected: <WechatCategoryDto>{
+          WechatCategoryDto.chatFiles,
+          WechatCategoryDto.imagesAndVideos,
+          WechatCategoryDto.databases,
+        },
+        statuses: <WechatCategoryDto, BackupFolderStatusDto>{
+          WechatCategoryDto.chatFiles: const BackupFolderStatusDto(
+            kind: BackupFolderStatusKindDto.idleOk,
+            done: 0,
+            total: 0,
+            unreadableCount: 0,
+          ),
+          WechatCategoryDto.imagesAndVideos: const BackupFolderStatusDto(
+            kind: BackupFolderStatusKindDto.uploading,
+            done: 128,
+            total: 940,
+            unreadableCount: 0,
+          ),
+          WechatCategoryDto.databases: const BackupFolderStatusDto(
+            kind: BackupFolderStatusKindDto.waitingForWechatExit,
+            done: 0,
+            total: 0,
+            unreadableCount: 0,
+          ),
+        },
+        lastBackups: <WechatCategoryDto, int>{
+          WechatCategoryDto.chatFiles: _at(10, 0),
+          WechatCategoryDto.imagesAndVideos: _at(10, 0),
+          WechatCategoryDto.databases:
+              DateTime(2026, 10, 30, 23, 10).millisecondsSinceEpoch ~/ 1000,
+        },
+      ),
+      _wechatStatus(
+        secondary,
+        selected: <WechatCategoryDto>{WechatCategoryDto.chatFiles},
+        statuses: <WechatCategoryDto, BackupFolderStatusDto>{
+          WechatCategoryDto.chatFiles: const BackupFolderStatusDto(
+            kind: BackupFolderStatusKindDto.idleOk,
+            done: 0,
+            total: 0,
+            unreadableCount: 0,
+          ),
+        },
+        lastBackups: <WechatCategoryDto, int>{
+          WechatCategoryDto.chatFiles: _at(8, 30),
+        },
+      ),
+    ];
+    bridge.wechatRestoreCategoryList = const <WechatRestoreCategoryDto>[
+      WechatRestoreCategoryDto(
+        category: WechatCategoryDto.chatFiles,
+        fileCount: 12,
+        totalBytes: 205000000,
+        available: true,
+      ),
+    ];
+    bridge.wechatSnapshots = <WechatDatabaseSnapshotDto>[
+      WechatDatabaseSnapshotDto(
+        deviceName: 'DESKTOP-TLJ',
+        timestamp: '20261030T231000Z',
+        snapshotAt:
+            DateTime(2026, 10, 30, 23, 10).millisecondsSinceEpoch ~/ 1000,
+        totalBytes: 163000000,
+        fileCount: 32,
+        complete: true,
+      ),
+      WechatDatabaseSnapshotDto(
+        deviceName: 'DESKTOP-TLJ',
+        timestamp: '20261028T224500Z',
+        snapshotAt:
+            DateTime(2026, 10, 28, 22, 45).millisecondsSinceEpoch ~/ 1000,
+        totalBytes: 161000000,
+        fileCount: 31,
+        complete: true,
+      ),
+      WechatDatabaseSnapshotDto(
+        deviceName: 'DESKTOP-TLJ',
+        timestamp: '20261024T190200Z',
+        snapshotAt:
+            DateTime(2026, 10, 24, 19, 2).millisecondsSinceEpoch ~/ 1000,
+        totalBytes: 158000000,
+        fileCount: 30,
+        complete: true,
+      ),
+    ];
+  }
+  return TestHarness(bridge: bridge);
 }
 
 Future<void> _loadFont(String family, File file) async {
@@ -817,6 +1104,8 @@ TestHarness _onboardingHarness() {
       excludedCount: 0,
       unreadableCount: 0,
       remainingQuotaBytes: 37600000000,
+      excludedWechatFileCount: 0,
+      excludedWechatBytes: 0,
     ),
     r'C:\Users\tlj\Documents': const BackupPreflightDto(
       fileCount: 2018,
@@ -825,6 +1114,8 @@ TestHarness _onboardingHarness() {
       excludedCount: 0,
       unreadableCount: 0,
       remainingQuotaBytes: 37600000000,
+      excludedWechatFileCount: 0,
+      excludedWechatBytes: 0,
     ),
     r'C:\Users\tlj\Pictures': const BackupPreflightDto(
       fileCount: 8410,
@@ -833,6 +1124,8 @@ TestHarness _onboardingHarness() {
       excludedCount: 0,
       unreadableCount: 0,
       remainingQuotaBytes: 37600000000,
+      excludedWechatFileCount: 0,
+      excludedWechatBytes: 0,
     ),
   });
   return harness;

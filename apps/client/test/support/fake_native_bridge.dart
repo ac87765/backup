@@ -72,6 +72,11 @@ VersionDto testVersion({
   );
 }
 
+typedef FakeWechatPreflightBuilder = WechatBackupPreflightDto Function(
+  WechatAccountRefDto account,
+  List<WechatCategoryDto> categories,
+);
+
 /// 组件/页面测试用的桥接假实现：不加载 Rust 库、不访问网络或系统钥匙串。
 class FakeNativeBridge extends NativeBridge {
   FakeNativeBridge({
@@ -130,6 +135,8 @@ class FakeNativeBridge extends NativeBridge {
     excludedCount: 0,
     unreadableCount: 0,
     remainingQuotaBytes: 37600000000,
+    excludedWechatFileCount: 0,
+    excludedWechatBytes: 0,
   );
   BackupSettingsDto backupSettingsValue = const BackupSettingsDto(
     includeHidden: false,
@@ -145,8 +152,11 @@ class FakeNativeBridge extends NativeBridge {
 
   /// 微信备份假数据（第 4 组桥接层；界面在 4b 使用）。
   List<WechatAccountDto> wechatAccounts = <WechatAccountDto>[];
+  List<WechatAccountDto>? wechatAccountsAfterManualAdd;
   List<WechatAccountBackupStatusDto> wechatStatuses =
       <WechatAccountBackupStatusDto>[];
+  FakeWechatPreflightBuilder? wechatPreflightBuilder;
+  BridgeError? wechatRestoreError;
   List<WechatDatabaseSnapshotDto> wechatSnapshots =
       <WechatDatabaseSnapshotDto>[];
   List<WechatRestoreCategoryDto> wechatRestoreCategoryList =
@@ -875,6 +885,11 @@ class FakeNativeBridge extends NativeBridge {
     if (!wechatManualDirs.contains(path)) {
       wechatManualDirs = <String>[...wechatManualDirs, path];
     }
+    final afterAdd = wechatAccountsAfterManualAdd;
+    if (afterAdd != null) {
+      wechatAccounts = List<WechatAccountDto>.of(afterAdd);
+      wechatAccountsAfterManualAdd = null;
+    }
     return wechatListAccounts();
   }
 
@@ -899,12 +914,28 @@ class FakeNativeBridge extends NativeBridge {
   Future<void> wechatSetNote(WechatAccountRefDto account, String note) async {
     calls.add('wechatSetNote:${account.accountName}');
     lastWechatAccount = account;
+    wechatAccounts = <WechatAccountDto>[
+      for (final item in wechatAccounts)
+        if (item.accountName == account.accountName &&
+            item.dataRoot == account.dataRoot)
+          _copyWechatAccount(item, note: note)
+        else
+          item,
+    ];
   }
 
   @override
   Future<void> wechatClearNote(WechatAccountRefDto account) async {
     calls.add('wechatClearNote:${account.accountName}');
     lastWechatAccount = account;
+    wechatAccounts = <WechatAccountDto>[
+      for (final item in wechatAccounts)
+        if (item.accountName == account.accountName &&
+            item.dataRoot == account.dataRoot)
+          _copyWechatAccount(item, clearNote: true)
+        else
+          item,
+    ];
   }
 
   @override
@@ -915,6 +946,7 @@ class FakeNativeBridge extends NativeBridge {
     calls.add('wechatSetCategories:${account.accountName}');
     lastWechatAccount = account;
     lastWechatCategories = List<WechatCategoryDto>.of(categories);
+    _applyWechatCategories(account, categories);
   }
 
   @override
@@ -925,6 +957,10 @@ class FakeNativeBridge extends NativeBridge {
     calls.add('wechatPreflight:${account.accountName}');
     lastWechatAccount = account;
     lastWechatCategories = List<WechatCategoryDto>.of(categories);
+    final builder = wechatPreflightBuilder;
+    if (builder != null) {
+      return builder(account, categories);
+    }
     return wechatPreflightValue;
   }
 
@@ -964,8 +1000,100 @@ class FakeNativeBridge extends NativeBridge {
   @override
   Future<String> wechatStartRestore(WechatRestoreRequestDto request) async {
     calls.add('wechatStartRestore:${request.accountName}');
+    final error = wechatRestoreError;
+    if (error != null) {
+      throw error;
+    }
     lastWechatRestoreRequest = request;
     return nextTransferId();
+  }
+
+  WechatAccountDto _copyWechatAccount(
+    WechatAccountDto account, {
+    String? note,
+    bool clearNote = false,
+  }) {
+    return WechatAccountDto(
+      accountName: account.accountName,
+      version: account.version,
+      dataRoot: account.dataRoot,
+      accountDir: account.accountDir,
+      source: account.source,
+      categories: account.categories,
+      totalSizeBytes: account.totalSizeBytes,
+      totalFileCount: account.totalFileCount,
+      lastModifiedNs: account.lastModifiedNs,
+      isCurrentLoginCandidate: account.isCurrentLoginCandidate,
+      hasPhoneMigrationBackup: account.hasPhoneMigrationBackup,
+      note: clearNote ? null : (note ?? account.note),
+    );
+  }
+
+  WechatCategoryBackupStatusDto? _wechatCategoryStatus(
+    WechatAccountBackupStatusDto status,
+    WechatCategoryDto category,
+  ) {
+    for (final item in status.categories) {
+      if (item.category == category) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  void _applyWechatCategories(
+    WechatAccountRefDto account,
+    List<WechatCategoryDto> categories,
+  ) {
+    final selected = categories.toSet();
+    final index = wechatStatuses.indexWhere(
+      (item) =>
+          item.accountName == account.accountName &&
+          item.dataRoot == account.dataRoot,
+    );
+    final existing = index < 0 ? null : wechatStatuses[index];
+    final nextCategories = <WechatCategoryBackupStatusDto>[];
+    for (final category in WechatCategoryDto.values) {
+      final old = existing == null
+          ? null
+          : _wechatCategoryStatus(existing, category);
+      final status =
+          old?.status ??
+          (selected.contains(category) &&
+                  category == WechatCategoryDto.databases
+              ? const BackupFolderStatusDto(
+                  kind: BackupFolderStatusKindDto.waitingForWechatExit,
+                  done: 0,
+                  total: 0,
+                  unreadableCount: 0,
+                )
+              : null);
+      nextCategories.add(
+        WechatCategoryBackupStatusDto(
+          category: category,
+          selected: selected.contains(category),
+          status: status,
+          pauseReason: old?.pauseReason,
+          lastBackupAt: old?.lastBackupAt,
+        ),
+      );
+    }
+    final status = WechatAccountBackupStatusDto(
+      dataRoot: account.dataRoot,
+      accountName: account.accountName,
+      version: account.version,
+      categories: nextCategories,
+      lastBackupAt: existing?.lastBackupAt,
+    );
+    if (index < 0) {
+      wechatStatuses = <WechatAccountBackupStatusDto>[
+        ...wechatStatuses,
+        status,
+      ];
+    } else {
+      wechatStatuses = <WechatAccountBackupStatusDto>[...wechatStatuses]
+        ..[index] = status;
+    }
   }
 
   String _baseName(String path) {

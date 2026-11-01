@@ -181,6 +181,7 @@ class TestHarness {
   final List<StandardFolder> standardFolders;
   final FakeClock clock = FakeClock();
   final List<Uri> openedUris = <Uri>[];
+  final Set<String> missingDirectories = <String>{};
   AppConfig config = testConfig;
 
   /// 与运行测试的主机无关：默认按桌面端（Windows / macOS）构建路由。
@@ -194,6 +195,9 @@ class TestHarness {
     clockProvider.overrideWithValue(clock.call),
     filePickerProvider.overrideWithValue(filePicker),
     localFolderInspectorProvider.overrideWithValue(folderInspector),
+    directoryExistsProvider.overrideWithValue(
+      (path) => !missingDirectories.contains(path),
+    ),
     localSettingsStoreProvider.overrideWith((ref) async => settingsStore),
     startupServiceProvider.overrideWithValue(startup),
     windowControlsProvider.overrideWithValue(windowControls),
