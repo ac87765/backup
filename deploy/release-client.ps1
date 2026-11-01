@@ -262,6 +262,11 @@ try {
         }
         $windowsSource = Get-SingleArtifact -Directory $windowsDownload -Extension '.exe' -Label 'Windows 产物'
         $macosSource = Get-SingleArtifact -Directory $macosDownload -Extension '.dmg' -Label 'macOS 产物'
+        # CI 把编译进应用的版本号写在产物文件名里。带 `-dirty` 等后缀的构建会被客户端
+        # 当作开发构建、永远不提示更新，不能发布。
+        if ($windowsSource.Name -notlike "*-$Tag-windows-x64.exe" -or $macosSource.Name -notlike "*-$Tag-macos.dmg") {
+            Stop-Release "CI 产物的版本与标签 $Tag 不一致（$($windowsSource.Name) / $($macosSource.Name)），拒绝发布。"
+        }
     }
 
     Copy-Item -LiteralPath $windowsSource.FullName -Destination $windowsPath

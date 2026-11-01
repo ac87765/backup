@@ -131,8 +131,15 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $version = git describe --tags --always --dirty
-          if ($LASTEXITCODE -ne 0) { throw 'git describe 失败' }
+          # 标签构建直接用标签名：构建步骤会改动工作区，`--dirty` 会让发布版带上
+          # `-dirty`，客户端把它当作开发构建，自动更新永远不会提示。
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $version = $env:GITHUB_REF_NAME
+            if ($version -notmatch '^v\d+\.\d+\.\d+$') { throw "发布标签格式无效：$version" }
+          } else {
+            $version = git describe --tags --always --dirty
+            if ($LASTEXITCODE -ne 0) { throw 'git describe 失败' }
+          }
           $commit = git rev-parse --short HEAD
           if ($LASTEXITCODE -ne 0) { throw 'git rev-parse 失败' }
           "version=$version" >> $env:GITHUB_OUTPUT
@@ -201,8 +208,17 @@ jobs:
         run: flutter pub get
 
       # 脚本负责 release 构建、ad-hoc 签名、校验与 dmg 生成（design D10）。
+      # 标签构建直接用标签名（原因见 Windows 的“计算版本与提交”）。
       - name: 构建并打包 macOS .dmg
-        run: bash apps/client/tool/package_macos.sh
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "发布标签格式无效：$GITHUB_REF_NAME" >&2
+              exit 1
+            fi
+            export APP_VERSION="$GITHUB_REF_NAME"
+          fi
+          bash apps/client/tool/package_macos.sh
 
       # Flutter macOS release 默认只构建运行器架构（macos-latest 为 arm64）。
       # 把实际架构写进日志，便于用户在 Intel / Apple Silicon Mac 上核对。
