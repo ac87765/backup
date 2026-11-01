@@ -372,8 +372,15 @@ async fn presign(
 async fn put_object(
     State(state): State<Arc<FakeState>>,
     Path((id, idx)): Path<(Uuid, u32)>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    // 与阿里云 OSS 一致：预签名 URL 的签名包含 Content-Type，而服务端签名时没有
+    // 指定它，所以带这个头的 PUT 会被拒绝（SignatureDoesNotMatch）。MinIO 不校验，
+    // 只靠真实存储集成测试发现不了。
+    if headers.contains_key(header::CONTENT_TYPE) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     state
         .objects
         .lock()

@@ -838,10 +838,11 @@ async fn upload_one_chunk(
             // 令牌桶按实际发送的密文字节计费；手动上传不经过这里。
             limiter.acquire(expected_size).await;
         }
+        // 不发送 Content-Type：OSS 的预签名把它算进签名，而服务端签名时没有指定，
+        // 带上会得到 403 SignatureDoesNotMatch（Web 客户端同样不发送）。
         let response = client
             .storage_http
             .put(&url)
-            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
             .body(ciphertext.clone())
             .send()
             .await;
