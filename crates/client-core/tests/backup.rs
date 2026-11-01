@@ -13,7 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use client_core::desktop::wechat::{WechatLocator, WechatSystemLocations};
+use client_core::desktop::wechat::{WechatLocator, WechatProcessProbe, WechatSystemLocations};
 use client_core::desktop::{
     BackupEngine, BackupEngineConfig, BackupFolderDraft, BackupFolderStatus,
 };
@@ -24,6 +24,15 @@ const PASSWORD: &str = "correct horse battery staple";
 
 /// 空微信系统位置：Docker 集成测试不读取宿主机真实微信目录。
 struct NoWechatLocations;
+
+/// 假进程探测：集成测试不枚举宿主机真实进程。
+struct NeverRunningProbe;
+
+impl WechatProcessProbe for NeverRunningProbe {
+    fn is_running(&self, _version: client_core::desktop::wechat::WechatVersion) -> bool {
+        false
+    }
+}
 
 impl WechatSystemLocations for NoWechatLocations {
     fn documents_dir(
@@ -112,6 +121,8 @@ async fn folder_backup_incremental_versions_and_local_delete_on_real_server() {
                 NoWechatLocations,
             ))),
             wechat_manual_directories: Vec::new(),
+            wechat_process_probe: Some(Arc::new(NeverRunningProbe)),
+            wechat_snapshot_interval: Duration::from_secs(10),
         },
     )
     .unwrap();

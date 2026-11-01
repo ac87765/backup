@@ -6,23 +6,26 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Path as AxumPath, State};
+use axum::extract::{DefaultBodyLimit, Path as AxumPath, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use client_core::desktop::wechat::{
-    WechatAccount, WechatCategory, WechatLocator, WechatSystemLocations,
+    WechatAccount, WechatCategory, WechatLocator, WechatProcessProbe, WechatSystemLocations,
 };
 use client_core::desktop::{
     BackupActivityKind, BackupEngine, BackupEngineConfig, BackupFolderDraft, BackupFolderStatus,
     BackupFolderUpdate, BackupPauseReason, BackupSummaryStatus, WechatBackupSource,
+    WechatSnapshotOutcome,
 };
 use client_core::{
     Client, ClientBuilder, Clock, ConflictPolicy, MemorySecretStore, NodeKind, SleepFuture,
@@ -41,12 +44,21 @@ const CHUNK: i64 = crypto_core::MAX_CHUNK_CIPHERTEXT_SIZE as i64;
 
 struct NoWaitClock {
     sleeps: Mutex<Vec<Duration>>,
+    /// 相对真实时间的偏移；`advance` 只影响 `now()`，不影响 `sleep` 立即返回。
+    offset: Mutex<Duration>,
 }
 
 impl NoWaitClock {
     fn new() -> Self {
         Self {
             sleeps: Mutex::new(Vec::new()),
+            offset: Mutex::new(Duration::ZERO),
+        }
+    }
+
+    fn advance(&self, duration: Duration) {
+        if let Ok(mut offset) = self.offset.lock() {
+            *offset = offset.saturating_add(duration);
         }
     }
 }
@@ -57,8 +69,39 @@ impl Clock for NoWaitClock {
         Box::pin(async {})
     }
 
+    fn now(&self) -> SystemTime {
+        self.offset
+            .lock()
+            .map(|offset| SystemTime::now() + *offset)
+            .unwrap_or_else(|_| SystemTime::now())
+    }
+
     fn jitter(&self) -> f64 {
         0.0
+    }
+}
+
+/// 可切换的假微信进程探测（测试绝不枚举真实进程）。
+#[derive(Debug)]
+struct FakeProbe {
+    running: AtomicBool,
+}
+
+impl FakeProbe {
+    fn new(running: bool) -> Self {
+        Self {
+            running: AtomicBool::new(running),
+        }
+    }
+
+    fn set_running(&self, running: bool) {
+        self.running.store(running, Ordering::SeqCst);
+    }
+}
+
+impl WechatProcessProbe for FakeProbe {
+    fn is_running(&self, _version: client_core::desktop::wechat::WechatVersion) -> bool {
+        self.running.load(Ordering::SeqCst)
     }
 }
 
@@ -146,6 +189,9 @@ struct FakeState {
     fail_create_folder_once: Mutex<bool>,
     mutate_path_on_first_put: Mutex<Option<PathBuf>>,
     lock_client_on_first_put: Mutex<Option<Client>>,
+    flip_probe_on_first_put: Mutex<Option<Arc<FakeProbe>>>,
+    trashed: Mutex<HashSet<Uuid>>,
+    requests: Mutex<u64>,
     quota_bytes: Mutex<i64>,
 }
 
@@ -188,8 +234,15 @@ impl FakeState {
             fail_create_folder_once: Mutex::new(false),
             mutate_path_on_first_put: Mutex::new(None),
             lock_client_on_first_put: Mutex::new(None),
+            flip_probe_on_first_put: Mutex::new(None),
+            trashed: Mutex::new(HashSet::new()),
+            requests: Mutex::new(0),
             quota_bytes: Mutex::new(10 * 1024 * 1024 * 1024),
         })
+    }
+
+    fn requests(&self) -> u64 {
+        *self.requests.lock().unwrap()
     }
 
     fn set_quota(&self, quota_bytes: i64) {
@@ -221,13 +274,21 @@ impl FakeState {
 
     fn children(&self, parent: Uuid) -> Vec<Node> {
         let nodes = self.nodes.lock().unwrap();
+        let trashed = self.trashed.lock().unwrap();
         let mut items: Vec<Node> = nodes
             .values()
-            .filter(|node| node.parent_id == Some(parent))
+            .filter(|node| node.parent_id == Some(parent) && !trashed.contains(&node.id))
             .cloned()
             .collect();
         items.sort_by_key(|node| node.id);
         items
+    }
+
+    /// 已移入回收站（仍保留在状态中）的节点，供测试断言目录被回收。
+    fn trashed_ids(&self) -> Vec<Uuid> {
+        let mut ids: Vec<Uuid> = self.trashed.lock().unwrap().iter().copied().collect();
+        ids.sort();
+        ids
     }
 }
 
@@ -379,6 +440,33 @@ async fn list_children(
     }
     let items: Vec<Value> = state.children(id).iter().map(node_json).collect();
     Json(json!({"items": items, "next_cursor": null})).into_response()
+}
+
+async fn delete_node(
+    State(state): State<Arc<FakeState>>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<Uuid>,
+) -> Response {
+    if !authorized(&state, &headers) {
+        return unauthorized();
+    }
+    let nodes = state.nodes.lock().unwrap();
+    if !nodes.contains_key(&id) {
+        return api_error(StatusCode::NOT_FOUND, "not_found", "节点不存在");
+    }
+    let mut trashed = state.trashed.lock().unwrap();
+    let mut stack = vec![id];
+    while let Some(current) = stack.pop() {
+        if trashed.insert(current) {
+            for child in nodes
+                .values()
+                .filter(|node| node.parent_id == Some(current))
+            {
+                stack.push(child.id);
+            }
+        }
+    }
+    Json(json!({"trash_batch_id": Uuid::new_v4()})).into_response()
 }
 
 async fn list_versions(
@@ -569,6 +657,9 @@ async fn put_object(
     }
     if let Some(client) = state.lock_client_on_first_put.lock().unwrap().take() {
         let _ = client.lock();
+    }
+    if let Some(probe) = state.flip_probe_on_first_put.lock().unwrap().take() {
+        probe.set_running(true);
     }
     StatusCode::OK.into_response()
 }
@@ -778,6 +869,16 @@ async fn usage(State(state): State<Arc<FakeState>>, headers: HeaderMap) -> Respo
     .into_response()
 }
 
+/// 统计所有经过假服务端的请求，供“未变时零请求”的断言使用。
+async fn count_requests(
+    State(state): State<Arc<FakeState>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    *state.requests.lock().unwrap() += 1;
+    next.run(request).await
+}
+
 async fn spawn(state: Arc<FakeState>) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -788,6 +889,7 @@ async fn spawn(state: Arc<FakeState>) -> String {
         .route("/api/v1/auth/me", get(me))
         .route("/api/v1/folders", post(create_folder))
         .route("/api/v1/nodes/{id}/children", get(list_children))
+        .route("/api/v1/nodes/{id}", delete(delete_node))
         .route("/api/v1/nodes/{id}/versions", get(list_versions))
         .route(
             "/api/v1/nodes/{node_id}/versions/{version_id}/download",
@@ -801,6 +903,10 @@ async fn spawn(state: Arc<FakeState>) -> String {
         .route("/api/v1/me/usage", get(usage))
         .route("/objects/{id}/{idx}", put(put_object).get(get_object))
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            count_requests,
+        ))
         .with_state(state);
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
@@ -808,11 +914,11 @@ async fn spawn(state: Arc<FakeState>) -> String {
     format!("http://{address}")
 }
 
-fn build_client(base_url: &str, app_data: &Path) -> Client {
+fn build_client_with_clock(base_url: &str, app_data: &Path, clock: Arc<NoWaitClock>) -> Client {
     ClientBuilder::new(base_url)
         .secret_store(Arc::new(MemorySecretStore::new()))
         .app_data_dir(app_data)
-        .clock(Arc::new(NoWaitClock::new()))
+        .clock(clock)
         .build()
         .unwrap()
 }
@@ -823,6 +929,8 @@ fn build_engine_with_retry(
     watch_files: bool,
     retry_interval: Duration,
     wechat_locator: Option<WechatLocator>,
+    wechat_process_probe: Arc<dyn WechatProcessProbe>,
+    wechat_snapshot_interval: Duration,
 ) -> BackupEngine {
     BackupEngine::new(
         client.clone(),
@@ -834,6 +942,8 @@ fn build_engine_with_retry(
             watch_files,
             wechat_locator,
             wechat_manual_directories: Vec::new(),
+            wechat_process_probe: Some(wechat_process_probe),
+            wechat_snapshot_interval,
         },
     )
     .unwrap()
@@ -883,6 +993,8 @@ struct Harness {
     state: Arc<FakeState>,
     client: Client,
     engine: BackupEngine,
+    clock: Arc<NoWaitClock>,
+    probe: Arc<FakeProbe>,
     _app_data: tempfile::TempDir,
     files: tempfile::TempDir,
 }
@@ -924,13 +1036,33 @@ async fn harness_full(
     retry_interval: Duration,
     wechat_documents: Option<PathBuf>,
 ) -> Harness {
+    harness_full_with(
+        watch_files,
+        debounce,
+        retry_interval,
+        wechat_documents,
+        Arc::new(FakeProbe::new(false)),
+        Duration::from_secs(10),
+    )
+    .await
+}
+
+async fn harness_full_with(
+    watch_files: bool,
+    debounce: Duration,
+    retry_interval: Duration,
+    wechat_documents: Option<PathBuf>,
+    probe: Arc<FakeProbe>,
+    wechat_snapshot_interval: Duration,
+) -> Harness {
     let state = FakeState::new();
     let base_url = spawn(state.clone()).await;
     let app_data = tempfile::tempdir().unwrap();
     let files = tempfile::tempdir().unwrap();
-    let client = build_client(&base_url, app_data.path());
+    let clock = Arc::new(NoWaitClock::new());
+    let client = build_client_with_clock(&base_url, app_data.path(), clock.clone());
     client.login(&state.email, PASSWORD).await.unwrap();
-    // 始终注入假系统位置：测试绝不读取注册表或本机真实微信目录。
+    // 始终注入假系统位置与假进程探测：测试绝不读取注册表、真实微信目录或进程。
     let wechat_locator = Some(WechatLocator::with_system_locations(Arc::new(
         FakeWechatLocations {
             documents: wechat_documents,
@@ -942,11 +1074,15 @@ async fn harness_full(
         watch_files,
         retry_interval,
         wechat_locator,
+        probe.clone(),
+        wechat_snapshot_interval,
     );
     Harness {
         state,
         client,
         engine,
+        clock,
+        probe,
         _app_data: app_data,
         files,
     }
@@ -2443,10 +2579,640 @@ async fn wechat_backup_does_not_modify_source_directories() {
         )
         .await
         .unwrap();
+    let snapshot = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(snapshot.outcome, WechatSnapshotOutcome::Completed);
 
     let after = tree_snapshot(&account_dir);
     assert_eq!(
         before, after,
         "备份期间不得修改微信目录（路径/大小/修改时间）"
     );
+}
+
+// ---------------------------------------------------------------------------
+// 微信聊天记录数据库快照（add-wechat-backup 第 3 组）
+// ---------------------------------------------------------------------------
+
+/// 完整的 4.x 数据库夹具：包含 `.db`、`-wal`/`-shm`、`.kvdb`/`-shm`、
+/// `.material` 与 `MMKV/`（design D3 要求的整个目录，而不是只取 `.db`）。
+fn create_snapshot_fixture(base: &Path) -> PathBuf {
+    let documents = create_wechat_fixture(base);
+    let database = documents
+        .join("xwechat_files")
+        .join(WECHAT_ACCOUNT)
+        .join("db_storage");
+    for directory in ["message", "contact", "MMKV"] {
+        std::fs::create_dir_all(database.join(directory)).unwrap();
+    }
+    write(&database.join("message/message_0.db"), b"database-bytes");
+    write(&database.join("message/message_0.db-wal"), b"wal-bytes");
+    write(&database.join("message/message_0.db-shm"), b"shm-bytes");
+    write(&database.join("contact/contact.kvdb"), b"kvdb-bytes");
+    write(
+        &database.join("contact/contact.kvdb-shm"),
+        b"kvdb-shm-bytes",
+    );
+    write(
+        &database.join("contact/contact.material"),
+        b"material-bytes",
+    );
+    write(&database.join("MMKV/mmkv.bin"), b"mmkv-bytes");
+    documents
+}
+
+fn primary_database_file(documents: &Path) -> PathBuf {
+    documents
+        .join("xwechat_files")
+        .join(WECHAT_ACCOUNT)
+        .join("db_storage/message/message_0.db")
+}
+
+fn is_timestamp_name(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    bytes.len() == 18
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes[10] == b'T'
+        && bytes[17] == b'Z'
+}
+
+async fn try_cloud_folder_by_path(client: &Client, names: &[&str]) -> Option<Uuid> {
+    let mut parent = client.account()?.root_node_id;
+    for name in names {
+        let node = cloud_children(client, parent)
+            .await
+            .into_iter()
+            .find(|node| node.kind == NodeKind::Folder && node.name == *name)?;
+        parent = node.id;
+    }
+    Some(parent)
+}
+
+async fn snapshot_parent(client: &Client) -> Option<Uuid> {
+    try_cloud_folder_by_path(
+        client,
+        &["微信备份", "TEST-PC", WECHAT_ACCOUNT, "聊天记录数据库"],
+    )
+    .await
+}
+
+async fn timestamp_dirs(client: &Client, parent: Uuid) -> Vec<client_core::NodeView> {
+    cloud_children(client, parent)
+        .await
+        .into_iter()
+        .filter(|node| node.kind == NodeKind::Folder && is_timestamp_name(&node.name))
+        .collect()
+}
+
+async fn marker_exists(client: &Client, directory: Uuid) -> bool {
+    cloud_children(client, directory)
+        .await
+        .iter()
+        .any(|node| node.kind == NodeKind::File && node.name == "快照完成")
+}
+
+async fn wait_for_db_status(engine: &BackupEngine, expected: BackupFolderStatus) {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let accounts = engine.list_wechat_accounts().await.unwrap();
+            let status = accounts
+                .iter()
+                .flat_map(|account| account.categories.iter())
+                .find(|category| category.category == WechatCategory::Databases)
+                .and_then(|category| category.status);
+            if status == Some(expected) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("等待数据库类别状态 {expected:?} 超时"));
+}
+
+/// 等待自动快照完成，返回快照根目录。
+async fn wait_for_complete_snapshot(client: &Client) -> Uuid {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            if let Some(parent) = snapshot_parent(client).await {
+                for directory in timestamp_dirs(client, parent).await {
+                    if marker_exists(client, directory.id).await {
+                        return parent;
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("快照应在微信退出后自动完成")
+}
+
+async fn wait_for_db_pause_reason(engine: &BackupEngine, expected: BackupPauseReason) {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let accounts = engine.list_wechat_accounts().await.unwrap();
+            let category = accounts
+                .iter()
+                .flat_map(|account| account.categories.iter())
+                .find(|category| category.category == WechatCategory::Databases);
+            if category.is_some_and(|category| {
+                category.status == Some(BackupFolderStatus::Paused)
+                    && category.pause_reason == Some(expected)
+            }) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("等待数据库类别暂停原因 {expected:?} 超时"));
+}
+
+async fn wait_until_trashed(state: &Arc<FakeState>, node_id: Uuid) {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            if state.trashed_ids().contains(&node_id) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("快照目录应被移入回收站");
+}
+
+async fn wait_for_requests_above(state: &Arc<FakeState>, baseline: u64) -> u64 {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let current = state.requests();
+            if current > baseline {
+                return current;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("应产生云端请求")
+}
+
+async fn wait_for_complete_snapshot_count(client: &Client, parent: Uuid, expected: usize) {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let mut complete = 0;
+            for directory in timestamp_dirs(client, parent).await {
+                if marker_exists(client, directory.id).await {
+                    complete += 1;
+                }
+            }
+            if complete == expected {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("等待 {expected} 份完整快照超时"));
+}
+
+/// 等待请求计数在连续两个 100ms 窗口内保持不变。
+async fn wait_for_request_quiescence(state: &Arc<FakeState>) -> u64 {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let mut last = state.requests();
+        loop {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let current = state.requests();
+            if current == last {
+                return current;
+            }
+            last = current;
+        }
+    })
+    .await
+    .expect("请求应在启动维护后静默")
+}
+
+#[tokio::test]
+async fn wechat_snapshot_waits_for_exit_then_starts_automatically() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_full_with(
+        false,
+        Duration::from_millis(50),
+        Duration::from_secs(60),
+        Some(documents.clone()),
+        Arc::new(FakeProbe::new(true)),
+        Duration::from_millis(100),
+    )
+    .await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::Databases])
+        .await
+        .unwrap();
+
+    h.engine.start().await.unwrap();
+    wait_for_db_status(&h.engine, BackupFolderStatus::WaitingForWechatExit).await;
+    assert_eq!(h.state.upload_sessions(), 0, "微信运行中不得上传");
+    assert!(
+        snapshot_parent(&h.client).await.is_none(),
+        "微信运行中不得创建时间戳目录"
+    );
+
+    // 微信退出后（探测切换为未运行），调度器在下一次检查自动开始快照。
+    h.probe.set_running(false);
+    h.clock.advance(Duration::from_millis(500));
+    let parent = wait_for_complete_snapshot(&h.client).await;
+    let directories = timestamp_dirs(&h.client, parent).await;
+    assert_eq!(directories.len(), 1, "应新建一份完整快照");
+    assert!(marker_exists(&h.client, directories[0].id).await);
+    h.engine.stop().await;
+}
+
+#[tokio::test]
+async fn wechat_snapshot_aborts_when_wechat_starts_mid_upload() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_full_with(
+        false,
+        Duration::from_millis(50),
+        Duration::from_secs(60),
+        Some(documents.clone()),
+        Arc::new(FakeProbe::new(false)),
+        Duration::from_secs(10),
+    )
+    .await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::Databases])
+        .await
+        .unwrap();
+
+    // 第一个文件 PUT 之后把探测切为“运行中”：剩余文件停止上传并放弃本次快照。
+    *h.state.flip_probe_on_first_put.lock().unwrap() = Some(h.probe.clone());
+    let first = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    // 探测到微信启动时状态回到“等微信退出后备份”，本次上传已放弃。
+    assert_eq!(first.outcome, WechatSnapshotOutcome::WaitingForWechatExit);
+    let parent = snapshot_parent(&h.client).await.unwrap();
+    assert!(
+        timestamp_dirs(&h.client, parent).await.is_empty(),
+        "放弃的时间戳目录必须移入回收站"
+    );
+    assert!(
+        !h.state.trashed_ids().is_empty(),
+        "放弃的目录必须进入回收站而不是彻底删除"
+    );
+
+    // 微信退出后重试成功，且只有一份完整快照。
+    h.probe.set_running(false);
+    h.clock.advance(Duration::from_secs(1));
+    let second = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(second.outcome, WechatSnapshotOutcome::Completed);
+    let directories = timestamp_dirs(&h.client, parent).await;
+    assert_eq!(directories.len(), 1);
+    assert!(marker_exists(&h.client, directories[0].id).await);
+}
+
+#[tokio::test]
+async fn wechat_snapshot_aborts_when_a_database_file_changes_during_upload() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::Databases])
+        .await
+        .unwrap();
+
+    // 第一个文件 PUT 时修改该文件：上传任务报告 FileChanged，本次快照放弃。
+    *h.state.mutate_path_on_first_put.lock().unwrap() = Some(primary_database_file(&documents));
+    let report = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(report.outcome, WechatSnapshotOutcome::Aborted);
+    let parent = snapshot_parent(&h.client).await.unwrap();
+    assert!(
+        timestamp_dirs(&h.client, parent).await.is_empty(),
+        "文件变化时本次目录必须移入回收站"
+    );
+    assert!(!h.state.trashed_ids().is_empty());
+
+    // 文件稳定后重试成功，且只有一份完整快照。
+    h.clock.advance(Duration::from_secs(1));
+    let retried = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(retried.outcome, WechatSnapshotOutcome::Completed);
+    let directories = timestamp_dirs(&h.client, parent).await;
+    assert_eq!(directories.len(), 1);
+    assert!(marker_exists(&h.client, directories[0].id).await);
+}
+
+#[tokio::test]
+async fn wechat_snapshot_skips_when_content_unchanged() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::Databases])
+        .await
+        .unwrap();
+
+    let first = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(first.outcome, WechatSnapshotOutcome::Completed);
+    let parent = snapshot_parent(&h.client).await.unwrap();
+    assert_eq!(timestamp_dirs(&h.client, parent).await.len(), 1);
+    let sessions = h.state.upload_sessions();
+    assert!(sessions >= 1);
+
+    // 大小与修改时间完全一致：不读文件、不发上传请求。
+    let second = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(second.outcome, WechatSnapshotOutcome::Unchanged);
+    assert_eq!(h.state.upload_sessions(), sessions, "未变不得上传");
+    assert_eq!(
+        timestamp_dirs(&h.client, parent).await.len(),
+        1,
+        "不得新建目录"
+    );
+
+    // 只改修改时间不改内容：重新计算摘要后与云端一致，同样不新建。
+    set_mtime_forward(&primary_database_file(&documents));
+    let third = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(third.outcome, WechatSnapshotOutcome::Unchanged);
+    assert_eq!(h.state.upload_sessions(), sessions, "内容未变不得上传");
+    assert_eq!(timestamp_dirs(&h.client, parent).await.len(), 1);
+}
+
+#[tokio::test]
+async fn wechat_snapshot_retention_keeps_latest_and_applies_new_setting() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::Databases])
+        .await
+        .unwrap();
+    let first = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(first.outcome, WechatSnapshotOutcome::Completed);
+    let parent = snapshot_parent(&h.client).await.unwrap();
+
+    // 默认保留 3 份：第 2–4 份完成后，最早一份进入回收站。
+    for index in 1..=3 {
+        let file = primary_database_file(&documents);
+        write(&file, format!("database-content-{index}").as_bytes());
+        set_mtime_forward(&file);
+        h.clock.advance(Duration::from_secs(1));
+        let report = h
+            .engine
+            .snapshot_wechat_databases_now(&account)
+            .await
+            .unwrap();
+        assert_eq!(report.outcome, WechatSnapshotOutcome::Completed);
+    }
+    assert_eq!(
+        timestamp_dirs(&h.client, parent).await.len(),
+        3,
+        "默认只保留最近 3 份完整快照"
+    );
+    assert!(
+        !h.state.trashed_ids().is_empty(),
+        "最早的一份必须移入回收站"
+    );
+
+    // 保留数改为 1：立即清理到 1 份。
+    let mut settings = h.engine.settings().await.unwrap();
+    settings.wechat_snapshot_retention = 1;
+    h.engine.set_settings(settings).await.unwrap();
+    assert_eq!(
+        timestamp_dirs(&h.client, parent).await.len(),
+        1,
+        "保留数改为 1 后只应剩 1 份"
+    );
+}
+
+#[tokio::test]
+async fn wechat_snapshot_cleans_incomplete_before_next_snapshot() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_with_wechat(documents.clone()).await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::Databases])
+        .await
+        .unwrap();
+
+    // 预先在云端放一个没有 `快照完成` 的时间戳目录（模拟上次中断）。
+    let root = h.client.account().unwrap().root_node_id;
+    let mut parent = root;
+    let mut incomplete_id = root;
+    for name in [
+        "微信备份",
+        "TEST-PC",
+        WECHAT_ACCOUNT,
+        "聊天记录数据库",
+        "2020-01-01T000000Z",
+    ] {
+        incomplete_id = h.client.create_folder(parent, name).await.unwrap().id;
+        parent = incomplete_id;
+    }
+    assert!(!marker_exists(&h.client, incomplete_id).await);
+
+    let report = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(report.outcome, WechatSnapshotOutcome::Completed);
+    assert!(
+        h.state.trashed_ids().contains(&incomplete_id),
+        "不完整快照必须在下次快照前移入回收站"
+    );
+    let parent = snapshot_parent(&h.client).await.unwrap();
+    let directories = timestamp_dirs(&h.client, parent).await;
+    assert_eq!(directories.len(), 1);
+    assert!(marker_exists(&h.client, directories[0].id).await);
+}
+
+#[tokio::test]
+async fn wechat_snapshot_unchanged_makes_no_cloud_requests() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_full_with(
+        false,
+        Duration::from_millis(50),
+        Duration::from_secs(60),
+        Some(documents.clone()),
+        Arc::new(FakeProbe::new(false)),
+        Duration::from_millis(100),
+    )
+    .await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::Databases])
+        .await
+        .unwrap();
+    let first = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(first.outcome, WechatSnapshotOutcome::Completed);
+    let parent = snapshot_parent(&h.client).await.unwrap();
+
+    // 启动后的第一次检查会做一次云端维护；之后本地未变时应完全静默。
+    h.engine.start().await.unwrap();
+    wait_for_db_status(&h.engine, BackupFolderStatus::IdleOk).await;
+    let baseline = wait_for_request_quiescence(&h.state).await;
+
+    for _ in 0..5 {
+        h.clock.advance(Duration::from_millis(300));
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert_eq!(
+            h.state.requests(),
+            baseline,
+            "数据库未变时连续检查不得产生任何云端请求"
+        );
+    }
+
+    // 本地变化后才访问云端并新建快照。
+    let file = primary_database_file(&documents);
+    write(&file, b"changed-content-after-quiescence");
+    set_mtime_forward(&file);
+    h.clock.advance(Duration::from_millis(300));
+    let after = wait_for_requests_above(&h.state, baseline).await;
+    assert!(after > baseline);
+    wait_for_complete_snapshot_count(&h.client, parent, 2).await;
+    h.engine.stop().await;
+}
+
+#[tokio::test]
+async fn wechat_snapshot_cleanup_runs_at_startup_and_full_scan() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_full_with(
+        false,
+        Duration::from_millis(50),
+        Duration::from_secs(60),
+        Some(documents.clone()),
+        Arc::new(FakeProbe::new(false)),
+        Duration::from_millis(100),
+    )
+    .await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::Databases])
+        .await
+        .unwrap();
+    let first = h
+        .engine
+        .snapshot_wechat_databases_now(&account)
+        .await
+        .unwrap();
+    assert_eq!(first.outcome, WechatSnapshotOutcome::Completed);
+    let parent = snapshot_parent(&h.client).await.unwrap();
+
+    // 启动后第一次检查：即使本地未变，也要清理不完整快照。
+    let startup_incomplete = h
+        .client
+        .create_folder(parent, "2020-01-01T000000Z")
+        .await
+        .unwrap();
+    let before_start = h.state.requests();
+    h.engine.start().await.unwrap();
+    wait_until_trashed(&h.state, startup_incomplete.id).await;
+    assert!(
+        h.state.requests() > before_start,
+        "启动后的第一次检查必须列云端目录做清理"
+    );
+
+    // 每 6 小时（测试用 1 小时全量核对周期）再清理一次，即使本地未变。
+    let full_scan_incomplete = h
+        .client
+        .create_folder(parent, "2020-01-02T000000Z")
+        .await
+        .unwrap();
+    let before_full = h.state.requests();
+    h.clock.advance(Duration::from_secs(3_601));
+    wait_until_trashed(&h.state, full_scan_incomplete.id).await;
+    assert!(
+        h.state.requests() > before_full,
+        "全量核对必须再次列云端目录做清理"
+    );
+    h.engine.stop().await;
+}
+
+#[tokio::test]
+async fn wechat_snapshot_network_error_waits_for_retry_interval() {
+    let fixture = tempfile::tempdir().unwrap();
+    let documents = create_snapshot_fixture(fixture.path());
+    let h = harness_full_with(
+        false,
+        Duration::from_millis(50),
+        Duration::from_secs(10),
+        Some(documents.clone()),
+        Arc::new(FakeProbe::new(false)),
+        Duration::from_millis(50),
+    )
+    .await;
+    let account = discover_wechat_account(&documents).await;
+    h.engine
+        .set_wechat_categories(&account, &[WechatCategory::Databases])
+        .await
+        .unwrap();
+    // 第一次上传会话创建返回 503：网络/服务端类错误。
+    *h.state.fail_upload_session_remaining.lock().unwrap() = 1;
+
+    h.engine.start().await.unwrap();
+    wait_for_db_pause_reason(&h.engine, BackupPauseReason::Network).await;
+    let baseline = h.state.requests();
+
+    // 未到 retry_interval 前，调度器继续做本地检查但不得重试云端上传。
+    h.clock.advance(Duration::from_secs(1));
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(
+        h.state.requests(),
+        baseline,
+        "网络错误在 retry_interval 之前不得再次尝试"
+    );
+
+    // 超过 retry_interval 后自动重试并成功。
+    h.clock.advance(Duration::from_secs(12));
+    let after = wait_for_requests_above(&h.state, baseline).await;
+    assert!(after > baseline);
+    wait_for_db_status(&h.engine, BackupFolderStatus::IdleOk).await;
+    h.engine.stop().await;
 }
