@@ -237,6 +237,8 @@ export class FolderUploadJob {
   private finishedBytes = 0
   private activeBytes = new Map<string, number>()
   private activeSessions = new Map<string, string>()
+  /** 已发出的会话中止请求；全部结束（配额预留已释放）后任务才显示“已取消”。 */
+  private pendingAborts = new Map<string, Promise<void>>()
   private cancelled = false
   private retrying = false
   private errorCodeValue: string | undefined
@@ -357,7 +359,7 @@ export class FolderUploadJob {
       return
     }
     if (this.cancelled) {
-      this.finishCancelled()
+      await this.finishCancelled()
       return
     }
 
@@ -376,7 +378,7 @@ export class FolderUploadJob {
     await this.runUploads(plan.uploads)
 
     if (this.cancelled) {
-      this.finishCancelled()
+      await this.finishCancelled()
       return
     }
     this.status = this.counts.failed > 0 ? 'failed' : 'done'
@@ -390,17 +392,24 @@ export class FolderUploadJob {
       return
     }
     this.cancelled = true
-    const sessions = [...this.activeSessions.values()]
     await Promise.all(
-      sessions.map(async (sessionId) => {
-        try {
-          await this.api.cancelUpload(sessionId)
-        } catch {
-          // 会话可能已提交/关闭；本地仍按取消处理。
-        }
-      }),
+      [...this.activeSessions.values()].map((sessionId) =>
+        this.abortSession(sessionId),
+      ),
     )
     this.emit()
+  }
+
+  /** 每个会话只发一次中止；返回的 Promise 不会 reject。 */
+  private abortSession(sessionId: string): Promise<void> {
+    let pending = this.pendingAborts.get(sessionId)
+    if (!pending) {
+      pending = this.api.cancelUpload(sessionId).catch(() => {
+        // 会话可能已提交/关闭；本地仍按取消处理。
+      })
+      this.pendingAborts.set(sessionId, pending)
+    }
+    return pending
   }
 
   /** 只重试失败项；成功后摘要中的失败数归零。 */
@@ -427,7 +436,7 @@ export class FolderUploadJob {
     this.emit()
     await this.runUploads(retryItems.map((item) => item.plan))
     if (this.cancelled) {
-      this.finishCancelled()
+      await this.finishCancelled()
       return
     }
     this.retrying = false
@@ -435,7 +444,12 @@ export class FolderUploadJob {
     this.emit()
   }
 
-  private finishCancelled(): void {
+  /**
+   * 等所有中止请求结束再进入“已取消”：调用方随后刷新用量，
+   * 若先于中止读取，会一直显示已释放的配额预留。
+   */
+  private async finishCancelled(): Promise<void> {
+    await Promise.all(this.pendingAborts.values())
     this.status = 'cancelled'
     this.retrying = false
     for (const child of this.children.values()) {
@@ -667,7 +681,7 @@ export class FolderUploadJob {
       if (event.transferId) {
         this.activeSessions.set(plan.childId, event.transferId)
         if (this.cancelled) {
-          void this.api.cancelUpload(event.transferId).catch(() => undefined)
+          void this.abortSession(event.transferId)
         }
         if (event.status === 'retrying') {
           this.retrying = true

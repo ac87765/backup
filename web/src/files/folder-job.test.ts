@@ -509,6 +509,37 @@ describe('FolderUploadJob（design D2/D3/D4）', () => {
     expect(api.findByName('b.txt')).toBeUndefined()
   })
 
+  it('取消：会话中止完成（预留已释放）后才显示已取消', async () => {
+    const api = new FakeApi()
+    api.holdUploads = true
+    let releaseAbort: () => void = () => undefined
+    const abortSettled = new Promise<void>((resolve) => {
+      releaseAbort = resolve
+    })
+    const original = api.cancelUpload.bind(api)
+    // 上传立即以 cancelled 结束，但服务端中止（释放预留）稍后才返回。
+    vi.spyOn(api, 'cancelUpload').mockImplementation(async (sessionId) => {
+      await original(sessionId)
+      await abortSettled
+    })
+    const scan = task('资料', [{ path: 'a.txt', file: file('a.txt', 1) }])
+    const { job } = run(api, scan)
+    const started = job.start()
+    for (let attempt = 0; attempt < 100 && api.pending.size === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+    expect(api.pending.size).toBe(1)
+    const cancelling = job.cancel()
+    expect(api.pending.size).toBe(0)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(job.snapshot().status).toBe('running')
+
+    releaseAbort()
+    await Promise.all([cancelling, started])
+    expect(job.snapshot().status).toBe('cancelled')
+    expect(api.cancelCalls).toHaveLength(1)
+  })
+
   it('并发上传不超过设置（默认 3）', async () => {
     const api = new FakeApi()
     let active = 0
