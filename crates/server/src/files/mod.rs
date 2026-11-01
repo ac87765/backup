@@ -182,14 +182,22 @@ pub async fn load_node(
 
 /// 用户行锁：同一用户的所有结构变更（移动/删除/恢复）串行化，
 /// 从而避免并发移动共同制造环（task 7.3）。
+///
+/// 使用 `FOR NO KEY UPDATE`：彼此之间仍互斥（配额与结构变更照常串行），
+/// 但不阻塞外键检查所需的 `KEY SHARE`。否则 presign（持会话行锁 → 插入
+/// upload_chunks 需要用户行 `KEY SHARE`）与 abort/commit（持用户行锁 → 等会话行锁）
+/// 会互相等待而死锁。
 pub async fn lock_user(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     user_id: Uuid,
 ) -> Result<(), ApiError> {
-    let locked = sqlx::query_scalar!("SELECT id FROM users WHERE id = $1 FOR UPDATE", user_id,)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(ApiError::internal)?;
+    let locked = sqlx::query_scalar!(
+        "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE",
+        user_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::internal)?;
     if locked.is_none() {
         return Err(ApiError::unauthenticated());
     }

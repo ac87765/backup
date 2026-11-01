@@ -72,8 +72,9 @@ impl ScanJob for UploadSessionExpiry {
         let mut expired: u64 = 0;
         for candidate in candidates {
             // 用户行可能已被其他事务删除；跳过并让外键级联处理会话。
+            // 与 `files::lock_user` 一致使用 NO KEY UPDATE，避免与 presign 的外键检查死锁。
             let user = sqlx::query_scalar!(
-                "SELECT id FROM users WHERE id = $1 FOR UPDATE",
+                "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE",
                 candidate.user_id,
             )
             .fetch_optional(&mut **tx)

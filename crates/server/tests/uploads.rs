@@ -1588,6 +1588,90 @@ async fn commit_detects_name_conflict_and_keeps_session_open() {
     assert_eq!(state, "open");
 }
 
+/// 取消文件夹任务时 abort 与进行中的 presign 并发：presign 持会话行锁后插入
+/// upload_chunks（外键检查需要用户行 KEY SHARE），abort 持用户行锁后等会话行锁。
+/// 用户行锁若是 FOR UPDATE 会形成环并被判死锁（abort 返回 500、预留不释放）。
+#[tokio::test]
+async fn abort_waiting_on_presign_session_lock_does_not_deadlock() {
+    let app = setup().await;
+    let (user_id, root, cookie) = verified_user_with_session(&app).await;
+    let session = create_session_ok(
+        &app,
+        &cookie,
+        new_file_body(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            root,
+            Uuid::new_v4(),
+            1,
+            100 + EMPTY_CHUNK,
+            23,
+        ),
+    )
+    .await;
+    let session_id = session["id"].as_str().expect("会话 ID").to_owned();
+    let session_uuid = Uuid::parse_str(&session_id).expect("session id");
+
+    // 模拟 presign 事务的第一步：锁住会话行。
+    let mut presign_tx = app.database.pool().begin().await.expect("开始事务");
+    sqlx::query("SELECT id FROM upload_sessions WHERE id = $1 AND user_id = $2 FOR UPDATE")
+        .bind(session_uuid)
+        .bind(user_id)
+        .execute(&mut *presign_tx)
+        .await
+        .expect("锁会话行");
+
+    let router = app.app.clone();
+    let abort_uri = format!("/api/v1/upload-sessions/{session_id}/abort");
+    let abort_cookie = cookie.clone();
+    let aborting = tokio::spawn(async move {
+        read(send(&router, Method::POST, &abort_uri, None, &abort_cookie, true).await).await
+    });
+
+    // 等 abort 已持有用户行锁、阻塞在会话行锁上。
+    let mut waiting = false;
+    for _ in 0..500 {
+        let blocked: i64 = sqlx::query_scalar(
+            r#"
+            SELECT count(*) FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND wait_event_type = 'Lock'
+              AND query LIKE '%FROM upload_sessions%FOR UPDATE%'
+            "#,
+        )
+        .fetch_one(app.database.pool())
+        .await
+        .expect("查询锁等待");
+        if blocked > 0 {
+            waiting = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(waiting, "abort 应当阻塞在会话行锁上");
+
+    // presign 的第二步：插入块记录（外键检查需要用户行 KEY SHARE）。
+    sqlx::query(
+        r#"
+        INSERT INTO upload_chunks (session_id, user_id, idx, object_key, declared_size)
+        VALUES ($1, $2, 0, $3, $4)
+        "#,
+    )
+    .bind(session_uuid)
+    .bind(user_id)
+    .bind(ObjectKey::generate(user_id).as_str().to_owned())
+    .bind(100 + EMPTY_CHUNK)
+    .execute(&mut *presign_tx)
+    .await
+    .expect("presign 插入块记录不应死锁");
+    presign_tx.commit().await.expect("提交 presign 事务");
+
+    let (status, _headers, value) = aborting.await.expect("abort 任务");
+    assert_eq!(status, StatusCode::OK, "{value}");
+    assert_eq!(value["status"], "aborted");
+    assert_eq!(reserved(&app, user_id).await, 0);
+}
+
 #[tokio::test]
 async fn abort_releases_quota_and_enqueues_current_and_superseded_objects() {
     let app = setup().await;
