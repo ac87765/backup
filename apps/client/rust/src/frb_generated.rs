@@ -946,7 +946,9 @@ let mut var_uploadBytes = <i64>::sse_decode(deserializer);
 let mut var_excludedCount = <i64>::sse_decode(deserializer);
 let mut var_unreadableCount = <i64>::sse_decode(deserializer);
 let mut var_remainingQuotaBytes = <Option<i64>>::sse_decode(deserializer);
-return crate::api::types::BackupPreflightDto{file_count: var_fileCount, total_bytes: var_totalBytes, upload_bytes: var_uploadBytes, excluded_count: var_excludedCount, unreadable_count: var_unreadableCount, remaining_quota_bytes: var_remainingQuotaBytes};}
+let mut var_excludedWechatFileCount = <i64>::sse_decode(deserializer);
+let mut var_excludedWechatBytes = <i64>::sse_decode(deserializer);
+return crate::api::types::BackupPreflightDto{file_count: var_fileCount, total_bytes: var_totalBytes, upload_bytes: var_uploadBytes, excluded_count: var_excludedCount, unreadable_count: var_unreadableCount, remaining_quota_bytes: var_remainingQuotaBytes, excluded_wechat_file_count: var_excludedWechatFileCount, excluded_wechat_bytes: var_excludedWechatBytes};}
                 }
                 
                 impl SseDecode for crate::api::types::BackupRunReportDto {
@@ -2181,7 +2183,9 @@ self.total_bytes.into_into_dart().into_dart(),
 self.upload_bytes.into_into_dart().into_dart(),
 self.excluded_count.into_into_dart().into_dart(),
 self.unreadable_count.into_into_dart().into_dart(),
-self.remaining_quota_bytes.into_into_dart().into_dart()
+self.remaining_quota_bytes.into_into_dart().into_dart(),
+self.excluded_wechat_file_count.into_into_dart().into_dart(),
+self.excluded_wechat_bytes.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -3238,7 +3242,9 @@ crate::api::types::BackupPauseReasonDto::Network => { 2 }
 <i64>::sse_encode(self.upload_bytes, serializer);
 <i64>::sse_encode(self.excluded_count, serializer);
 <i64>::sse_encode(self.unreadable_count, serializer);
-<Option<i64>>::sse_encode(self.remaining_quota_bytes, serializer);}
+<Option<i64>>::sse_encode(self.remaining_quota_bytes, serializer);
+<i64>::sse_encode(self.excluded_wechat_file_count, serializer);
+<i64>::sse_encode(self.excluded_wechat_bytes, serializer);}
                 }
                 
                 impl SseEncode for crate::api::types::BackupRunReportDto {

@@ -638,6 +638,8 @@ pub(crate) fn backup_preflight(preflight: &BackupPreflight) -> BackupPreflightDt
         excluded_count: i64_from_u64(preflight.excluded_count),
         unreadable_count: i64_from_u64(preflight.unreadable_count),
         remaining_quota_bytes: preflight.remaining_quota_bytes.map(i64_from_u64),
+        excluded_wechat_file_count: i64_from_u64(preflight.excluded_wechat_file_count),
+        excluded_wechat_bytes: i64_from_u64(preflight.excluded_wechat_bytes),
     }
 }
 

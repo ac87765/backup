@@ -456,6 +456,10 @@ pub struct BackupPreflightDto {
     pub excluded_count: i64,
     pub unreadable_count: i64,
     pub remaining_quota_bytes: Option<i64>,
+    /// 被自动排除的微信数据文件数（由“微信备份”单独处理，design D2）。
+    pub excluded_wechat_file_count: i64,
+    /// 被自动排除的微信数据明文字节数；界面提示“已跳过微信数据（约 X）”。
+    pub excluded_wechat_bytes: i64,
 }
 
 /// 一次备份运行统计。
