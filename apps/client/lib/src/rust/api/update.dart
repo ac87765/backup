@@ -37,7 +37,8 @@ Future<void>  updateCancelDownload() => RustLib.instance.api.crateApiUpdateUpdat
 /// 先停止备份引擎，再启动安装：
 /// - Windows：静默安装包已在后台启动，Dart 收到 `started` 后应立即退出应用；
 /// - macOS：替换脚本已启动，会等待当前进程退出后替换并重新打开；
-/// - 无法写入当前应用目录时打开 `.dmg` 并返回 `manual_install_required`。
+/// - 无法写入当前应用目录时返回 `manual_install_required`，由界面调用
+///   `update_open_dmg` 打开 `.dmg`。
 Future<UpdateInstallOutcomeDto>  updateInstall() => RustLib.instance.api.crateApiUpdateUpdateInstall();
 
 /// 打开已下载的 .dmg（macOS 手动安装退回方案）。
