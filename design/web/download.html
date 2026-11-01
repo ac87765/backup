@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-CN" data-default-state="default">
+<head>
+<meta charset="utf-8">
+<title>下载客户端</title>
+<link rel="stylesheet" href="../desktop/tokens.css">
+<style>
+  /* 网页版设计令牌与桌面一致（tokens.css :root）。本页是公开页面，没有窗口外框。 */
+  .site { width: 1280px; background: var(--surface); color: var(--ink-900); font-size: var(--text-md); }
+  html[data-state='mobile'] .site { width: 390px; }
+
+  /* ---------- 顶部导航 ---------- */
+  .topnav { display: flex; align-items: center; gap: 28px; height: 64px; padding: 0 48px; border-bottom: 1px solid var(--line); }
+  .topnav .wordmark { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: var(--text-lg); }
+  .topnav a { color: var(--ink-600); text-decoration: none; font-size: var(--text-sm); }
+  .topnav a.active { color: var(--ink-900); font-weight: 500; }
+  .topnav .spacer { flex: 1; }
+  html[data-state='mobile'] .topnav { padding: 0 16px; gap: 12px; }
+  html[data-state='mobile'] .topnav .topnav-links, html[data-state='mobile'] .topnav .login { display: none; }
+
+  /* ---------- 首屏 ---------- */
+  .hero { position: relative; overflow: hidden; display: grid; grid-template-columns: 1fr 560px; gap: 48px; align-items: center; padding: 72px 48px 64px;
+    background:
+      radial-gradient(60% 80% at 100% 0%, var(--brand-50), transparent 70%),
+      radial-gradient(50% 60% at 0% 100%, #f3f7ff, transparent 70%); }
+  .hero h1 { margin: 0 0 14px; font-size: 40px; line-height: 1.2; font-weight: 650; letter-spacing: -0.01em; }
+  .hero .lede { margin: 0 0 28px; color: var(--ink-600); font-size: var(--text-lg); line-height: 1.7; max-width: 520px; }
+  .cta { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .btn-xl { height: 52px; padding: 0 26px; font-size: var(--text-lg); border-radius: 12px; gap: 10px; box-shadow: 0 6px 20px rgb(0 97 254 / 0.25); }
+  .alt { color: var(--brand-700); font-size: var(--text-sm); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  .meta { display: flex; align-items: center; gap: 10px; margin-top: 18px; color: var(--ink-500); font-size: var(--text-sm); }
+  .meta .dot-sep { width: 3px; height: 3px; border-radius: 50%; background: var(--ink-400); }
+  .shot { position: relative; border-radius: 14px; overflow: hidden; box-shadow: 0 30px 70px rgb(30 25 25 / 0.18), 0 0 0 1px rgb(0 0 0 / 0.06);
+    transform: perspective(1400px) rotateY(-8deg) rotateX(3deg); animation: float 7s ease-in-out infinite; }
+  .shot img { display: block; width: 100%; }
+  @keyframes float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -8px; } }
+  .error-box { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: var(--radius-card); background: var(--warning-50); color: #92400e; max-width: 520px; }
+  html[data-state='mobile'] .hero { grid-template-columns: 1fr; padding: 40px 16px 32px; gap: 28px; }
+  html[data-state='mobile'] .hero h1 { font-size: 28px; }
+  html[data-state='mobile'] .hero .lede { font-size: var(--text-md); }
+  html[data-state='mobile'] .shot { transform: none; }
+
+  /* 根据访问者系统切换主按钮（data-os 由页面脚本按 userAgent 设置；设计稿用 ?os= 模拟） */
+  html[data-os='win'] .for-mac, html[data-os='mac'] .for-win { display: none !important; }
+
+  /* ---------- 通用分区 ---------- */
+  .section { padding: 56px 48px; }
+  .section.alt-bg { background: var(--canvas); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .section h2 { margin: 0 0 6px; font-size: var(--text-2xl); font-weight: 600; }
+  .section .sub { margin: 0 0 28px; color: var(--ink-500); }
+  html[data-state='mobile'] .section { padding: 36px 16px; }
+
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .feature { padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
+  .feature .ic { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--brand-50); color: var(--brand-600); margin-bottom: 14px; }
+  .feature b { display: block; margin-bottom: 6px; font-size: var(--text-md); }
+  .feature span { color: var(--ink-600); font-size: var(--text-sm); line-height: 1.7; }
+  html[data-state='mobile'] .features { grid-template-columns: 1fr; }
+
+  .platforms { display: grid; grid-template-columns: 1fr 1fr 0.8fr; gap: 16px; }
+  .platform { display: flex; flex-direction: column; gap: 14px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
+  .platform.current { border-color: var(--brand-600); box-shadow: 0 0 0 3px var(--brand-50); }
+  .platform header { display: flex; align-items: center; gap: 12px; }
+  .platform header .ic { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--canvas-strong); color: var(--ink-600); }
+  .platform.current header .ic { background: var(--brand-50); color: var(--brand-600); }
+  .platform header b { font-size: var(--text-lg); }
+  .platform dl { display: grid; grid-template-columns: 72px 1fr; gap: 8px 12px; margin: 0; font-size: var(--text-sm); }
+  .platform dt { color: var(--ink-500); }
+  .platform dd { margin: 0; color: var(--ink-900); min-width: 0; }
+  .hash { display: flex; align-items: center; gap: 6px; }
+  .hash code { font-family: var(--font-mono, Consolas, monospace); font-size: 12px; color: var(--ink-600); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .copy { flex: none; border: 0; background: none; color: var(--brand-700); font-size: var(--text-xs); cursor: pointer; padding: 0; }
+  .platform .grow { flex: 1; }
+  .platform.soon { background: var(--canvas); border-style: dashed; }
+  html[data-state='mobile'] .platforms { grid-template-columns: 1fr; }
+
+  .steps-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .steps { padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
+  .steps h3 { margin: 0 0 14px; font-size: var(--text-md); display: flex; align-items: center; gap: 8px; }
+  .steps ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; counter-reset: s; }
+  .steps li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; font-size: var(--text-sm); color: var(--ink-600); line-height: 1.7; counter-increment: s; }
+  .steps li::before { content: counter(s); width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--brand-50); color: var(--brand-700); font-weight: 600; font-size: 12px; }
+  .steps li b { color: var(--ink-900); font-weight: 500; }
+  .kbd { display: inline-block; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--canvas); font-size: 12px; color: var(--ink-900); }
+  html[data-state='mobile'] .steps-wrap { grid-template-columns: 1fr; }
+
+  .changelog { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
+  .release { display: grid; grid-template-columns: 160px 1fr; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
+  .release:last-child { border-bottom: 0; }
+  .release .v b { display: block; }
+  .release .v span { color: var(--ink-500); font-size: var(--text-xs); }
+  .release ul { margin: 0; padding-left: 18px; color: var(--ink-600); font-size: var(--text-sm); line-height: 1.8; }
+  html[data-state='mobile'] .release { grid-template-columns: 1fr; gap: 6px; }
+
+  .foot { display: flex; align-items: center; gap: 24px; padding: 28px 48px; color: var(--ink-500); font-size: var(--text-xs); border-top: 1px solid var(--line); }
+  .foot a { color: var(--ink-500); }
+  html[data-state='mobile'] .foot { flex-direction: column; align-items: flex-start; gap: 8px; padding: 24px 16px; }
+
+  /* 进入动效：首屏文字依次淡入上移（遵守减少动态效果） */
+  .enter > * { animation: enter 320ms var(--ease-out) both; }
+  .enter > *:nth-child(2) { animation-delay: 60ms; }
+  .enter > *:nth-child(3) { animation-delay: 120ms; }
+  .enter > *:nth-child(4) { animation-delay: 180ms; }
+  @keyframes enter { from { opacity: 0; translate: 0 10px; } to { opacity: 1; translate: 0 0; } }
+  @media (prefers-reduced-motion: reduce) { .enter > *, .shot { animation: none; } }
+</style>
+</head>
+<body style="background:var(--canvas-strong)">
+<!--
+  公开下载页面 /download（openspec change: add-client-releases，design D6）。宽 1280（手机 390）。
+  页面根据访问者 userAgent 设置 data-os（设计稿用 ?os=win|mac 模拟）。状态：
+    default   正常：首屏主按钮为访问者系统；平台卡片（当前系统高亮）、首次打开说明、更新日志
+    error     无法读取 latest.json：首屏显示提示与“重试”，平台卡片的下载按钮禁用、不显示版本信息
+    mobile    手机宽度：首屏说明“请在电脑上打开此页面下载”+“复制链接”，各分区单列
+  数据全部来自已发布的 latest.json（版本、日期、大小、SHA-256、更新内容）；首次打开说明为固定文案。
+  动效：首屏文字依次淡入上移（320ms，间隔 60ms）；右侧应用截图 7s 缓慢浮动 8px；遵守“减少动态效果”。
+-->
+<div class="site capture">
+  <nav class="topnav">
+    <span class="wordmark"><span class="logo" style="--s:30px;--s-inner:16px"><i data-icon="lock"></i></span>加密备份</span>
+    <span class="topnav-links" style="display:flex;gap:24px"><a>功能</a><a>安全</a><a class="active">下载</a></span>
+    <span class="spacer"></span>
+    <a class="login">登录网页版</a>
+    <button class="btn btn-primary">注册</button>
+  </nav>
+
+  <section class="hero">
+    <div class="enter">
+      <h1>在电脑上自动加密备份<br>你的文件</h1>
+      <p class="lede">文件在你的电脑上加密后才上传，服务器只保存密文。选好文件夹，之后新增和修改的文件都会自动备份，还能单独备份微信。</p>
+
+      <div class="cta" data-when="default">
+        <button class="btn btn-primary btn-xl for-win"><i data-icon="download" style="--s:20px"></i>下载 Windows 版</button>
+        <button class="btn btn-primary btn-xl for-mac"><i data-icon="download" style="--s:20px"></i>下载 macOS 版</button>
+        <a class="alt for-win">也有 macOS 版<i data-icon="arrow-right" style="--s:14px"></i></a>
+        <a class="alt for-mac">也有 Windows 版<i data-icon="arrow-right" style="--s:14px"></i></a>
+      </div>
+      <div class="meta" data-when="default">
+        <span>版本 0.2.0</span><span class="dot-sep"></span><span>2026年11月5日</span><span class="dot-sep"></span>
+        <span class="for-win">15.4 MB · Windows 10 / 11</span><span class="for-mac">38.5 MB · macOS 12 及以上</span>
+      </div>
+
+      <div class="error-box" data-when="error"><i data-icon="alert"></i><span style="flex:1">暂时无法获取最新版本，请稍后再试。</span><button class="btn">重试</button></div>
+
+      <div data-when="mobile" style="display:flex;flex-direction:column;gap:12px">
+        <div class="note info"><i data-icon="monitor"></i><span>客户端适用于 Windows 与 macOS 电脑。请在电脑上打开这个页面下载，iPhone 版即将推出。</span></div>
+        <button class="btn btn-lg"><i data-icon="external"></i>复制下载页面链接</button>
+      </div>
+    </div>
+    <div class="shot"><img src="../desktop/screenshots/files-win.png" alt="加密备份客户端界面"></div>
+  </section>
+
+  <section class="section">
+    <h2>为什么用客户端</h2>
+    <p class="sub">网页版随时可用；客户端适合需要自动备份的电脑。</p>
+    <div class="features">
+      <div class="feature"><span class="ic"><i data-icon="shield-check" style="--s:20px"></i></span><b>本机加密</b><span>密码和密钥只在你的电脑上，服务器和我们都看不到文件内容与文件名。</span></div>
+      <div class="feature"><span class="ic"><i data-icon="refresh" style="--s:20px"></i></span><b>文件夹自动备份</b><span>选好文件夹后自动增量备份，修改过的文件保留旧版本，本地删除不会删掉云端。</span></div>
+      <div class="feature"><span class="ic"><i data-icon="message-circle" style="--s:20px"></i></span><b>微信备份</b><span>聊天文件、图片视频和聊天记录一起备份，换电脑后可以恢复。不读取聊天内容。</span></div>
+    </div>
+  </section>
+
+  <section class="section alt-bg">
+    <h2>选择你的系统</h2>
+    <p class="sub">安装包由维护者签名发布，客户端会自动检查并安装更新。</p>
+    <div class="platforms">
+      <div class="platform current-win">
+        <header><span class="ic"><i data-icon="monitor" style="--s:22px"></i></span><div><b>Windows</b><div class="small muted">Windows 10 / 11，64 位</div></div></header>
+        <dl data-when="default mobile">
+          <dt>版本</dt><dd>0.2.0（2026年11月5日）</dd>
+          <dt>大小</dt><dd>15.4 MB</dd>
+          <dt>SHA-256</dt><dd class="hash"><code>8f3c2a91d0e74b6c5a1f9e2d7c4b8a3f6e5d0c9b8a7f6e5d4c3b2a1f0e9d8c7b</code><button class="copy">复制</button></dd>
+        </dl>
+        <span class="grow"></span>
+        <span data-when="default"><button class="btn btn-primary btn-block"><i data-icon="download"></i>下载 .exe 安装包</button></span>
+        <span data-when="error"><button class="btn btn-primary btn-block" style="opacity:.45"><i data-icon="download"></i>暂时无法下载</button></span>
+      </div>
+      <div class="platform current-mac">
+        <header><span class="ic"><i data-icon="laptop" style="--s:22px"></i></span><div><b>macOS</b><div class="small muted">macOS 12 及以上，Apple 芯片与 Intel</div></div></header>
+        <dl data-when="default mobile">
+          <dt>版本</dt><dd>0.2.0（2026年11月5日）</dd>
+          <dt>大小</dt><dd>38.5 MB</dd>
+          <dt>SHA-256</dt><dd class="hash"><code>2b7e4d1a9c8f3e6b5d0a7c4f1e8b2d9a6c3f0e7b4d1a8c5f2e9b6d3a0c7f4e1b</code><button class="copy">复制</button></dd>
+        </dl>
+        <span class="grow"></span>
+        <span data-when="default"><button class="btn btn-block"><i data-icon="download"></i>下载 .dmg</button></span>
+        <span data-when="error"><button class="btn btn-block" style="opacity:.45"><i data-icon="download"></i>暂时无法下载</button></span>
+      </div>
+      <div class="platform soon">
+        <header><span class="ic"><i data-icon="smartphone" style="--s:22px"></i></span><div><b>iPhone</b><div class="small muted">即将推出</div></div></header>
+        <span class="small muted" style="line-height:1.7">现在可以在手机浏览器中使用网页版查看和下载文件。</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>第一次打开</h2>
+    <p class="sub">客户端暂未购买系统厂商的签名证书，第一次打开时系统会提示，按下面的步骤放行即可。</p>
+    <div class="steps-wrap">
+      <div class="steps">
+        <h3><i data-icon="monitor" style="--s:16px"></i>Windows</h3>
+        <ol>
+          <li><span>双击下载的安装包。如果出现“Windows 已保护你的电脑”，点 <b>更多信息</b>，再点 <b>仍要运行</b>。</span></li>
+          <li><span>按提示完成安装，不需要管理员权限。安全软件拦截时，选择 <b>允许</b> 或把安装包加入信任。</span></li>
+          <li><span>打开“加密备份”，用网页版的账号登录。</span></li>
+        </ol>
+      </div>
+      <div class="steps">
+        <h3><i data-icon="laptop" style="--s:16px"></i>macOS</h3>
+        <ol>
+          <li><span>打开下载的 .dmg，把“加密备份”拖到 <b>应用程序</b>。</span></li>
+          <li><span>第一次打开时在“应用程序”中 <b>右键点应用 → 打开</b>，再点 <b>打开</b>；或在“系统设置 → 隐私与安全性”中允许。</span></li>
+          <li><span>备份文件夹需要读取权限时，按提示在系统设置中允许。</span></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt-bg" data-when="default mobile">
+    <h2>更新日志</h2>
+    <p class="sub">已安装的客户端会自动提示新版本。</p>
+    <div class="changelog">
+      <div class="release"><div class="v"><b>0.2.0</b><span>2026年11月5日</span></div><ul><li>新增微信备份：聊天文件、图片视频与聊天记录快照，可恢复到微信</li><li>托盘菜单与退出修复</li></ul></div>
+      <div class="release"><div class="v"><b>0.1.0</b><span>2026年11月1日</span></div><ul><li>首个版本：文件管理、文件夹自动备份、托盘与开机启动</li></ul></div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>© 2026 加密备份</span>
+    <a>安全与隐私</a>
+    <a>源代码（GitHub）</a>
+    <a>如何校验安装包</a>
+  </footer>
+</div>
+<script src="../desktop/shared.js"></script>
+<script>
+  // 设计稿：按 ?os 高亮当前系统卡片（实际页面按 userAgent 判断）。
+  const os = document.documentElement.dataset.os;
+  document.querySelectorAll(os === 'mac' ? '.current-mac' : '.current-win').forEach((el) => el.classList.add('current'));
+</script>
+</body>
+</html>

@@ -41,6 +41,20 @@ const SCREENS = {
     ['wechat.html', 'quota', 'wechat-quota'],
     ['wechat.html', 'notfound', 'wechat-notfound'],
     ['wechat.html', 'restore', 'wechat-restore'],
+    ['update.html', 'banner', 'update-banner'],
+    ['update.html', 'available', 'update-available'],
+    ['update.html', 'downloading', 'update-downloading'],
+    ['update.html', 'restart', 'update-restart'],
+    ['update.html', 'failed', 'update-failed'],
+    ['update.html', 'latest', 'update-latest'],
+    ['update.html', 'forced', 'update-forced'],
+    ['update.html', 'tray', 'update-tray'],
+  ],
+  // 公开网页：os 表示访问者的系统（决定主按钮），截图名后缀同样是 -win / -mac。
+  web: [
+    ['download.html', 'default', 'download', ['win', 'mac']],
+    ['download.html', 'error', 'download-error', ['win']],
+    ['download.html', 'mobile', 'download-mobile', ['win']],
   ],
 }
 
@@ -51,8 +65,8 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, de
 for (const area of areas) {
   const out = join(here, area, 'screenshots')
   mkdirSync(out, { recursive: true })
-  for (const [file, state, name] of SCREENS[area]) {
-    for (const os of ['win', 'mac']) {
+  for (const [file, state, name, oses] of SCREENS[area]) {
+    for (const os of oses ?? ['win', 'mac']) {
       const url = `${pathToFileURL(join(here, area, file)).href}?os=${os}${state ? `&state=${state}` : ''}`
       await page.goto(url)
       // 对话框页面的背景是 iframe，等它加载完成。

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN" data-default-state="banner">
+<head>
+<meta charset="utf-8">
+<title>客户端更新</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  /* 主窗口横幅：工具栏下方、内容上方，可关闭；每个版本只出现一次。 */
+  .update-banner { display: flex; align-items: center; gap: 12px; margin: 16px 20px 0; padding: 10px 12px 10px 14px; border: 1px solid var(--brand-100, #dbe7ff); border-radius: 10px; background: linear-gradient(90deg, var(--brand-50), #fff 70%); }
+  .update-banner .badge-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--brand-600); color: #fff; }
+  .update-banner .text { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .update-banner .text span { color: var(--ink-500); font-size: var(--text-xs); }
+
+  .page { padding: 20px 28px; display: flex; flex-direction: column; gap: 20px; }
+  .folder-card { display: grid; grid-template-columns: 40px 1fr auto; gap: 14px; align-items: center; padding: 16px 18px; }
+  .folder-card .paths { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: var(--text-xs); color: var(--ink-500); }
+  .folder-card .paths i[data-icon] { --s: 12px; color: var(--ink-400); }
+  .folder-card .right { display: flex; align-items: center; gap: 12px; }
+  .big-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--brand-50); color: var(--brand-600); }
+
+  .settings { flex: 1; display: flex; min-height: 0; }
+  .tabs { width: 188px; padding: 16px 12px; background: var(--canvas); border-right: 1px solid var(--line); }
+  .panel { flex: 1; padding: 24px 32px; overflow: hidden; }
+  dl { display: grid; grid-template-columns: 96px 1fr; gap: 10px 16px; margin: 16px 0 0; }
+  dt { color: var(--ink-500); }
+  dd { margin: 0; }
+
+  /* “关于”中的更新卡片：已是最新 / 有新版本 / 下载中 / 失败。 */
+  .upd { margin-top: 20px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; }
+  .upd.fresh { border-color: var(--brand-200, #bcd3ff); box-shadow: 0 0 0 3px var(--brand-50); }
+  .upd .head { display: flex; align-items: center; gap: 10px; }
+  .upd .ver { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; background: var(--brand-50); color: var(--brand-700); font-size: var(--text-xs); font-weight: 600; }
+  .upd ul { margin: 12px 0 0; padding-left: 18px; color: var(--ink-600); }
+  .upd li + li { margin-top: 4px; }
+  .upd .actions { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+  .upd .verify { display: flex; align-items: center; gap: 6px; color: var(--ink-500); font-size: var(--text-xs); }
+  .upd .verify i { color: var(--success-600); }
+
+  /* 强制更新：与登录窗口同尺寸的阻断页。 */
+  .forced { flex: 1; display: grid; grid-template-columns: 360px 1fr; min-height: 0; }
+  .forced .side { position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 32px; color: #fff; background: linear-gradient(160deg, var(--brand-600), #1e3a8a); }
+  .forced .side .ring { position: absolute; border: 1px solid rgba(255,255,255,.18); border-radius: 50%; }
+  .forced .side .big { position: absolute; top: 120px; left: 50%; display: grid; place-items: center; width: 96px; height: 96px; margin-left: -48px; border-radius: 24px; background: rgba(255,255,255,.14); backdrop-filter: blur(4px); }
+  .forced .side .big i { --s: 44px; }
+  .forced .body { display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: 0 48px; }
+  .forced .body h1 { margin: 0; font-size: 22px; }
+
+  /* 托盘原生菜单（Windows 右键菜单 / macOS 菜单栏菜单）。 */
+  .board { width: fit-content; display: flex; gap: 32px; align-items: flex-start; padding: 32px; border-radius: 12px; background: linear-gradient(135deg, #c9d6e8, #e4dccf); }
+  .native-menu { width: 240px; padding: 4px; border: 1px solid rgba(0,0,0,.12); border-radius: 8px; background: #f9f9f9; box-shadow: 0 8px 24px rgba(0,0,0,.18); font-size: 13px; }
+  .native-menu a { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 4px; }
+  .native-menu a.hl { background: var(--brand-50); color: var(--brand-700); font-weight: 600; }
+  .native-menu a.hl::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--brand-600); }
+  .native-menu a.muted { color: var(--ink-400); }
+  .native-menu hr { margin: 4px 8px; border: 0; border-top: 1px solid rgba(0,0,0,.1); }
+  .label { margin: 0 0 10px; font-size: var(--text-xs); color: #3f3f46; font-weight: 600; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .update-banner, .upd.fresh { animation: slide-in .32s cubic-bezier(.2,.8,.2,1) both; }
+    .forced .side .big { animation: float 6s ease-in-out infinite; }
+    @keyframes slide-in { from { opacity: 0; transform: translateY(-6px); } }
+    @keyframes float { 50% { transform: translateY(-8px); } }
+  }
+</style>
+</head>
+<body>
+<!--
+  客户端更新（add-client-releases D5）。状态：
+    banner       主窗口顶部横幅“新版本 0.2.0 可用”（可关闭；同一版本只提示一次）
+    available    设置 → 关于：新版本、更新内容、“下载并安装”
+    downloading  关于：下载进度（可取消），完成后自动校验
+    restart      校验通过后的确认对话框：将暂停备份、关闭并重新启动
+    failed       关于：校验失败（文件已删除，未运行）
+    latest       关于：已是最新版本（手动检查后）
+    forced       强制更新阻断页（当前版本低于最低支持版本）
+    tray         托盘菜单中的“有新版本 0.2.0…”项
+  签名无效或清单不可读时不提示任何内容（关于中显示“上次检查：无法获取更新信息”）。
+-->
+
+<!-- 主窗口 + 横幅 -->
+<div class="window capture" style="width:1280px;height:800px" data-when="banner">
+  <div class="titlebar" data-partial="titlebar"></div>
+  <div class="app">
+    <aside class="sidebar" data-partial="sidebar" data-active="backup"></aside>
+    <section class="main">
+      <div class="toolbar">
+        <div class="crumbs"><span>备份文件夹</span></div>
+        <span class="spacer"></span>
+        <button class="btn"><i data-icon="refresh"></i>立即备份</button>
+        <button class="btn btn-primary"><i data-icon="plus"></i>添加文件夹</button>
+      </div>
+      <div class="update-banner">
+        <span class="badge-icon"><i data-icon="download" style="--s:16px"></i></span>
+        <div class="text"><b>新版本 0.2.0 可用</b><span>新增微信备份；托盘菜单与退出修复。更新约需 30 秒，完成后自动重新打开。</span></div>
+        <button class="btn btn-ghost">更新内容</button>
+        <button class="btn btn-primary">下载并安装</button>
+        <button class="btn btn-ghost btn-icon" title="关闭"><i data-icon="x"></i></button>
+      </div>
+      <div class="content">
+        <div class="page">
+          <div class="stack" style="gap:12px">
+            <div class="card folder-card">
+              <span class="big-icon"><i data-icon="folder" style="--s:20px"></i></span>
+              <div><b style="font-size:var(--text-md)">工作资料</b><div class="paths"><span class="mono">D:\工作资料</span><i data-icon="arrow-right"></i><span>全部文件 / 电脑备份 / DESKTOP-TLJ / 工作资料</span></div></div>
+              <div class="right"><span class="pill pill-ok"><i data-icon="check"></i>已备份</span><span class="small muted">5 分钟前</span><button class="btn btn-ghost btn-icon"><i data-icon="more"></i></button></div>
+            </div>
+            <div class="card folder-card">
+              <span class="big-icon"><i data-icon="image" style="--s:20px"></i></span>
+              <div><b style="font-size:var(--text-md)">照片</b><div class="paths"><span class="mono">C:\Users\tlj\Pictures</span><i data-icon="arrow-right"></i><span>全部文件 / 电脑备份 / DESKTOP-TLJ / 照片</span></div></div>
+              <div class="right"><span class="pill pill-ok"><i data-icon="check"></i>已备份</span><span class="small muted">1 小时前</span><button class="btn btn-ghost btn-icon"><i data-icon="more"></i></button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="statusbar" data-partial="statusbar" data-status="ok"></div>
+    </section>
+  </div>
+</div>
+
+<!-- 设置 → 关于 -->
+<div class="window capture" style="width:760px;height:600px" data-when="available downloading restart failed latest">
+  <div class="titlebar" data-partial="titlebar" data-title="设置"></div>
+  <div class="settings">
+    <nav class="tabs nav">
+      <a><i data-icon="sliders"></i>通用</a>
+      <a><i data-icon="shield"></i>安全</a>
+      <a><i data-icon="user"></i>账号</a>
+      <a class="active"><i data-icon="info"></i>关于</a>
+    </nav>
+    <div class="panel">
+      <h2 class="h1">关于</h2>
+      <div class="row" style="gap:14px;margin-top:20px"><span class="logo" style="--s:48px;--s-inner:26px"><i data-icon="lock"></i></span><div class="stack"><b style="font-size:var(--text-lg)">加密备份</b><span class="muted">端对端加密的文件备份</span></div></div>
+      <dl>
+        <dt>当前版本</dt><dd>0.1.0</dd>
+        <dt>提交</dt><dd class="mono">7d82ea1</dd>
+        <dt>服务器</dt><dd>https://120.79.245.99</dd>
+      </dl>
+
+      <div class="upd fresh" data-when="available restart">
+        <div class="head"><i data-icon="download" style="--s:18px;color:var(--brand-600)"></i><b>有新版本</b><span class="ver">0.2.0</span><span class="spacer"></span><span class="small muted">2026年11月5日 · 15.4 MB</span></div>
+        <ul><li>新增微信备份：聊天文件、图片视频与聊天记录快照，可恢复到微信</li><li>托盘菜单与退出修复</li></ul>
+        <div class="actions"><button class="btn btn-primary"><i data-icon="download"></i>下载并安装</button><button class="btn btn-ghost">稍后</button><span class="spacer"></span><span class="verify"><i data-icon="shield-check" style="--s:14px"></i>已验证发布签名</span></div>
+      </div>
+
+      <div class="upd" data-when="downloading">
+        <div class="head"><i data-icon="download" style="--s:18px;color:var(--brand-600)"></i><b>正在下载</b><span class="ver">0.2.0</span><span class="spacer"></span><span class="small muted">9.6 MB / 15.4 MB · 2.1 MB/s</span></div>
+        <div class="progress" style="margin-top:14px"><b style="width:62%"></b></div>
+        <div class="actions"><span class="small muted">下载完成后会校验文件，备份照常进行。</span><span class="spacer"></span><button class="btn">取消</button></div>
+      </div>
+
+      <div class="upd" data-when="failed" style="border-color:var(--danger-200,#fecaca)">
+        <div class="head"><i data-icon="alert" style="--s:18px;color:var(--danger-600)"></i><b>无法安装 0.2.0</b></div>
+        <p class="muted" style="margin:10px 0 0">下载的文件不完整或被篡改，已删除，没有运行。可能是网络中断或被安全软件修改。</p>
+        <div class="actions"><button class="btn btn-primary"><i data-icon="refresh"></i>重新下载</button><button class="btn btn-ghost"><i data-icon="external"></i>打开下载页面</button></div>
+      </div>
+
+      <div class="upd" data-when="latest">
+        <div class="head"><i data-icon="check-circle" style="--s:18px;color:var(--success-600)"></i><b>已是最新版本</b><span class="spacer"></span><button class="btn btn-ghost"><i data-icon="refresh"></i>检查更新</button></div>
+        <p class="small muted" style="margin:6px 0 0 28px">刚刚检查 · 每天自动检查一次</p>
+      </div>
+
+      <div class="row" style="margin-top:20px"><button class="btn btn-ghost"><i data-icon="external"></i>下载页面</button><button class="btn btn-ghost"><i data-icon="shield"></i>安全与隐私说明</button><button class="btn btn-ghost">开源许可</button></div>
+    </div>
+
+    <div class="scrim" data-when="restart">
+      <div class="dialog" style="--w:440px">
+        <header><span class="ficon" style="width:32px;height:32px;background:var(--brand-50);color:var(--brand-600)"><i data-icon="refresh" style="--s:18px"></i></span><b class="h2">重新启动以完成更新？</b></header>
+        <div class="body" style="gap:12px">
+          <span>0.2.0 已下载并通过校验。加密备份会暂停备份、关闭，安装完成后自动重新打开。</span>
+          <span class="muted small">登录状态、备份文件夹和设置都会保留。未完成的上传会在重新打开后继续。</span>
+        </div>
+        <footer><button class="btn">稍后</button><button class="btn btn-primary">立即重新启动</button></footer>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 强制更新 -->
+<div class="window capture" style="width:880px;height:560px" data-when="forced">
+  <div class="titlebar" data-partial="titlebar"></div>
+  <div class="forced">
+    <div class="side">
+      <span class="ring" style="width:420px;height:420px;left:-30px;top:-60px"></span>
+      <span class="ring" style="width:280px;height:280px;left:40px;top:10px"></span>
+      <span class="big"><i data-icon="download"></i></span>
+      <b style="font-size:var(--text-lg)">加密备份 0.2.0</b>
+      <span style="opacity:.8;margin-top:4px">由维护者签名发布</span>
+    </div>
+    <div class="body">
+      <h1>需要更新后才能继续使用</h1>
+      <p class="muted" style="margin:0">当前版本 0.1.0 已不再受支持。更新不会影响你的文件、备份设置和登录状态；更新完成前，备份已暂停。</p>
+      <div class="note info"><i data-icon="shield-check"></i><span>新版本 0.2.0 · 15.4 MB · 安装包会先校验签名与 SHA-256。</span></div>
+      <div class="row" style="gap:8px;margin-top:4px"><button class="btn btn-primary btn-lg"><i data-icon="download"></i>下载并安装</button><button class="btn btn-lg btn-ghost"><i data-icon="external"></i>打开下载页面</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- 托盘菜单 -->
+<div class="board capture" data-when="tray">
+  <div>
+    <p class="label">托盘菜单（有新版本时）</p>
+    <div class="native-menu">
+      <a class="muted">已全部备份</a>
+      <a>暂停备份</a>
+      <hr>
+      <a class="hl">有新版本 0.2.0…</a>
+      <hr>
+      <a>打开应用</a>
+      <a>打开网页版</a>
+      <a>设置</a>
+      <hr>
+      <a>退出</a>
+    </div>
+  </div>
+  <div>
+    <p class="label">下载中</p>
+    <div class="native-menu">
+      <a class="muted">已全部备份</a>
+      <a>暂停备份</a>
+      <hr>
+      <a class="muted">正在下载更新 62%</a>
+      <hr>
+      <a>打开应用</a>
+      <a>打开网页版</a>
+      <a>设置</a>
+      <hr>
+      <a>退出</a>
+    </div>
+  </div>
+</div>
+<script src="shared.js"></script>
+</body>
+</html>
