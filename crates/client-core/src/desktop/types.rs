@@ -5,11 +5,12 @@
 //! 绝对路径只在 [`BackupFolder`] 配置里出现（用户自己选择的路径，界面需要显示）。
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use uuid::Uuid;
 
-use super::wechat::{WechatCategory, WechatLocator, WechatVersion};
+use super::wechat::{WechatCategory, WechatLocator, WechatProcessProbe, WechatVersion};
 use crate::state::BackupFolderRecord;
 
 /// 文件监听防抖窗口（design D6：5 秒）。
@@ -18,6 +19,14 @@ pub const DEFAULT_DEBOUNCE: Duration = Duration::from_secs(5);
 pub const DEFAULT_FULL_SCAN_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 /// 断网 / 服务器不可用后的重试间隔。
 pub const DEFAULT_RETRY_INTERVAL: Duration = Duration::from_secs(60);
+/// 微信退出检测与数据库快照检查周期（design D3：每 10 秒）。
+pub const DEFAULT_WECHAT_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(10);
+/// 数据库快照默认保留份数（design D3：最近 3 份）。
+pub const DEFAULT_WECHAT_SNAPSHOT_RETENTION: u8 = 3;
+/// 保留份数的允许范围（界面设置 1–10）。
+pub const WECHAT_SNAPSHOT_RETENTION_MIN: u8 = 1;
+/// 保留份数的允许范围上限。
+pub const WECHAT_SNAPSHOT_RETENTION_MAX: u8 = 10;
 
 /// 某个备份文件夹的运行状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +43,8 @@ pub enum BackupFolderStatus {
     Error { unreadable_count: u64 },
     /// 内存中没有主密钥，解锁后自动继续。
     NeedsUnlock,
+    /// 聊天记录数据库：微信正在运行，等它退出后再做快照（design D3）。
+    WaitingForWechatExit,
 }
 
 impl BackupFolderStatus {
@@ -47,6 +58,7 @@ impl BackupFolderStatus {
             Self::Paused => "paused",
             Self::Error { .. } => "error",
             Self::NeedsUnlock => "needs_unlock",
+            Self::WaitingForWechatExit => "waiting_for_wechat_exit",
         }
     }
 }
@@ -327,6 +339,52 @@ pub struct WechatAccountBackupStatus {
     pub last_backup_at: Option<i64>,
 }
 
+/// 一次数据库快照尝试的结果（design D3）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WechatSnapshotOutcome {
+    /// 上传了全部文件并写入了 `快照完成` 标记。
+    Completed,
+    /// 内容与上一份完整快照相同，没有新建快照、没有上传。
+    Unchanged,
+    /// 微信正在运行，等待退出后再试。
+    WaitingForWechatExit,
+    /// 上传过程中文件变化，本次快照已放弃并移入回收站。
+    Aborted,
+    /// 全局备份已暂停。
+    Paused,
+    /// 尚未解锁，无法上传。
+    NeedsUnlock,
+}
+
+impl WechatSnapshotOutcome {
+    /// 稳定字符串，供桥接层与界面使用。
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Unchanged => "unchanged",
+            Self::WaitingForWechatExit => "waiting_for_wechat_exit",
+            Self::Aborted => "aborted",
+            Self::Paused => "paused",
+            Self::NeedsUnlock => "needs_unlock",
+        }
+    }
+}
+
+/// 一次数据库快照尝试的统计。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WechatSnapshotReport {
+    pub outcome: WechatSnapshotOutcome,
+    /// 本次（或最近一次完整快照）的时间戳；没有完整快照时为 `None`。
+    pub snapshot_at: Option<i64>,
+    /// 清单中的数据库文件数（不含 `快照完成` 标记文件）。
+    pub total_files: u64,
+    /// 本次上传的文件数。
+    pub uploaded_files: u64,
+    /// 本次上传的明文字节数。
+    pub uploaded_bytes: u64,
+}
+
 /// 一次备份运行的结果统计。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BackupRunReport {
@@ -345,7 +403,7 @@ pub struct BackupRunReport {
 }
 
 /// 全局备份设置（持久化在本地状态库）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BackupSettings {
     /// 备份隐藏文件（以 `.` 开头或带 Windows HIDDEN 属性）；默认关闭。
     pub include_hidden: bool,
@@ -353,10 +411,32 @@ pub struct BackupSettings {
     pub upload_limit_bytes_per_second: Option<u64>,
     /// 全局暂停。
     pub paused: bool,
+    /// 每个微信账号保留的完整数据库快照份数（1–10，默认 3）。
+    pub wechat_snapshot_retention: u8,
+}
+
+impl BackupSettings {
+    /// 把保留份数收敛到允许范围；读设置与实际清理都使用这个值。
+    #[must_use]
+    pub fn normalized_wechat_snapshot_retention(self) -> u8 {
+        self.wechat_snapshot_retention
+            .clamp(WECHAT_SNAPSHOT_RETENTION_MIN, WECHAT_SNAPSHOT_RETENTION_MAX)
+    }
+}
+
+impl Default for BackupSettings {
+    fn default() -> Self {
+        Self {
+            include_hidden: false,
+            upload_limit_bytes_per_second: None,
+            paused: false,
+            wechat_snapshot_retention: DEFAULT_WECHAT_SNAPSHOT_RETENTION,
+        }
+    }
 }
 
 /// 备份引擎配置。
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BackupEngineConfig {
     /// 设备名，用于默认云端路径 `全部文件/电脑备份/<设备名>/<本地文件夹名>`。
     pub device_name: String,
@@ -373,6 +453,26 @@ pub struct BackupEngineConfig {
     pub wechat_locator: Option<WechatLocator>,
     /// 用户手动添加的微信目录（design D1），参与普通备份文件夹的数据根排除。
     pub wechat_manual_directories: Vec<PathBuf>,
+    /// 微信进程探测；`None` = 当前平台实现。测试注入假实现，绝不枚举真实进程。
+    pub wechat_process_probe: Option<Arc<dyn WechatProcessProbe>>,
+    /// 微信退出检测与数据库快照检查周期；默认 10 秒。
+    pub wechat_snapshot_interval: Duration,
+}
+
+impl std::fmt::Debug for BackupEngineConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BackupEngineConfig")
+            .field("device_name", &self.device_name)
+            .field("debounce", &self.debounce)
+            .field("full_scan_interval", &self.full_scan_interval)
+            .field("retry_interval", &self.retry_interval)
+            .field("watch_files", &self.watch_files)
+            .field("wechat_locator", &self.wechat_locator)
+            .field("wechat_manual_directories", &self.wechat_manual_directories)
+            .field("wechat_snapshot_interval", &self.wechat_snapshot_interval)
+            .finish_non_exhaustive()
+    }
 }
 
 impl BackupEngineConfig {
@@ -386,6 +486,8 @@ impl BackupEngineConfig {
             watch_files: true,
             wechat_locator: None,
             wechat_manual_directories: Vec::new(),
+            wechat_process_probe: None,
+            wechat_snapshot_interval: DEFAULT_WECHAT_SNAPSHOT_INTERVAL,
         }
     }
 

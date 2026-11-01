@@ -67,6 +67,12 @@ security-framework = "3"
 # - Win32_UI_Shell：SHGetKnownFolderPath + FOLDERID_Documents（“文档”目录，
 #   不硬编码 C:\Users\…）；
 # - Win32_System_Com：CoTaskMemFree 释放 Known Folder API 分配的路径。
+#
+# 第 3 组新增 Win32_System_Diagnostics_ToolHelp（同一 crate，仅加 feature）：
+# 用 CreateToolhelp32Snapshot / Process32FirstW / Process32NextW 枚举进程名，
+# 判断 WeChat.exe / Weixin.exe / WeChatAppEx.exe 是否存在。相比 WMI 或新增
+# sysinfo 类依赖，ToolHelp 是只读的内核快照 API，不需要额外 crate，也不读取
+# 进程内存或命令行。
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61", default-features = false, features = [
     "Win32_Foundation",
@@ -74,6 +80,7 @@ windows-sys = { version = "0.61", default-features = false, features = [
     "Win32_Security_Cryptography",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Registry",
     "Win32_UI_Shell",
 ] }
@@ -100,7 +107,7 @@ tokio = { version = "1", features = [
 ] }
 tower = { version = "0.5", features = ["util"] }
 
-# 这两个集成测试直接使用 `client_core::desktop`；必须声明 required-features，
+# 这三个集成测试直接使用 `client_core::desktop`；必须声明 required-features，
 # 否则 `cargo test -p client-core`（未启用 desktop）会因为缺少模块而编译失败。
 # 工作区构建由 `client-core-desktop-tests` 统一启用 desktop，仍会编译并运行它们。
 [[test]]
@@ -111,6 +118,12 @@ required-features = ["desktop"]
 [[test]]
 name = "backup_fake"
 path = "tests/backup_fake.rs"
+required-features = ["desktop"]
+
+# 真实 PostgreSQL + MinIO 的数据库快照逐字节一致性测试（审查者在 WSL 运行）。
+[[test]]
+name = "wechat_snapshot"
+path = "tests/wechat_snapshot.rs"
 required-features = ["desktop"]
 
 [features]

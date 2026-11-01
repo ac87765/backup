@@ -41,6 +41,8 @@ pub use types::{
     BackupFolderDraft, BackupFolderState, BackupFolderStatus, BackupFolderUpdate,
     BackupPauseReason, BackupPreflight, BackupRunReport, BackupSettings, BackupSummary,
     BackupSummaryStatus, DEFAULT_DEBOUNCE, DEFAULT_FULL_SCAN_INTERVAL, DEFAULT_RETRY_INTERVAL,
-    WechatAccountBackupStatus, WechatBackupPreflight, WechatBackupSource,
-    WechatCategoryBackupStatus,
+    DEFAULT_WECHAT_SNAPSHOT_INTERVAL, DEFAULT_WECHAT_SNAPSHOT_RETENTION,
+    WECHAT_SNAPSHOT_RETENTION_MAX, WECHAT_SNAPSHOT_RETENTION_MIN, WechatAccountBackupStatus,
+    WechatBackupPreflight, WechatBackupSource, WechatCategoryBackupStatus, WechatSnapshotOutcome,
+    WechatSnapshotReport,
 };

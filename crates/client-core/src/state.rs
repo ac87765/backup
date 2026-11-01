@@ -19,7 +19,7 @@ use crate::io_path::{StatePathError, path_for_io};
 use crate::model::{PendingUpload, PendingUploadStatus};
 
 /// 当前 schema 版本。
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 /// 状态库文件名（位于调用方传入的应用数据目录）。
 pub const DATABASE_FILE_NAME: &str = "client-state.sqlite3";
 
@@ -186,6 +186,25 @@ pub(crate) struct WechatSelectionRecord {
     pub version: String,
     pub category: String,
     pub selected: bool,
+    pub updated_at: i64,
+}
+
+/// 每个微信账号最近一次**完整**数据库快照的本地缓存（add-wechat-backup 第 3 组）。
+///
+/// 只保存本机元数据：快照时间、云端时间戳目录节点 ID 与文件清单（相对路径、
+/// 大小、修改时间、内容 SHA-256）。不包含任何聊天内容，也不包含路径之外的
+/// 文件数据。云端目录才是权威来源，本地记录只用于快速判断与界面显示。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WechatSnapshotRecord {
+    pub user_id: Uuid,
+    pub data_root: String,
+    pub account_name: String,
+    /// 快照时间（Unix 秒；与云端时间戳目录名对应）。
+    pub snapshot_at: i64,
+    /// 云端时间戳目录的节点 ID。
+    pub cloud_dir_node_id: Uuid,
+    /// 本地清单 JSON（相对路径、大小、修改时间、content_sha256）。
+    pub manifest_json: String,
     pub updated_at: i64,
 }
 
@@ -531,6 +550,29 @@ impl StateStore {
             if violation.is_some() {
                 return Err(StateError::Corrupt("迁移后外键检查失败"));
             }
+        }
+        if current < 5 {
+            // 微信备份（add-wechat-backup 第 3 组）：每个账号最近一次完整数据库
+            // 快照的本地缓存。云端时间戳目录仍是权威来源；这里只用于“内容未变
+            // 跳过”的快速路径与界面上的“上次数据库快照”。清单不含聊天内容。
+            let tx = connection.transaction()?;
+            tx.execute_batch(
+                r#"
+                CREATE TABLE wechat_snapshots (
+                    user_id           TEXT NOT NULL,
+                    data_root         TEXT NOT NULL,
+                    account_name      TEXT NOT NULL,
+                    snapshot_at       INTEGER NOT NULL,
+                    cloud_dir_node_id TEXT NOT NULL,
+                    manifest_json     TEXT NOT NULL,
+                    updated_at        INTEGER NOT NULL,
+                    PRIMARY KEY (user_id, data_root, account_name)
+                );
+
+                PRAGMA user_version = 5;
+                "#,
+            )?;
+            tx.commit()?;
         }
         Ok(())
     }
@@ -1504,6 +1546,88 @@ impl StateStore {
         })
         .await
     }
+
+    /// 读取某账号最近一次完整数据库快照的本地缓存。
+    pub(crate) async fn wechat_snapshot(
+        &self,
+        user_id: Uuid,
+        data_root: String,
+        account_name: String,
+    ) -> Result<Option<WechatSnapshotRecord>, StateError> {
+        self.run_db(move |connection| {
+            let record = connection
+                .query_row(
+                    r#"
+                    SELECT snapshot_at, cloud_dir_node_id, manifest_json, updated_at
+                    FROM wechat_snapshots
+                    WHERE user_id = ?1 AND data_root = ?2 AND account_name = ?3
+                    "#,
+                    params![
+                        user_id.to_string(),
+                        data_root.as_str(),
+                        account_name.as_str()
+                    ],
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, i64>(3)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            let Some((snapshot_at, cloud_dir_node_id, manifest_json, updated_at)) = record else {
+                return Ok(None);
+            };
+            let cloud_dir_node_id = Uuid::parse_str(&cloud_dir_node_id)
+                .map_err(|_| StateError::Corrupt("微信快照的云端节点 ID 无效"))?;
+            Ok(Some(WechatSnapshotRecord {
+                user_id,
+                data_root,
+                account_name,
+                snapshot_at,
+                cloud_dir_node_id,
+                manifest_json,
+                updated_at,
+            }))
+        })
+        .await
+    }
+
+    /// 写入或覆盖某账号最近一次完整数据库快照的本地缓存。
+    pub(crate) async fn upsert_wechat_snapshot(
+        &self,
+        record: WechatSnapshotRecord,
+    ) -> Result<(), StateError> {
+        self.run_db(move |connection| {
+            connection.execute(
+                r#"
+                INSERT INTO wechat_snapshots (
+                    user_id, data_root, account_name, snapshot_at,
+                    cloud_dir_node_id, manifest_json, updated_at
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                ON CONFLICT (user_id, data_root, account_name) DO UPDATE SET
+                    snapshot_at = excluded.snapshot_at,
+                    cloud_dir_node_id = excluded.cloud_dir_node_id,
+                    manifest_json = excluded.manifest_json,
+                    updated_at = excluded.updated_at
+                "#,
+                params![
+                    record.user_id.to_string(),
+                    record.data_root,
+                    record.account_name,
+                    record.snapshot_at,
+                    record.cloud_dir_node_id.to_string(),
+                    record.manifest_json,
+                    record.updated_at,
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
 }
 
 fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<UploadRecord, StateError>> {
@@ -1968,6 +2092,7 @@ mod tests {
                 .execute_batch(
                     "DROP TABLE wechat_backup_selections;
                      DROP TABLE wechat_accounts;
+                     DROP TABLE wechat_snapshots;
                      PRAGMA user_version = 2;",
                 )
                 .unwrap();
@@ -2056,6 +2181,7 @@ mod tests {
                     CREATE INDEX backup_folders_user_idx
                         ON backup_folders (user_id, enabled);
                     DROP TABLE wechat_backup_selections;
+                    DROP TABLE wechat_snapshots;
                     PRAGMA user_version = 3;
                     PRAGMA foreign_keys = ON;
                     "#,
@@ -2102,6 +2228,115 @@ mod tests {
         assert_eq!(
             store.list_wechat_selections(user_id).await.unwrap().len(),
             1
+        );
+    }
+
+    #[tokio::test]
+    async fn snapshot_cache_migrates_v4_to_v5_and_keeps_old_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(DATABASE_FILE_NAME);
+        let user_id = Uuid::new_v4();
+        let folder_id = Uuid::new_v4();
+
+        {
+            let store = StateStore::open_path(&path).unwrap();
+            store
+                .insert_backup_folder(sample_folder_record(user_id, folder_id))
+                .await
+                .unwrap();
+            store
+                .replace_wechat_selections(
+                    user_id,
+                    "D:/WeChatData/xwechat_files".to_owned(),
+                    "wxid_test0001".to_owned(),
+                    "wechat4".to_owned(),
+                    vec![("databases".to_owned(), true)],
+                    11,
+                )
+                .await
+                .unwrap();
+            store
+                .set_wechat_account_note(
+                    "D:/WeChatData/xwechat_files".to_owned(),
+                    "wxid_test0001".to_owned(),
+                    "工作号".to_owned(),
+                )
+                .await
+                .unwrap();
+        }
+
+        // 模拟 v4 旧库：v4 还没有 wechat_snapshots 表。
+        {
+            let connection = Connection::open(&path).unwrap();
+            connection
+                .execute_batch(
+                    "DROP TABLE wechat_snapshots;
+                     PRAGMA user_version = 4;",
+                )
+                .unwrap();
+        }
+
+        let store = StateStore::open_path(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+        assert_eq!(
+            store.list_user_backup_folders(user_id).await.unwrap().len(),
+            1
+        );
+        assert_eq!(
+            store.list_wechat_selections(user_id).await.unwrap().len(),
+            1
+        );
+        assert_eq!(
+            store
+                .wechat_account_note(
+                    "D:/WeChatData/xwechat_files".to_owned(),
+                    "wxid_test0001".to_owned(),
+                )
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("工作号")
+        );
+        assert!(
+            store
+                .wechat_snapshot(
+                    user_id,
+                    "D:/WeChatData/xwechat_files".to_owned(),
+                    "wxid_test0001".to_owned(),
+                )
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        // 迁移后的库仍可写入 / 读取最近一次完整快照缓存。
+        let cloud_dir_node_id = Uuid::new_v4();
+        store
+            .upsert_wechat_snapshot(WechatSnapshotRecord {
+                user_id,
+                data_root: "D:/WeChatData/xwechat_files".to_owned(),
+                account_name: "wxid_test0001".to_owned(),
+                snapshot_at: 1_793_000_600,
+                cloud_dir_node_id,
+                manifest_json: r#"{"snapshot_time":1793000600,"files":[]}"#.to_owned(),
+                updated_at: 12,
+            })
+            .await
+            .unwrap();
+        let record = store
+            .wechat_snapshot(
+                user_id,
+                "D:/WeChatData/xwechat_files".to_owned(),
+                "wxid_test0001".to_owned(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.cloud_dir_node_id, cloud_dir_node_id);
+        assert_eq!(record.snapshot_at, 1_793_000_600);
+        assert_eq!(
+            record.manifest_json,
+            r#"{"snapshot_time":1793000600,"files":[]}"#
         );
     }
 

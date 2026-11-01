@@ -415,6 +415,9 @@ impl From<BackupFolderStatus> for BackupFolderStatusDto {
             BackupFolderStatus::Paused => Self::paused(),
             BackupFolderStatus::Error { unreadable_count } => Self::error(unreadable_count),
             BackupFolderStatus::NeedsUnlock => Self::needs_unlock(),
+            // 第 4 组再为“等微信退出后备份”增加桥接枚举与界面文案；
+            // 这里先映射为暂停，保证非桌面端桥接层可编译。
+            BackupFolderStatus::WaitingForWechatExit => Self::paused(),
         }
     }
 }
@@ -660,5 +663,8 @@ pub(crate) fn backup_settings(settings: BackupSettingsDto) -> Result<BackupSetti
             .map(|value| u64_from_i64(value, "上传限速"))
             .transpose()?,
         paused: settings.paused,
+        // 保留份数的桥接字段与界面在第 4 组加入；在那之前保持默认值，
+        // 核心引擎的默认值仍是 3，设置变化时由核心归一化到 1–10。
+        wechat_snapshot_retention: client_core::desktop::DEFAULT_WECHAT_SNAPSHOT_RETENTION,
     })
 }

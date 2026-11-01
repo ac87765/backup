@@ -25,9 +25,9 @@ use crate::io_path::{FileFingerprint, path_for_io, validate_name};
 use crate::model::{NodeKind, TransferErrorCode};
 use crate::state::{
     BackupActivityRecord, BackupFolderRecord, BackupFolderSourceKind, BackupIndexRecord,
-    StateStore, WechatSourceMeta,
+    StateStore, WechatSelectionRecord, WechatSourceMeta,
 };
-use crate::transfer::{TokenBucket, transfer_error};
+use crate::transfer::TokenBucket;
 
 use super::error::BackupError;
 use super::filter::{
@@ -38,12 +38,16 @@ use super::types::{
     BackupActivity, BackupActivityKind, BackupEngineConfig, BackupFolder, BackupFolderDraft,
     BackupFolderState, BackupFolderStatus, BackupFolderUpdate, BackupPauseReason, BackupPreflight,
     BackupRunReport, BackupSettings, BackupSummary, BackupSummaryStatus, WechatAccountBackupStatus,
-    WechatBackupPreflight, WechatBackupSource, WechatCategoryBackupStatus,
+    WechatBackupPreflight, WechatBackupSource, WechatCategoryBackupStatus, WechatSnapshotOutcome,
+    WechatSnapshotReport,
 };
 use super::watcher::{FolderWatcher, WatchSignal, watch_folder};
 use super::wechat::backup::{desired_sources, validate_account_name};
 use super::wechat::exclude::{exclusions_for, measure_trees};
-use super::wechat::{WechatAccount, WechatCategory, WechatLocator, WechatVersion, layout_for};
+use super::wechat::snapshot::{self, SnapshotAccount, SnapshotContext};
+use super::wechat::{
+    WechatAccount, WechatCategory, WechatLocator, WechatProcessProbe, WechatVersion, layout_for,
+};
 
 /// 事件通道容量；界面来不及消费时只保留最近事件，不阻塞备份。
 const EVENT_BUFFER: usize = 512;
@@ -53,6 +57,7 @@ const SCHEDULER_TICK: Duration = Duration::from_secs(5);
 const SETTING_INCLUDE_HIDDEN: &str = "include_hidden";
 const SETTING_UPLOAD_LIMIT: &str = "upload_limit_bytes_per_second";
 const SETTING_PAUSED: &str = "paused";
+const SETTING_WECHAT_SNAPSHOT_RETENTION: &str = "wechat_snapshot_retention";
 
 /// 备份引擎。`Clone` 共享同一运行状态。
 #[derive(Clone)]
@@ -82,6 +87,8 @@ struct Inner {
     wechat_roots: Mutex<Vec<PathBuf>>,
     /// 是否已完成过一次数据根发现（避免每个文件夹都调用发现）。
     wechat_roots_ready: AtomicBool,
+    /// 微信进程探测（设计 D3；可注入假实现）。
+    wechat_process_probe: Arc<dyn WechatProcessProbe>,
 }
 
 #[derive(Default)]
@@ -92,6 +99,47 @@ struct Runtime {
     summary: BackupSummary,
     last_checked_at: Option<i64>,
     retry_at: Option<SystemTime>,
+    /// 每个微信账号的数据库快照运行状态（不注册为备份文件夹）。
+    snapshots: HashMap<SnapshotKey, SnapshotRuntime>,
+    /// 每个微信账号下一次允许重试快照的时间（网络 / 服务端等可重试错误）。
+    snapshot_retries: HashMap<SnapshotKey, SystemTime>,
+}
+
+/// 数据库快照的账号键（本地数据根 + 账号目录名）。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct SnapshotKey {
+    data_root: String,
+    account_name: String,
+}
+
+impl SnapshotKey {
+    fn of(account: &WechatAccount) -> Self {
+        Self {
+            data_root: comparable_path(&account.data_root),
+            account_name: account.account_name.clone(),
+        }
+    }
+
+    fn of_snapshot(account: &SnapshotAccount) -> Self {
+        Self {
+            data_root: comparable_path(&account.data_root),
+            account_name: account.account_name.clone(),
+        }
+    }
+
+    fn from_parts(data_root: &str, account_name: &str) -> Self {
+        Self {
+            data_root: comparable_path(Path::new(data_root)),
+            account_name: account_name.to_owned(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SnapshotRuntime {
+    status: BackupFolderStatus,
+    pause_reason: Option<BackupPauseReason>,
+    last_snapshot_at: Option<i64>,
 }
 
 #[derive(Debug)]
@@ -120,6 +168,10 @@ impl BackupEngine {
         let mut normalized = config;
         normalized.device_name = crate::io_path::normalize_cloud_name(&device_name);
         let wechat_locator = normalized.wechat_locator.clone().unwrap_or_default();
+        let wechat_process_probe = normalized
+            .wechat_process_probe
+            .clone()
+            .unwrap_or_else(super::wechat::default_process_probe);
         let clock = client.clock.clone();
         let state = client.state_store.clone();
         let (events, _) = broadcast::channel(EVENT_BUFFER);
@@ -141,6 +193,7 @@ impl BackupEngine {
                 wechat_locator,
                 wechat_roots: Mutex::new(Vec::new()),
                 wechat_roots_ready: AtomicBool::new(false),
+                wechat_process_probe,
             }),
         })
     }
@@ -204,9 +257,10 @@ impl BackupEngine {
         Ok(settings)
     }
 
-    /// 保存全局设置（隐藏文件、上传限速、暂停）。
+    /// 保存全局设置（隐藏文件、上传限速、暂停、快照保留份数）。
     pub async fn set_settings(&self, settings: BackupSettings) -> Result<(), BackupError> {
         let user_id = self.user_id()?;
+        let previous = self.load_settings(user_id).await?;
         self.save_settings(user_id, settings).await?;
         self.inner
             .paused_all
@@ -219,6 +273,12 @@ impl BackupEngine {
         }
         self.refresh_statuses_for_pause().await;
         self.emit_summary();
+        // 保留份数变小（或只是变化）时立即清理旧快照；失败不阻塞设置保存。
+        if previous.normalized_wechat_snapshot_retention()
+            != settings.normalized_wechat_snapshot_retention()
+        {
+            self.maintain_wechat_snapshot_retention().await;
+        }
         self.wake();
         Ok(())
     }
@@ -561,13 +621,21 @@ impl BackupEngine {
             .state
             .replace_wechat_selections(
                 user_id,
-                data_root_text,
+                data_root_text.clone(),
                 account.account_name.clone(),
                 account.version.as_str().to_owned(),
                 selections,
                 now,
             )
             .await?;
+        let key = SnapshotKey::of(account);
+        if categories.contains(&WechatCategory::Databases) {
+            self.ensure_snapshot_runtime(user_id, &key, &data_root_text, &account.account_name)
+                .await?;
+        } else if let Ok(mut runtime) = self.inner.runtime.lock() {
+            runtime.snapshots.remove(&key);
+            runtime.snapshot_retries.remove(&key);
+        }
         self.reconcile_wechat_sources(user_id).await
     }
 
@@ -718,14 +786,15 @@ impl BackupEngine {
 
     /// 每个微信账号每个类别的状态汇总（第 4 组界面使用）。
     ///
-    /// 未勾选的类别也会出现（`selected = false`）；数据库快照类别已勾选但尚未
-    /// 注册为来源，`status` 为 `None`（第 3 组提供快照状态）。
+    /// 未勾选的类别也会出现（`selected = false`）。数据库类别不注册为普通
+    /// 备份项，其状态与“上次数据库快照”来自快照运行状态与本地缓存。
     pub async fn list_wechat_accounts(
         &self,
     ) -> Result<Vec<WechatAccountBackupStatus>, BackupError> {
         let user_id = self.user_id()?;
         let selections = self.inner.state.list_wechat_selections(user_id).await?;
         let sources = self.list_wechat_sources().await?;
+        let snapshots = self.runtime_snapshots();
 
         struct AccountEntry {
             version: WechatVersion,
@@ -750,6 +819,13 @@ impl BackupEngine {
         let mut result = Vec::with_capacity(accounts.len());
         for ((data_root, account_name), entry) in accounts {
             let data_root_comparable = comparable_path(Path::new(&data_root));
+            let snapshot_key = SnapshotKey::from_parts(&data_root, &account_name);
+            let snapshot_runtime = snapshots.get(&snapshot_key).copied();
+            let cached_snapshot = self
+                .inner
+                .state
+                .wechat_snapshot(user_id, data_root.clone(), account_name.clone())
+                .await?;
             let mut categories = Vec::with_capacity(WechatCategory::ALL.len());
             let mut last_backup_at: Option<i64> = None;
             for category in WechatCategory::ALL {
@@ -766,21 +842,48 @@ impl BackupEngine {
                             && comparable_path(&source.data_root) == data_root_comparable
                     })
                     .collect();
-                let status = combine_statuses(&matching);
-                let pause_reason = if matches!(status, Some(BackupFolderStatus::NeedsUnlock)) {
-                    Some(BackupPauseReason::NeedsUnlock)
-                } else if matches!(status, Some(BackupFolderStatus::Paused)) {
-                    matching
-                        .iter()
-                        .find_map(|source| source.pause_reason)
-                        .or(Some(BackupPauseReason::User))
+                let (status, pause_reason, category_last) = if category == WechatCategory::Databases
+                {
+                    let category_last = snapshot_runtime
+                        .and_then(|snapshot| snapshot.last_snapshot_at)
+                        .or_else(|| cached_snapshot.as_ref().map(|record| record.snapshot_at));
+                    let status = selected.then(|| {
+                        snapshot_runtime.map(|snapshot| snapshot.status).unwrap_or(
+                            if cached_snapshot.is_some() {
+                                BackupFolderStatus::IdleOk
+                            } else {
+                                BackupFolderStatus::WaitingForWechatExit
+                            },
+                        )
+                    });
+                    let pause_reason = match status {
+                        Some(BackupFolderStatus::NeedsUnlock) => {
+                            Some(BackupPauseReason::NeedsUnlock)
+                        }
+                        Some(BackupFolderStatus::Paused) => snapshot_runtime
+                            .and_then(|snapshot| snapshot.pause_reason)
+                            .or(Some(BackupPauseReason::User)),
+                        _ => None,
+                    };
+                    (status, pause_reason, category_last)
                 } else {
-                    None
+                    let status = combine_statuses(&matching);
+                    let pause_reason = if matches!(status, Some(BackupFolderStatus::NeedsUnlock)) {
+                        Some(BackupPauseReason::NeedsUnlock)
+                    } else if matches!(status, Some(BackupFolderStatus::Paused)) {
+                        matching
+                            .iter()
+                            .find_map(|source| source.pause_reason)
+                            .or(Some(BackupPauseReason::User))
+                    } else {
+                        None
+                    };
+                    let category_last = matching
+                        .iter()
+                        .filter_map(|source| source.last_backup_at)
+                        .max();
+                    (status, pause_reason, category_last)
                 };
-                let category_last = matching
-                    .iter()
-                    .filter_map(|source| source.last_backup_at)
-                    .max();
                 last_backup_at = match (last_backup_at, category_last) {
                     (Some(current), Some(candidate)) => Some(current.max(candidate)),
                     (Some(current), None) => Some(current),
@@ -803,6 +906,379 @@ impl BackupEngine {
             });
         }
         Ok(result)
+    }
+
+    /// 立即为一个微信账号做聊天记录数据库快照（design D3）。
+    ///
+    /// 微信正在运行、全局暂停或未解锁时不会上传，返回对应的结果。内容与上一份
+    /// 完整快照相同则返回 [`WechatSnapshotOutcome::Unchanged`]，不新建快照。
+    pub async fn snapshot_wechat_databases_now(
+        &self,
+        account: &WechatAccount,
+    ) -> Result<WechatSnapshotReport, BackupError> {
+        if !validate_account_name(&account.account_name) {
+            return Err(BackupError::InvalidConfig("微信账号目录名无效"));
+        }
+        let user_id = self.user_id()?;
+        let settings = self.load_settings(user_id).await?;
+        let snapshot_account = SnapshotAccount {
+            data_root: account.data_root.clone(),
+            account_name: account.account_name.clone(),
+            version: account.version,
+        };
+        self.run_database_snapshot(&snapshot_account, &settings)
+            .await
+    }
+
+    fn runtime_snapshots(&self) -> HashMap<SnapshotKey, SnapshotRuntime> {
+        self.inner
+            .runtime
+            .lock()
+            .map(|runtime| runtime.snapshots.clone())
+            .unwrap_or_default()
+    }
+
+    /// 从状态库的类别勾选与本地快照缓存初始化运行状态。
+    async fn load_snapshot_runtimes(
+        &self,
+        user_id: Uuid,
+        paused: bool,
+    ) -> Result<HashMap<SnapshotKey, SnapshotRuntime>, BackupError> {
+        let selections = self.inner.state.list_wechat_selections(user_id).await?;
+        let mut runtime = HashMap::new();
+        for selection in selections {
+            if selection.category != WechatCategory::Databases.as_str() || !selection.selected {
+                continue;
+            }
+            let key = SnapshotKey::from_parts(&selection.data_root, &selection.account_name);
+            let record = self
+                .inner
+                .state
+                .wechat_snapshot(
+                    user_id,
+                    selection.data_root.clone(),
+                    selection.account_name.clone(),
+                )
+                .await?;
+            runtime.entry(key).or_insert(SnapshotRuntime {
+                status: if paused {
+                    BackupFolderStatus::Paused
+                } else {
+                    BackupFolderStatus::WaitingForWechatExit
+                },
+                pause_reason: paused.then_some(BackupPauseReason::User),
+                last_snapshot_at: record.map(|record| record.snapshot_at),
+            });
+        }
+        Ok(runtime)
+    }
+
+    /// 勾选数据库类别时建立该账号的快照运行状态（保留已有的上次快照时间）。
+    async fn ensure_snapshot_runtime(
+        &self,
+        user_id: Uuid,
+        key: &SnapshotKey,
+        data_root: &str,
+        account_name: &str,
+    ) -> Result<(), BackupError> {
+        let cached = self
+            .inner
+            .state
+            .wechat_snapshot(user_id, data_root.to_owned(), account_name.to_owned())
+            .await?;
+        let paused = self.inner.paused_all.load(Ordering::SeqCst);
+        if let Ok(mut runtime) = self.inner.runtime.lock() {
+            if let Some(existing) = runtime.snapshots.get_mut(key) {
+                if let Some(record) = cached.as_ref() {
+                    existing.last_snapshot_at = Some(record.snapshot_at);
+                }
+            } else {
+                runtime.snapshots.insert(
+                    key.clone(),
+                    SnapshotRuntime {
+                        status: if paused {
+                            BackupFolderStatus::Paused
+                        } else {
+                            BackupFolderStatus::WaitingForWechatExit
+                        },
+                        pause_reason: paused.then_some(BackupPauseReason::User),
+                        last_snapshot_at: cached.as_ref().map(|record| record.snapshot_at),
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn set_snapshot_state(
+        &self,
+        key: &SnapshotKey,
+        status: BackupFolderStatus,
+        pause_reason: Option<BackupPauseReason>,
+    ) {
+        if let Ok(mut runtime) = self.inner.runtime.lock()
+            && let Some(snapshot) = runtime.snapshots.get_mut(key)
+        {
+            snapshot.status = status;
+            snapshot.pause_reason = pause_reason;
+        }
+    }
+
+    fn set_snapshot_result(
+        &self,
+        key: &SnapshotKey,
+        status: BackupFolderStatus,
+        pause_reason: Option<BackupPauseReason>,
+        snapshot_at: Option<i64>,
+    ) {
+        if let Ok(mut runtime) = self.inner.runtime.lock() {
+            let entry = runtime
+                .snapshots
+                .entry(key.clone())
+                .or_insert(SnapshotRuntime {
+                    status,
+                    pause_reason,
+                    last_snapshot_at: snapshot_at,
+                });
+            entry.status = status;
+            entry.pause_reason = pause_reason;
+            if snapshot_at.is_some() {
+                entry.last_snapshot_at = snapshot_at;
+            }
+        }
+    }
+
+    fn set_snapshot_retry(&self, key: &SnapshotKey, at: Option<SystemTime>) {
+        if let Ok(mut runtime) = self.inner.runtime.lock() {
+            match at {
+                Some(at) => {
+                    runtime.snapshot_retries.insert(key.clone(), at);
+                }
+                None => {
+                    runtime.snapshot_retries.remove(key);
+                }
+            }
+        }
+    }
+
+    fn snapshot_retry_at(&self, key: &SnapshotKey) -> Option<SystemTime> {
+        self.inner
+            .runtime
+            .lock()
+            .ok()
+            .and_then(|runtime| runtime.snapshot_retries.get(key).copied())
+    }
+
+    /// 可重试错误使用引擎统一的 `retry_interval` 退避；网络/服务端/限流与
+    /// 普通备份一致显示为“暂停（网络）”，配额/本地错误显示为错误。
+    fn handle_snapshot_error(&self, key: &SnapshotKey, error: &BackupError) {
+        let network = matches!(
+            error,
+            BackupError::Client(client_error) if is_network_error(client_error)
+        );
+        let (status, pause_reason) = if network {
+            (BackupFolderStatus::Paused, Some(BackupPauseReason::Network))
+        } else {
+            (
+                BackupFolderStatus::Error {
+                    unreadable_count: 0,
+                },
+                None,
+            )
+        };
+        self.set_snapshot_result(key, status, pause_reason, None);
+        let retry_at = self.inner.clock.now() + self.inner.config.retry_interval;
+        self.set_snapshot_retry(key, Some(retry_at));
+    }
+
+    fn snapshot_context(&self, settings: &BackupSettings) -> SnapshotContext {
+        SnapshotContext {
+            client: self.inner.client.clone(),
+            clock: self.inner.clock.clone(),
+            state: self.inner.state.clone(),
+            device_name: self.inner.config.device_name.clone(),
+            probe: self.inner.wechat_process_probe.clone(),
+            upload_limit_bytes_per_second: settings.upload_limit_bytes_per_second,
+            retention: settings.normalized_wechat_snapshot_retention(),
+        }
+    }
+
+    /// 调度器每 `wechat_snapshot_interval` 调用一次：有账号勾选数据库时，
+    /// 微信未运行就自动开始（或等待退出后自动开始）该账号的快照。
+    ///
+    /// `cleanup` 为真时（引擎启动后的第一次检查、每次 6 小时全量核对）先做
+    /// 一次云端维护：清理不完整快照与超出保留份数的旧快照，即使本地未变。
+    /// 返回是否发现了需要检查的账号；没有账号时调用方可以保留清理标记。
+    async fn check_wechat_snapshots(&self, cleanup: bool) -> bool {
+        let Ok(user_id) = self.user_id() else {
+            return false;
+        };
+        let Ok(selections) = self.inner.state.list_wechat_selections(user_id).await else {
+            return false;
+        };
+        let accounts = selected_snapshot_accounts(&selections);
+        if accounts.is_empty() {
+            return false;
+        }
+        let Ok(settings) = self.load_settings(user_id).await else {
+            return true;
+        };
+        let unlocked = self.inner.client.is_unlocked();
+        let paused = settings.paused || self.inner.paused_all.load(Ordering::SeqCst);
+
+        if cleanup && unlocked {
+            let context = self.snapshot_context(&settings);
+            for account in accounts.values() {
+                let _run_guard = self.inner.run_lock.lock().await;
+                if snapshot::maintain_snapshots(&context, account)
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!("微信数据库快照维护清理失败，稍后重试");
+                }
+            }
+        }
+
+        let now = self.inner.clock.now();
+        for (key, account) in accounts {
+            if !unlocked {
+                self.set_snapshot_state(
+                    &key,
+                    BackupFolderStatus::NeedsUnlock,
+                    Some(BackupPauseReason::NeedsUnlock),
+                );
+                self.set_snapshot_retry(&key, None);
+                continue;
+            }
+            if paused {
+                self.set_snapshot_state(
+                    &key,
+                    BackupFolderStatus::Paused,
+                    Some(BackupPauseReason::User),
+                );
+                self.set_snapshot_retry(&key, None);
+                continue;
+            }
+            if self.inner.wechat_process_probe.is_running(account.version) {
+                self.set_snapshot_state(&key, BackupFolderStatus::WaitingForWechatExit, None);
+                // 不丢弃网络错误设置的退避时间：微信退出后仍按原间隔重试。
+                continue;
+            }
+            if self
+                .snapshot_retry_at(&key)
+                .is_some_and(|retry_at| now < retry_at)
+            {
+                continue;
+            }
+            if self
+                .run_database_snapshot(&account, &settings)
+                .await
+                .is_err()
+            {
+                // 状态与退避已在 run_database_snapshot 中设置；日志不含路径。
+                tracing::warn!("微信数据库快照失败，稍后重试");
+            }
+        }
+        true
+    }
+
+    async fn run_database_snapshot(
+        &self,
+        account: &SnapshotAccount,
+        settings: &BackupSettings,
+    ) -> Result<WechatSnapshotReport, BackupError> {
+        let key = SnapshotKey::of_snapshot(account);
+        let _run_guard = self.inner.run_lock.lock().await;
+        self.set_snapshot_retry(&key, None);
+        if !self.inner.client.is_unlocked() {
+            self.set_snapshot_result(
+                &key,
+                BackupFolderStatus::NeedsUnlock,
+                Some(BackupPauseReason::NeedsUnlock),
+                None,
+            );
+            return Ok(empty_snapshot_report(WechatSnapshotOutcome::NeedsUnlock));
+        }
+        if settings.paused || self.inner.paused_all.load(Ordering::SeqCst) {
+            self.set_snapshot_result(
+                &key,
+                BackupFolderStatus::Paused,
+                Some(BackupPauseReason::User),
+                None,
+            );
+            return Ok(empty_snapshot_report(WechatSnapshotOutcome::Paused));
+        }
+        if self.inner.wechat_process_probe.is_running(account.version) {
+            self.set_snapshot_result(&key, BackupFolderStatus::WaitingForWechatExit, None, None);
+            return Ok(empty_snapshot_report(
+                WechatSnapshotOutcome::WaitingForWechatExit,
+            ));
+        }
+        let context = self.snapshot_context(settings);
+        self.set_snapshot_state(&key, BackupFolderStatus::Scanning, None);
+        let progress_engine = self.clone();
+        let progress_key = key.clone();
+        let progress = std::sync::Arc::new(move |done: u64, total: u64| {
+            progress_engine.set_snapshot_state(
+                &progress_key,
+                BackupFolderStatus::Uploading { done, total },
+                None,
+            );
+        });
+        let report = match snapshot::run_snapshot(&context, account, progress.as_ref()).await {
+            Ok(report) => report,
+            Err(error) => {
+                self.handle_snapshot_error(&key, &error);
+                return Err(error);
+            }
+        };
+        let status = match report.outcome {
+            WechatSnapshotOutcome::Completed | WechatSnapshotOutcome::Unchanged => {
+                BackupFolderStatus::IdleOk
+            }
+            WechatSnapshotOutcome::WaitingForWechatExit | WechatSnapshotOutcome::Aborted => {
+                BackupFolderStatus::WaitingForWechatExit
+            }
+            WechatSnapshotOutcome::Paused => BackupFolderStatus::Paused,
+            WechatSnapshotOutcome::NeedsUnlock => BackupFolderStatus::NeedsUnlock,
+        };
+        let pause_reason = match status {
+            BackupFolderStatus::Paused => Some(BackupPauseReason::User),
+            BackupFolderStatus::NeedsUnlock => Some(BackupPauseReason::NeedsUnlock),
+            _ => None,
+        };
+        self.set_snapshot_result(&key, status, pause_reason, report.snapshot_at);
+        Ok(report)
+    }
+
+    /// 保留设置变化时立即把每个账号的云端快照清理到新份数。
+    async fn maintain_wechat_snapshot_retention(&self) {
+        let Ok(user_id) = self.user_id() else {
+            return;
+        };
+        if !self.inner.client.is_unlocked() {
+            return;
+        }
+        let Ok(settings) = self.load_settings(user_id).await else {
+            return;
+        };
+        let Ok(selections) = self.inner.state.list_wechat_selections(user_id).await else {
+            return;
+        };
+        let accounts = selected_snapshot_accounts(&selections);
+        if accounts.is_empty() {
+            return;
+        }
+        let context = self.snapshot_context(&settings);
+        for account in accounts.into_values() {
+            let _run_guard = self.inner.run_lock.lock().await;
+            if snapshot::maintain_snapshots(&context, &account)
+                .await
+                .is_err()
+            {
+                tracing::warn!("微信数据库快照保留清理失败，稍后重试");
+            }
+        }
     }
 
     /// 微信备份首次上传预检：勾选类别的文件数、明文/密文字节数、剩余配额、
@@ -937,6 +1413,13 @@ impl BackupEngine {
                 state.status = BackupFolderStatus::Paused;
                 state.pause_reason = Some(BackupPauseReason::User);
             }
+            for snapshot in runtime.snapshots.values_mut() {
+                if snapshot.status != BackupFolderStatus::NeedsUnlock {
+                    snapshot.status = BackupFolderStatus::Paused;
+                    snapshot.pause_reason = Some(BackupPauseReason::User);
+                }
+            }
+            runtime.snapshot_retries.clear();
             runtime.summary = summarize(&runtime);
         }
         self.emit_all_folder_states();
@@ -962,6 +1445,13 @@ impl BackupEngine {
                     state.pause_reason = None;
                 }
             }
+            for snapshot in runtime.snapshots.values_mut() {
+                if snapshot.status == BackupFolderStatus::Paused {
+                    snapshot.status = BackupFolderStatus::WaitingForWechatExit;
+                    snapshot.pause_reason = None;
+                }
+            }
+            runtime.snapshot_retries.clear();
             runtime.summary = summarize(&runtime);
         }
         self.emit_all_folder_states();
@@ -1058,10 +1548,23 @@ impl BackupEngine {
             .await?
             .and_then(|value| value.parse::<u64>().ok())
             .filter(|value| *value > 0);
+        let retention = self
+            .inner
+            .state
+            .backup_setting(user_id, SETTING_WECHAT_SNAPSHOT_RETENTION.to_owned())
+            .await?
+            .and_then(|value| value.parse::<u8>().ok())
+            .filter(|value| {
+                (super::types::WECHAT_SNAPSHOT_RETENTION_MIN
+                    ..=super::types::WECHAT_SNAPSHOT_RETENTION_MAX)
+                    .contains(value)
+            })
+            .unwrap_or(super::types::DEFAULT_WECHAT_SNAPSHOT_RETENTION);
         Ok(BackupSettings {
             include_hidden,
             upload_limit_bytes_per_second: upload_limit,
             paused,
+            wechat_snapshot_retention: retention,
         })
     }
 
@@ -1097,6 +1600,14 @@ impl BackupEngine {
                     .to_string(),
             )
             .await?;
+        self.inner
+            .state
+            .set_backup_setting(
+                user_id,
+                SETTING_WECHAT_SNAPSHOT_RETENTION.to_owned(),
+                settings.normalized_wechat_snapshot_retention().to_string(),
+            )
+            .await?;
         Ok(())
     }
 
@@ -1114,6 +1625,25 @@ impl BackupEngine {
                     state.status = BackupFolderStatus::IdleOk;
                     state.pause_reason = None;
                 }
+            }
+            for snapshot in runtime.snapshots.values_mut() {
+                if settings.paused {
+                    if !matches!(
+                        snapshot.status,
+                        BackupFolderStatus::NeedsUnlock | BackupFolderStatus::Uploading { .. }
+                    ) {
+                        snapshot.status = BackupFolderStatus::Paused;
+                        snapshot.pause_reason = Some(BackupPauseReason::User);
+                    }
+                } else if snapshot.status == BackupFolderStatus::Paused
+                    && snapshot.pause_reason == Some(BackupPauseReason::User)
+                {
+                    snapshot.status = BackupFolderStatus::WaitingForWechatExit;
+                    snapshot.pause_reason = None;
+                }
+            }
+            if settings.paused {
+                runtime.snapshot_retries.clear();
             }
             runtime.summary = summarize(&runtime);
         }
@@ -1367,6 +1897,9 @@ impl BackupEngine {
         let user_id = self.user_id()?;
         let settings = self.load_settings(user_id).await?;
         let folders = self.inner.state.list_backup_folders(user_id).await?;
+        let snapshots = self
+            .load_snapshot_runtimes(user_id, settings.paused)
+            .await?;
         self.inner
             .paused_all
             .store(settings.paused, Ordering::SeqCst);
@@ -1401,6 +1934,7 @@ impl BackupEngine {
                     )
                 })
                 .collect();
+            runtime.snapshots = snapshots;
             runtime.summary = summarize(&runtime);
         }
         self.emit_all_folder_states();
@@ -1559,32 +2093,7 @@ impl BackupEngine {
 
     /// 逐层查找或创建云端文件夹；`name_conflict` 竞态时重新列出复用。
     async fn ensure_cloud_folder(&self, parent_id: Uuid, name: &str) -> Result<Uuid, ClientError> {
-        let key = name_key(name);
-        let nodes = self.inner.client.list_folder_decrypted(parent_id).await?;
-        if let Some(node) = nodes.iter().find(|node| name_key(node.name()) == key) {
-            return match node.kind() {
-                NodeKind::Folder => Ok(node.view.id),
-                NodeKind::File => Err(transfer_error(
-                    TransferErrorCode::TargetUnavailable,
-                    "云端同一位置已有同名文件",
-                )),
-            };
-        }
-        match self.inner.client.create_folder(parent_id, name).await {
-            Ok(folder) => Ok(folder.id),
-            Err(error) if error.api_code() == Some(&ApiErrorCode::NameConflict) => {
-                let nodes = self.inner.client.list_folder_decrypted(parent_id).await?;
-                nodes
-                    .into_iter()
-                    .find(|node| node.kind() == NodeKind::Folder && name_key(node.name()) == key)
-                    .map(|node| node.view.id)
-                    .ok_or(ClientError::Transfer(crate::error::TransferError::new(
-                        TransferErrorCode::TargetUnavailable,
-                        "云端同名文件夹在并发创建后不可用",
-                    )))
-            }
-            Err(error) => Err(error),
-        }
+        super::paths::ensure_cloud_folder(&self.inner.client, parent_id, name).await
     }
 
     async fn run_folder(
@@ -2299,11 +2808,16 @@ async fn run_scheduler(
         inner: inner.clone(),
     };
     let mut next_full = inner.clock.now() + inner.config.full_scan_interval;
+    let mut next_snapshot = inner.clock.now();
+    // 引擎启动后的第一次快照检查做一次云端维护清理；此后只在每 6 小时全量
+    // 核对时再做，即使本地数据库未变化。
+    let mut snapshot_cleanup_due = true;
     let mut was_locked = !inner.client.is_unlocked();
-    // 重试间隔可能比 5 秒 tick 更短；取较小值，保证重试按时触发（测试也可
-    // 用很短的 retry_interval 驱动调度器，而不必等 5 秒）。
+    // 重试 / 快照检查间隔可能比 5 秒 tick 更短；取较小值，保证按注入的时钟
+    // 按时触发（测试用很短的间隔，不必等 5 秒）。
     let tick = SCHEDULER_TICK
         .min(inner.config.retry_interval)
+        .min(inner.config.wechat_snapshot_interval)
         .max(Duration::from_millis(10));
     loop {
         // 未解锁：暂停并报告 needs_unlock；解锁后自动继续。
@@ -2315,16 +2829,33 @@ async fn run_scheduler(
             if let Err(error) = engine.scan_all_now().await {
                 tracing::warn!(error = %error, "解锁后继续备份失败");
             }
+            let had_accounts = engine.check_wechat_snapshots(snapshot_cleanup_due).await;
+            if had_accounts {
+                snapshot_cleanup_due = false;
+            }
+            next_snapshot = inner.clock.now() + inner.config.wechat_snapshot_interval;
         }
 
         let now = inner.clock.now();
+        if now >= next_snapshot {
+            let had_accounts = engine.check_wechat_snapshots(snapshot_cleanup_due).await;
+            if had_accounts {
+                snapshot_cleanup_due = false;
+            }
+            // 检查本身可能耗时；用完成后的时间计算下一次，避免连续追赶。
+            next_snapshot = inner.clock.now() + inner.config.wechat_snapshot_interval;
+        }
         if now >= next_full {
             // 每次全量核对刷新一次微信数据根（不是每个文件都发现）。
             engine.refresh_wechat_data_roots().await;
             if let Err(error) = engine.scan_all_now().await {
                 tracing::warn!(error = %error, "定时全量核对失败");
             }
-            next_full = now + inner.config.full_scan_interval;
+            // 全量核对时即使本地未变也做一次云端维护清理。
+            let _ = engine.check_wechat_snapshots(true).await;
+            snapshot_cleanup_due = false;
+            next_snapshot = inner.clock.now() + inner.config.wechat_snapshot_interval;
+            next_full = inner.clock.now() + inner.config.full_scan_interval;
         }
         let retry_due = inner
             .runtime
@@ -2350,6 +2881,16 @@ async fn run_scheduler(
                             && let Err(error) = engine.scan_all_now().await
                         {
                             tracing::warn!(error = %error, "手动/启动核对失败");
+                        }
+                        if inner.client.is_unlocked() {
+                            let had_accounts = engine
+                                .check_wechat_snapshots(snapshot_cleanup_due)
+                                .await;
+                            if had_accounts {
+                                snapshot_cleanup_due = false;
+                            }
+                            next_snapshot =
+                                inner.clock.now() + inner.config.wechat_snapshot_interval;
                         }
                     }
                     Some(Command::Shutdown) | None => break,
@@ -2391,6 +2932,38 @@ async fn run_scheduler(
     }
 }
 
+/// 从类别勾选里取出勾选了“聊天记录数据库”的账号（每个账号一项）。
+fn selected_snapshot_accounts(
+    selections: &[WechatSelectionRecord],
+) -> BTreeMap<SnapshotKey, SnapshotAccount> {
+    let mut accounts = BTreeMap::new();
+    for selection in selections {
+        if selection.category != WechatCategory::Databases.as_str() || !selection.selected {
+            continue;
+        }
+        let Some(version) = WechatVersion::parse(&selection.version) else {
+            continue;
+        };
+        let key = SnapshotKey::from_parts(&selection.data_root, &selection.account_name);
+        accounts.entry(key).or_insert_with(|| SnapshotAccount {
+            data_root: PathBuf::from(&selection.data_root),
+            account_name: selection.account_name.clone(),
+            version,
+        });
+    }
+    accounts
+}
+
+fn empty_snapshot_report(outcome: WechatSnapshotOutcome) -> WechatSnapshotReport {
+    WechatSnapshotReport {
+        outcome,
+        snapshot_at: None,
+        total_files: 0,
+        uploaded_files: 0,
+        uploaded_bytes: 0,
+    }
+}
+
 /// 汇总当前状态。
 fn summarize(runtime: &Runtime) -> BackupSummary {
     let folder_count = runtime.statuses.len() as u64;
@@ -2414,7 +2987,9 @@ fn summarize(runtime: &Runtime) -> BackupSummary {
                     current_total.saturating_add(total),
                 ));
             }
-            BackupFolderStatus::IdleOk | BackupFolderStatus::Scanning => {}
+            BackupFolderStatus::IdleOk
+            | BackupFolderStatus::Scanning
+            | BackupFolderStatus::WaitingForWechatExit => {}
         }
     }
     let status = if needs_unlock {

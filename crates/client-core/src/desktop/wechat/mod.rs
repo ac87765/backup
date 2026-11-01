@@ -14,11 +14,13 @@
 
 mod layout;
 mod notes;
+mod process;
 mod scan;
 mod system;
 
 pub(crate) mod backup;
 pub(crate) mod exclude;
+pub(crate) mod snapshot;
 
 #[cfg(test)]
 mod tests;
@@ -28,6 +30,7 @@ pub use layout::{
     WechatCategoryLayout, WechatLayout, WechatVersion, layout_for,
 };
 pub use notes::{WECHAT_NOTE_MAX_CHARS, WechatAccountNotes};
+pub use process::{WechatProcessProbe, default_process_probe};
 pub use system::WechatSystemLocations;
 
 use std::fmt;
